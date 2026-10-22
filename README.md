@@ -1,127 +1,210 @@
-# JobFinder AI — React + Python
+# JobFinder AI
 
-Aplicação local para descoberta e acompanhamento de oportunidades de entrada em tecnologia. A interface foi migrada de Streamlit para **React + Vite** e o backend passou a oferecer uma **API REST com FastAPI**. O banco permanece em **SQLite**, com os modelos e a lógica de compatibilidade do projeto original.
+**Plataforma inteligente para busca, análise de compatibilidade e acompanhamento de oportunidades na área de tecnologia.**
 
-## O que esta versão inclui
+O JobFinder AI é um projeto desenvolvido para facilitar a organização da busca por oportunidades de estágio e posições júnior em tecnologia. A aplicação reúne funcionalidades para consultar vagas, avaliar a compatibilidade com um perfil profissional, organizar candidaturas e acompanhar as etapas de processos seletivos.
 
-- Dashboard com indicadores de vagas, novas oportunidades, favoritos, candidaturas, entrevistas e tarefas.
-- Busca sob demanda nas APIs públicas de Remotive e Arbeitnow, com indicação de falhas por fonte.
-- Cadastro manual de vagas, pesquisa textual, filtros de compatibilidade/modalidade/favoritos e ordenação.
-- Pontuação explicável de compatibilidade (0–100), com critérios encontrados e pontos a verificar.
-- Favoritos e registro de candidaturas.
-- Pipeline de candidaturas com etapa, datas, recrutador e notas.
-- Tarefas com prazo, prioridade, edição, conclusão, exclusão e lembrete opcional.
-- Edição do perfil profissional e recálculo das pontuações.
-- Mantém os módulos de SMTP e agendamento diário já existentes; envio de e-mail depende de configuração no `.env`.
-- Documentação interativa da API em `http://127.0.0.1:8000/docs`.
+O projeto evoluiu de uma interface construída com Streamlit para uma arquitetura com **React + Vite no frontend** e **FastAPI no backend**, mantendo Python para a lógica de negócio e SQLite para persistência local dos dados.
+
+## Funcionalidades
+
+### Busca e organização de vagas
+- Coleta de oportunidades por meio das fontes de vagas implementadas no backend.
+- Indicação de falhas durante a consulta às fontes.
+- Cadastro manual de oportunidades.
+- Pesquisa textual, filtros por compatibilidade, modalidade e favoritos.
+- Ordenação e visualização das oportunidades disponíveis.
+
+### Análise de compatibilidade
+- Pontuação de compatibilidade entre o perfil profissional e os requisitos identificados na vaga.
+- Escala de compatibilidade de 0 a 100.
+- Exibição dos critérios encontrados e dos pontos que precisam ser verificados.
+- Possibilidade de atualizar o perfil profissional e recalcular as pontuações.
+
+### Acompanhamento de candidaturas
+- Marcação de vagas favoritas.
+- Registro de candidaturas.
+- Pipeline para acompanhar as etapas dos processos seletivos.
+- Registro de datas, informações de recrutadores e anotações.
+- Indicadores de acompanhamento, incluindo vagas, candidaturas, entrevistas e novas oportunidades.
+
+### Organização de tarefas
+- Criação de tarefas relacionadas à busca de emprego.
+- Definição de prazos e prioridades.
+- Edição, conclusão e exclusão de tarefas.
+- Opção de lembretes por e-mail, mediante configuração SMTP.
+
+### API e persistência de dados
+- API REST desenvolvida com FastAPI.
+- Persistência local com SQLite e modelos SQLAlchemy.
+- Documentação interativa dos endpoints.
+- Testes automatizados para funcionalidades do projeto.
+
+## Tecnologias utilizadas
+
+| Tecnologia | Aplicação |
+|---|---|
+| React | Interface de usuário |
+| Vite | Ambiente de desenvolvimento do frontend |
+| JavaScript | Lógica do frontend |
+| Python | Lógica de negócio e integração com fontes |
+| FastAPI | API REST |
+| SQLAlchemy | Mapeamento objeto-relacional |
+| SQLite | Persistência local |
+| HTML5 e CSS3 | Estrutura e estilização da interface |
+| Pytest | Testes automatizados |
+| Git e GitHub | Versionamento e hospedagem do código |
+
+## Arquitetura do projeto
+
+A aplicação é organizada em duas partes principais:
+
+- **Frontend:** interface React, responsável pela interação com o usuário, filtros, indicadores e acompanhamento das oportunidades.
+- **Backend:** API FastAPI, responsável pela lógica de negócio, persistência, cálculo de compatibilidade e coleta das vagas.
+
+O banco SQLite é utilizado para armazenar os dados localmente. A aplicação não oferece, nesta versão, autenticação multiusuário.
 
 ## Requisitos
 
 - Python 3.11 ou superior.
-- Node.js LTS com npm.
-- Windows/PowerShell ou terminal compatível.
+- Node.js LTS e npm.
+- Git.
+- VS Code ou outro editor de código.
+- Terminal compatível com os comandos do sistema operacional.
 
-## Iniciar no Windows / VS Code
+## Como executar o projeto
 
-Abra a pasta `jobfinder-ai` no VS Code. Use **dois terminais**.
+### 1. Clonar o repositório
 
-### 1. Preparar e iniciar o backend (Python)
+```bash
+git clone https://github.com/Stefany-viveiros/JobFinderAI.git
+cd JobFinderAI
+```
 
-No primeiro terminal, na pasta raiz `jobfinder-ai`:
+### 2. Preparar o backend
+
+No terminal, na pasta raiz do projeto, crie o ambiente virtual:
+
+```bash
+py -3.11 -m venv .venv
+```
+
+Ative o ambiente virtual no Windows PowerShell:
 
 ```powershell
-py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
+```
+
+Instale as dependências:
+
+```bash
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-Se você já tem o ambiente `.venv` configurado, não precisa recriá-lo: ative-o e rode `pip install -r requirements.txt` para incluir FastAPI/Uvicorn.
+Inicie a API:
 
-Depois, ainda nesse terminal:
-
-```powershell
+```bash
 python -m uvicorn jobfinder.api:app --reload
 ```
 
-Deixe esse terminal aberto. O backend será servido em `http://127.0.0.1:8000`.
+O backend ficará disponível em:
 
-### 2. Instalar e iniciar o frontend (React)
+`http://127.0.0.1:8000`
 
-Abra **outro terminal** e execute:
+A documentação interativa da API poderá ser acessada em:
 
-```powershell
+`http://127.0.0.1:8000/docs`
+
+### 3. Preparar o frontend
+
+Abra um segundo terminal na pasta raiz e execute:
+
+```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-Abra o endereço mostrado pelo Vite, normalmente `http://localhost:5173`.
+Abra no navegador o endereço apresentado pelo Vite, normalmente:
 
-> Se `npm` não for reconhecido, instale a versão LTS do Node.js e reinicie o VS Code.
+`http://localhost:5173`
 
-## Banco de dados e migração dos seus dados
+Mantenha os dois terminais abertos enquanto estiver utilizando a aplicação.
 
-O backend usa o mesmo caminho do projeto original: `data/jobfinder.db`. O arquivo é criado automaticamente na primeira execução.
+## Banco de dados
 
-**Importante ao substituir sua pasta atual:** o ZIP enviado não contém o seu banco SQLite pessoal (ele não estava incluído no ZIP original). Antes de trocar a pasta, faça uma cópia de `data\jobfinder.db`, se esse arquivo existir. Para manter seus dados, copie o arquivo do projeto anterior para `data\jobfinder.db` na nova pasta. Não compartilhe esse arquivo se ele contiver informações pessoais.
+O projeto utiliza SQLite para persistência local. O banco é criado conforme a configuração do backend e utiliza o caminho definido na implementação.
 
-O arquivo `jobfinder/app.py` foi preservado como referência da interface Streamlit anterior; para usar React, inicie `jobfinder.api:app` e o frontend com Vite, conforme os passos acima.
+O diretório `data/` pode conter arquivos locais com informações pessoais. Esses arquivos não devem ser publicados no repositório. Para preservar dados existentes ao trocar de ambiente, faça uma cópia de segurança antes de qualquer migração.
 
-## Perfil, compatibilidade e limitações
+## Configuração de e-mail
 
-- A compatibilidade é uma heurística local explicável, não uma previsão de contratação.
-- Remotive e Arbeitnow são fontes globais e não garantem cobertura de vagas de estágio no Brasil. Sempre confira os requisitos e a página original da vaga.
-- O aplicativo permanece local e não oferece autenticação multiusuário. Não o publique na internet sem implementar autenticação, autorização e controles de segurança adicionais.
-- A lista é carregada em até 250 vagas por consulta na interface; é possível ajustar esse limite no frontend.
+Os lembretes por e-mail dependem das configurações de um servidor SMTP.
 
-## Configurar lembretes por e-mail (opcional)
+1. Copie o arquivo `.env.example` para `.env`.
+2. Preencha as variáveis com as credenciais fornecidas pelo seu provedor.
+3. Teste o envio antes de configurar qualquer agendamento.
 
-Copie `.env.example` para `.env` e preencha com dados fornecidos pelo seu provedor SMTP. Nunca compartilhe o arquivo `.env` nem o publique no GitHub.
+Nunca publique o arquivo `.env`, senhas ou chaves de API no GitHub.
 
-```dotenv
-SMTP_HOST=smtp.seu-provedor.com
-SMTP_PORT=587
-SMTP_USERNAME=seu_usuario
-SMTP_PASSWORD=sua_senha_de_app
-SMTP_FROM=seu_email@exemplo.com
-SMTP_TO=destino@exemplo.com
-SMTP_USE_TLS=true
-TIMEZONE=America/Sao_Paulo
-```
-
-Os recursos de agendamento existentes também estão em `scripts/instalar_agendador.ps1`. Configure e teste o SMTP antes de agendar envios.
+Os scripts de agendamento existentes estão em `scripts/instalar_agendador.ps1`.
 
 ## Testes
 
-Com o ambiente Python ativado:
+Com o ambiente virtual ativado, execute na raiz do projeto:
 
-```powershell
+```bash
 pytest -q
 ```
 
-Os testes unitários existentes não fazem chamadas reais às APIs nem enviam e-mails.
+Os testes automatizados existentes verificam funcionalidades do projeto sem depender de chamadas reais às APIs externas ou do envio efetivo de e-mails.
 
-## Estrutura
+## Estrutura de diretórios
 
 ```text
-jobfinder-ai/
+JobFinderAI/
 ├── jobfinder/
-│   ├── api.py           # API FastAPI para o React
-│   ├── app.py           # interface Streamlit anterior, mantida como referência
-│   ├── models.py        # modelos SQLAlchemy
-│   ├── db.py            # banco SQLite
-│   ├── matching.py      # pontuação de compatibilidade
-│   ├── service.py       # operações do domínio
-│   ├── sources.py       # fontes públicas de vagas
-│   └── mailer.py        # lembretes SMTP
+│   ├── api.py
+│   ├── app.py
+│   ├── models.py
+│   ├── db.py
+│   ├── matching.py
+│   ├── service.py
+│   ├── sources.py
+│   └── mailer.py
 ├── frontend/
-│   ├── src/App.jsx      # interface React
-│   ├── src/styles.css   # estilos responsivos
+│   ├── src/
+│   │   ├── App.jsx
+│   │   └── styles.css
 │   └── package.json
 ├── scripts/
 ├── tests/
-├── data/                # banco local (não versionar)
+├── data/
 ├── .env.example
-└── requirements.txt
+├── .gitignore
+├── pytest.ini
+├── requirements.txt
+└── README.md
 ```
+
+O arquivo `jobfinder/app.py` mantém a interface Streamlit anterior como referência. Para executar a versão React, utilize a API `jobfinder.api:app` e o frontend com Vite.
+
+## Limitações conhecidas
+
+- A pontuação de compatibilidade é uma heurística explicável e não representa uma previsão de contratação.
+- A disponibilidade e a qualidade dos resultados dependem das fontes integradas e de seus dados.
+- As informações da vaga devem ser conferidas na página original antes de uma candidatura.
+- O sistema é destinado ao uso local e não possui autenticação multiusuário.
+- Uma implantação pública exige controles adicionais de autenticação, autorização, proteção de dados e segurança.
+
+## Próximos passos
+
+O projeto pode evoluir com melhorias na cobertura das fontes de vagas, refinamento dos filtros, aprimoramento da experiência visual e novas ferramentas para apoiar a organização da busca por oportunidades.
+
+## Autoria
+
+Desenvolvido por **Stefany Viveiros** como projeto de portfólio para demonstrar conhecimentos em desenvolvimento web, APIs, Python, persistência de dados e automação de processos.
+
+- GitHub: https://github.com/Stefany-viveiros
+- Repositório: https://github.com/Stefany-viveiros/JobFinderAI
