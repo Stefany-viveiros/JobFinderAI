@@ -1,0 +1,87 @@
+from datetime import datetime, date
+from sqlalchemy import String, Text, Integer, Float, Boolean, DateTime, Date, ForeignKey, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from .db import Base
+
+class Job(Base):
+    __tablename__ = "jobs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source: Mapped[str] = mapped_column(String(80), default="manual")
+    source_id: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    title: Mapped[str] = mapped_column(String(300))
+    company: Mapped[str] = mapped_column(String(200), default="Empresa não informada")
+    description: Mapped[str] = mapped_column(Text, default="")
+    location: Mapped[str] = mapped_column(String(200), default="Não informada")
+    modality: Mapped[str] = mapped_column(String(50), default="Não informada")
+    job_type: Mapped[str] = mapped_column(String(80), default="Não informado")
+    published_at: Mapped[str] = mapped_column(String(80), default="")
+    url: Mapped[str] = mapped_column(Text, unique=True)
+    compatibility: Mapped[float] = mapped_column(Float, default=0)
+    match_reasons: Mapped[str] = mapped_column(Text, default="")
+    missing_reasons: Mapped[str] = mapped_column(Text, default="")
+    is_favorite: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    application: Mapped["Application | None"] = relationship(back_populates="job", uselist=False, cascade="all, delete-orphan")
+    tasks: Mapped[list["Task"]] = relationship(back_populates="job", cascade="all, delete-orphan")
+
+class Profile(Base):
+    __tablename__ = "profile"
+    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    name: Mapped[str] = mapped_column(String(150), default="")
+    course: Mapped[str] = mapped_column(String(200), default="")
+    institution: Mapped[str] = mapped_column(String(200), default="")
+    academic_stage: Mapped[str] = mapped_column(String(100), default="")
+    technologies: Mapped[str] = mapped_column(Text, default="")
+    skills: Mapped[str] = mapped_column(Text, default="")
+    experience: Mapped[str] = mapped_column(Text, default="")
+    projects: Mapped[str] = mapped_column(Text, default="")
+    certifications: Mapped[str] = mapped_column(Text, default="")
+    keywords: Mapped[str] = mapped_column(Text, default="")
+    interests: Mapped[str] = mapped_column(Text, default="Estágio em Tecnologia")
+    location: Mapped[str] = mapped_column(String(200), default="")
+    modality: Mapped[str] = mapped_column(String(100), default="Remoto, Híbrido, Presencial")
+    job_types: Mapped[str] = mapped_column(String(200), default="Estágio, Júnior")
+    exclude_terms: Mapped[str] = mapped_column(Text, default="")
+    weight_keywords: Mapped[int] = mapped_column(Integer, default=40)
+    weight_area: Mapped[int] = mapped_column(Integer, default=25)
+    weight_modality: Mapped[int] = mapped_column(Integer, default=15)
+    weight_location: Mapped[int] = mapped_column(Integer, default=10)
+    weight_level: Mapped[int] = mapped_column(Integer, default=10)
+
+class Application(Base):
+    __tablename__ = "applications"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"), unique=True)
+    status: Mapped[str] = mapped_column(String(80), default="Candidatura enviada")
+    applied_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    deadline: Mapped[date | None] = mapped_column(Date, nullable=True)
+    recruiter: Mapped[str] = mapped_column(String(200), default="")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    job: Mapped[Job] = relationship(back_populates="application")
+
+class Task(Base):
+    __tablename__ = "tasks"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id"), nullable=True)
+    title: Mapped[str] = mapped_column(String(300))
+    description: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    priority: Mapped[str] = mapped_column(String(30), default="Média")
+    status: Mapped[str] = mapped_column(String(30), default="Pendente")
+    notify: Mapped[bool] = mapped_column(Boolean, default=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    job: Mapped[Job | None] = relationship(back_populates="tasks")
+
+class NotificationLog(Base):
+    __tablename__ = "notification_log"
+    __table_args__ = (UniqueConstraint("task_id", "recipient", "send_date", name="uq_task_recipient_day"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    task_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    recipient: Mapped[str] = mapped_column(String(300))
+    send_date: Mapped[str] = mapped_column(String(20))
+    status: Mapped[str] = mapped_column(String(30))
+    detail: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

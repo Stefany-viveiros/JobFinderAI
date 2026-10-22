@@ -1,0 +1,370 @@
+from datetime import date, datetime
+from typing import Optional
+
+from fastapi import FastAPI, Depends, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select, func, or_
+from sqlalchemy.orm import Session, joinedload
+
+from .db import init_db, SessionLocal
+from .models import Job, Application, Task, Profile, NotificationLog
+from .service import get_profile, save_jobs, refresh_scores, create_task, complete_task, STATUSES, collect_and_save_ranked
+from .sources import SOURCES, collect_selected
+from .mailer import send_daily_reminder
+from .config import settings
+
+app = FastAPI(title="JobFinder AI API", version="1.0.0", description="API local do JobFinder AI")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+@app.on_event("startup")
+def startup():
+    init_db()
+    # Cria o perfil singleton antes de aceitar chamadas paralelas do frontend.
+    db = SessionLocal()
+    try:
+        get_profile(db)
+    finally:
+        db.close()
+
+
+class JobCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=300)
+    company: str = "Empresa não informada"
+    url: str = Field(min_length=1)
+    location: str = "Não informada"
+    description: str = ""
+    modality: str = "Não informada"
+    job_type: str = "Não informado"
+    published_at: str = ""
+
+
+class ApplicationUpdate(BaseModel):
+    status: str = "Candidatura enviada"
+    applied_at: Optional[date] = None
+    deadline: Optional[date] = None
+    recruiter: str = ""
+    notes: str = ""
+
+
+class TaskCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=300)
+    description: str = ""
+    due_date: Optional[date] = None
+    priority: str = "Média"
+    job_id: Optional[int] = None
+    notify: bool = True
+
+
+class TaskUpdate(BaseModel):
+    title: str = Field(min_length=1, max_length=300)
+    description: str = ""
+    due_date: Optional[date] = None
+    priority: str = "Média"
+    status: str = "Pendente"
+    notify: bool = True
+
+
+class ProfileUpdate(BaseModel):
+    name: str = ""
+    course: str = ""
+    institution: str = ""
+    academic_stage: str = ""
+    technologies: str = ""
+    skills: str = ""
+    experience: str = ""
+    projects: str = ""
+    certifications: str = ""
+    keywords: str = ""
+    interests: str = "Estágio em Tecnologia"
+    location: str = ""
+    modality: str = "Remoto, Híbrido, Presencial"
+    job_types: str = "Estágio, Júnior"
+    exclude_terms: str = ""
+    weight_keywords: int = 40
+    weight_area: int = 25
+    weight_modality: int = 15
+    weight_location: int = 10
+    weight_level: int = 10
+
+
+def job_dict(j: Job, with_application=True):
+    application = None
+    if with_application and j.application:
+        application = {
+            "id": j.application.id, "status": j.application.status,
+            "applied_at": j.application.applied_at.isoformat() if j.application.applied_at else None,
+            "deadline": j.application.deadline.isoformat() if j.application.deadline else None,
+            "recruiter": j.application.recruiter or "", "notes": j.application.notes or "",
+        }
+    return {
+        "id": j.id, "source": j.source, "source_id": j.source_id,
+        "title": j.title, "company": j.company, "description": j.description or "",
+        "location": j.location, "modality": j.modality, "job_type": j.job_type,
+        "published_at": j.published_at or "", "url": j.url,
+        "compatibility": round(j.compatibility or 0),
+        "match_reasons": j.match_reasons or "", "missing_reasons": j.missing_reasons or "",
+        "is_favorite": bool(j.is_favorite), "is_archived": bool(j.is_archived),
+        "created_at": j.created_at.isoformat() if j.created_at else None,
+        "application": application,
+    }
+
+
+def task_dict(t: Task):
+    return {
+        "id": t.id, "job_id": t.job_id, "job_title": t.job.title if t.job else None,
+        "title": t.title, "description": t.description or "",
+        "created_at": t.created_at.isoformat() if t.created_at else None,
+        "due_date": t.due_date.isoformat() if t.due_date else None,
+        "priority": t.priority, "status": t.status, "notify": bool(t.notify),
+        "completed_at": t.completed_at.isoformat() if t.completed_at else None,
+    }
+
+
+def profile_dict(p: Profile):
+    return {k: getattr(p, k) for k in [
+        "id", "name", "course", "institution", "academic_stage", "technologies", "skills",
+        "experience", "projects", "certifications", "keywords", "interests", "location",
+        "modality", "job_types", "exclude_terms", "weight_keywords", "weight_area",
+        "weight_modality", "weight_location", "weight_level"
+    ]}
+
+
+@app.get("/api/health")
+def health():
+    return {"status": "ok", "service": "JobFinder AI"}
+
+
+@app.get("/api/dashboard")
+def dashboard(db: Session = Depends(get_db)):
+    total = db.scalar(select(func.count(Job.id)).where(Job.is_archived.is_(False))) or 0
+    new = db.scalar(select(func.count(Job.id)).where(Job.is_archived.is_(False), ~Job.application.has())) or 0
+    saved = db.scalar(select(func.count(Job.id)).where(Job.is_favorite.is_(True), Job.is_archived.is_(False))) or 0
+    apps = db.scalar(select(func.count(Application.id))) or 0
+    interviews = db.scalar(select(func.count(Application.id)).where(Application.status == "Entrevista")) or 0
+    pending = db.scalar(select(func.count(Task.id)).where(Task.status != "Concluída")) or 0
+    overdue = db.scalar(select(func.count(Task.id)).where(Task.status != "Concluída", Task.due_date < date.today())) or 0
+    avg_score = db.scalar(select(func.avg(Job.compatibility)).where(Job.is_archived.is_(False))) or 0
+    upcoming = db.scalars(select(Task).options(joinedload(Task.job)).where(
+        Task.status != "Concluída", Task.due_date.is_not(None)
+    ).order_by(Task.due_date).limit(6)).all()
+    recent_jobs = db.scalars(select(Job).options(joinedload(Job.application)).where(
+        Job.is_archived.is_(False)
+    ).order_by(Job.created_at.desc()).limit(5)).unique().all()
+    p = get_profile(db)
+    return {
+        "metrics": {"total_jobs": total, "new_jobs": new, "favorites": saved,
+                    "applications": apps, "interviews": interviews, "pending_tasks": pending,
+                    "overdue_tasks": overdue, "average_compatibility": round(avg_score)},
+        "upcoming_tasks": [task_dict(t) for t in upcoming],
+        "recent_jobs": [job_dict(j) for j in recent_jobs],
+        "profile_name": p.name,
+        "smtp_ready": bool(settings.smtp_ready and settings.smtp_username and settings.smtp_password),
+    }
+
+
+@app.get("/api/jobs")
+def list_jobs(
+    q: str = "", min_score: int = Query(0, ge=0, le=100), favorite: bool = False,
+    modality: str = "Todas", sort: str = "Compatibilidade", only_new: bool = False,
+    limit: int = Query(100, ge=1, le=500), db: Session = Depends(get_db)
+):
+    stmt = select(Job).options(joinedload(Job.application)).where(Job.is_archived.is_(False), Job.compatibility >= min_score)
+    if favorite:
+        stmt = stmt.where(Job.is_favorite.is_(True))
+    if modality != "Todas":
+        stmt = stmt.where(Job.modality.ilike(f"%{modality}%"))
+    if q.strip():
+        search = f"%{q.strip()}%"
+        stmt = stmt.where(or_(Job.title.ilike(search), Job.company.ilike(search), Job.description.ilike(search)))
+    if only_new:
+        stmt = stmt.where(~Job.application.has())
+    stmt = stmt.order_by(Job.compatibility.desc() if sort == "Compatibilidade" else Job.created_at.desc()).limit(limit)
+    return [job_dict(j) for j in db.scalars(stmt).unique().all()]
+
+
+@app.post("/api/jobs")
+def create_job(payload: JobCreate, db: Session = Depends(get_db)):
+    url = payload.url.strip()
+    if not url:
+        raise HTTPException(400, "Informe o link original da vaga.")
+    item = payload.model_dump()
+    item.update({"source": "Manual", "source_id": None, "published_at": payload.published_at})
+    count = save_jobs([item])
+    existing = db.scalar(select(Job).where(Job.url == url))
+    if not existing:
+        raise HTTPException(400, "Não foi possível salvar a vaga.")
+    if count == 0:
+        return {"message": "Link já cadastrado.", "job": job_dict(existing)}
+    db.refresh(existing)
+    return {"message": "Vaga salva com sucesso.", "job": job_dict(existing)}
+
+
+@app.post("/api/jobs/collect")
+def collect_jobs(payload: dict, db: Session = Depends(get_db)):
+    names = payload.get("sources") or list(SOURCES.keys())
+    invalid = [n for n in names if n not in SOURCES]
+    if invalid:
+        raise HTTPException(400, f"Fontes desconhecidas: {', '.join(invalid)}")
+
+    try:
+        limit = int(payload.get("limit", 80))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "O limite deve ser um número entre 1 e 80.")
+
+    if limit < 1 or limit > 80:
+        raise HTTPException(400, "O limite deve ser um número entre 1 e 80.")
+
+    items, errors = collect_selected(names)
+    result = collect_and_save_ranked(items, limit)
+
+    return {
+        "received": len(items),
+        "saved": result["saved"],
+        "duplicates": result["duplicates"],
+        "eligible": result["eligible"],
+        "limit": result["limit"],
+        "highest_compatibility": result["highest_compatibility"],
+        "errors": errors,
+    }
+
+
+@app.patch("/api/jobs/{job_id}/favorite")
+def toggle_favorite(job_id: int, db: Session = Depends(get_db)):
+    job = db.get(Job, job_id)
+    if not job:
+        raise HTTPException(404, "Vaga não encontrada.")
+    job.is_favorite = not job.is_favorite
+    db.commit()
+    return {"id": job.id, "is_favorite": job.is_favorite}
+
+
+@app.post("/api/jobs/{job_id}/apply")
+def apply_to_job(job_id: int, db: Session = Depends(get_db)):
+    job = db.scalar(select(Job).options(joinedload(Job.application)).where(Job.id == job_id))
+    if not job:
+        raise HTTPException(404, "Vaga não encontrada.")
+    if job.application:
+        return {"message": "Esta vaga já está nas suas candidaturas.", "application_id": job.application.id}
+    application = Application(job_id=job.id, status="Candidatura enviada", applied_at=date.today())
+    db.add(application); db.commit(); db.refresh(application)
+    return {"message": "Candidatura registrada.", "application_id": application.id}
+
+
+@app.get("/api/applications")
+def list_applications(db: Session = Depends(get_db)):
+    apps = db.scalars(select(Application).options(joinedload(Application.job)).order_by(Application.updated_at.desc())).unique().all()
+    return [{
+        "id": a.id, "job_id": a.job_id, "status": a.status,
+        "applied_at": a.applied_at.isoformat() if a.applied_at else None,
+        "deadline": a.deadline.isoformat() if a.deadline else None,
+        "recruiter": a.recruiter or "", "notes": a.notes or "",
+        "updated_at": a.updated_at.isoformat() if a.updated_at else None,
+        "job": job_dict(a.job, with_application=False),
+    } for a in apps]
+
+
+@app.put("/api/applications/{application_id}")
+def update_application(application_id: int, payload: ApplicationUpdate, db: Session = Depends(get_db)):
+    application = db.get(Application, application_id)
+    if not application:
+        raise HTTPException(404, "Candidatura não encontrada.")
+    if payload.status not in STATUSES:
+        raise HTTPException(400, "Etapa de candidatura inválida.")
+    for key, value in payload.model_dump().items():
+        setattr(application, key, value)
+    db.commit(); db.refresh(application)
+    return {"message": "Candidatura atualizada."}
+
+
+@app.get("/api/tasks")
+def list_tasks(view: str = "Pendentes", db: Session = Depends(get_db)):
+    stmt = select(Task).options(joinedload(Task.job)).order_by(Task.due_date, Task.id.desc())
+    if view == "Pendentes": stmt = stmt.where(Task.status != "Concluída")
+    elif view == "Concluídas": stmt = stmt.where(Task.status == "Concluída")
+    elif view == "Vencidas": stmt = stmt.where(Task.status != "Concluída", Task.due_date < date.today())
+    return [task_dict(t) for t in db.scalars(stmt).unique().all()]
+
+
+@app.post("/api/tasks")
+def new_task(payload: TaskCreate, db: Session = Depends(get_db)):
+    if payload.job_id is not None and not db.get(Job, payload.job_id):
+        raise HTTPException(404, "Vaga associada não encontrada.")
+    task = create_task(db, payload.title, payload.description, payload.due_date, payload.priority, payload.job_id, payload.notify)
+    return {"message": "Tarefa criada.", "task": task_dict(task)}
+
+
+@app.put("/api/tasks/{task_id}")
+def edit_task(task_id: int, payload: TaskUpdate, db: Session = Depends(get_db)):
+    task = db.scalar(select(Task).options(joinedload(Task.job)).where(Task.id == task_id))
+    if not task: raise HTTPException(404, "Tarefa não encontrada.")
+    task.title = payload.title; task.description = payload.description
+    task.due_date = payload.due_date; task.priority = payload.priority
+    task.status = payload.status; task.notify = payload.notify
+    task.completed_at = datetime.utcnow() if payload.status == "Concluída" else None
+    db.commit(); db.refresh(task)
+    return {"message": "Tarefa atualizada.", "task": task_dict(task)}
+
+
+@app.patch("/api/tasks/{task_id}/complete")
+def finish_task(task_id: int, db: Session = Depends(get_db)):
+    task = db.get(Task, task_id)
+    if not task: raise HTTPException(404, "Tarefa não encontrada.")
+    complete_task(db, task)
+    return {"message": "Tarefa concluída."}
+
+
+@app.delete("/api/tasks/{task_id}")
+def remove_task(task_id: int, db: Session = Depends(get_db)):
+    task = db.get(Task, task_id)
+    if not task: raise HTTPException(404, "Tarefa não encontrada.")
+    db.delete(task); db.commit()
+    return {"message": "Tarefa excluída."}
+
+
+@app.get("/api/profile")
+def read_profile(db: Session = Depends(get_db)):
+    return profile_dict(get_profile(db))
+
+
+@app.put("/api/profile")
+def update_profile(payload: ProfileUpdate, db: Session = Depends(get_db)):
+    p = get_profile(db)
+    for key, value in payload.model_dump().items():
+        if key.startswith("weight_"):
+            value = max(0, min(100, value))
+        setattr(p, key, value)
+    db.commit()
+    refresh_scores(db)
+    db.refresh(p)
+    return {"message": "Perfil salvo e compatibilidades recalculadas.", "profile": profile_dict(p)}
+
+
+@app.get("/api/notifications")
+def notification_history(db: Session = Depends(get_db)):
+    logs = db.scalars(select(NotificationLog).order_by(NotificationLog.created_at.desc()).limit(20)).all()
+    return [{"id": x.id, "created_at": x.created_at.isoformat() if x.created_at else None,
+             "status": x.status, "detail": x.detail} for x in logs]
+
+
+@app.post("/api/notifications/send")
+def send_notifications(db: Session = Depends(get_db)):
+    if not (settings.smtp_ready and settings.smtp_username and settings.smtp_password):
+        raise HTTPException(400, "Configure as variáveis SMTP no arquivo .env antes de enviar lembretes.")
+    result = send_daily_reminder(db)
+    return {"result": result}
