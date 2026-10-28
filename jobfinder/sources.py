@@ -1,4 +1,3 @@
-
 """Public job feeds. Source availability and terms can change; failures are isolated."""
 
 import hashlib
@@ -368,6 +367,42 @@ SOURCES = {
     "OkEmprego": fetch_okemprego,
     "Nerdin": fetch_nerdin,
 }
+
+
+# Capacidades reais de cada plataforma. "search_api" = coleta automática implementada;
+# "apply_api" = há API autorizada de candidatura (nenhuma das fontes abaixo oferece uma).
+SOURCE_INFO = {
+    "Remotive": {"mode": "api", "search_api": True, "apply_api": False,
+                 "note": "API pública de vagas remotas. Candidatura é feita no site original."},
+    "Arbeitnow": {"mode": "api", "search_api": True, "apply_api": False,
+                  "note": "API pública (vagas majoritariamente na Europa). Candidatura no site original."},
+    "OkEmprego": {"mode": "api", "search_api": True, "apply_api": False,
+                  "note": "API de vagas do Brasil. Candidatura no site original."},
+    "Nerdin": {"mode": "html", "search_api": True, "apply_api": False,
+               "note": "Leitura da página pública de vagas de estágio/júnior. Pode quebrar se o layout mudar."},
+    "Indeed": {"mode": "link_only", "search_api": False, "apply_api": False,
+               "note": "Sem API pública de busca/candidatura (só parceiros aprovados) e os termos proíbem "
+                       "raspagem. Use os links de busca e cadastre a vaga manualmente."},
+    "Vagas.com": {"mode": "link_only", "search_api": False, "apply_api": False,
+                  "note": "Não há API pública documentada. Use os links de busca e cadastre a vaga manualmente; "
+                          "a candidatura é feita no site, com seu login."},
+}
+
+LINK_ONLY_SOURCES = [name for name, info in SOURCE_INFO.items() if info["mode"] == "link_only"]
+
+
+def external_search_links(terms=None):
+    """Links para abrir no navegador (nada é raspado). O Vagas.com só recebe o link do site: o formato
+    de URL de busca não foi verificado, então o termo é exibido para você digitar na busca do site."""
+    from urllib.parse import quote_plus
+
+    terms = [t for t in (terms or ["estágio desenvolvimento de software", "desenvolvedor júnior"]) if t]
+    links = []
+    for term in terms:
+        links.append({"source": "Indeed", "query": term,
+                      "url": f"https://br.indeed.com/jobs?q={quote_plus(term)}"})
+        links.append({"source": "Vagas.com", "query": term, "url": "https://www.vagas.com.br/"})
+    return links
 
 
 def collect_selected(names):

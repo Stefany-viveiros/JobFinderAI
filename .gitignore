@@ -6,3 +6,12 @@ __pycache__/
 data/
 frontend/node_modules/
 frontend/dist/
+# Backups/rascunhos e documentos pessoais: nunca publicar
+*.bak
+curriculo*
+curriculum*
+cv.*
+cv_*
+*.pdf
+*.docx
+*.local.json

@@ -28,6 +28,30 @@ O projeto evoluiu de uma interface construída com Streamlit para uma arquitetur
 - Registro de datas, informações de recrutadores e anotações.
 - Indicadores de acompanhamento, incluindo vagas, candidaturas, entrevistas e novas oportunidades.
 
+### Agente de candidaturas
+Fluxo: **buscar → normalizar → eliminar duplicatas → filtrar estágio/júnior de tecnologia → avaliar compatibilidade → preparar → (aprovar) → enviar → registrar o resultado real**.
+
+- Página **Agente**: ativar/desativar envio automático, exigir aprovação antes de cada envio, limite diário e compatibilidade mínima.
+- **Duplicatas**: por URL normalizada (sem rastreio, fragmento ou `/` final) e por título + empresa entre fontes diferentes.
+- **Filtro**: só vagas de estágio ou júnior cuja área (definida pelo título) seja tecnologia são salvas; as demais são contadas como "fora do perfil".
+- **Histórico**: cada tentativa fica em `application_attempts` com status `prepared`, `awaiting_approval`, `manual_required`, `sent`, `failed` ou `cancelled`.
+- **Integridade**: uma candidatura só é `sent` quando o servidor SMTP aceitou a mensagem ou quando **você** confirma ("Já enviei"). Preparar o texto ou abrir o site nunca conta como envio. Falhas ficam como `failed` com o erro.
+- **Envio automático**: hoje só existe por **e-mail**, e apenas quando a descrição da vaga publica um endereço de contato e o SMTP está configurado. Nas demais, o agente prepara o texto e a vaga fica em "Finalizar manualmente" (abra o link, envie no site e confirme).
+- O texto da candidatura usa **somente** o que você preencheu no perfil (nome, curso, tecnologias que aparecem na vaga, projetos, experiência). Com o perfil incompleto, o agente coleta vagas mas não prepara candidaturas.
+- Execução agendada (opcional): `python -m jobfinder.agent_runner` (usa as configurações salvas).
+
+### Fontes de vagas
+| Fonte | Coleta | Candidatura automática |
+|---|---|---|
+| Remotive | API pública | Não (site original) |
+| Arbeitnow | API pública | Não (site original) |
+| OkEmprego | API | Não (site original) |
+| Nerdin | Leitura da página pública (pode quebrar se o layout mudar) | Não (site original) |
+| Indeed | **Sem integração**: não há API pública de busca/candidatura e os termos proíbem raspagem | Não |
+| Vagas.com | **Sem integração**: não há API pública documentada | Não |
+
+Para Indeed e Vagas.com a página Agente mostra links de busca; ao achar uma vaga, use **Adicionar manualmente**. Nenhuma proteção (CAPTCHA, login) é contornada.
+
 ### Organização de tarefas
 - Criação de tarefas relacionadas à busca de emprego.
 - Definição de prazos e prioridades.
@@ -136,11 +160,13 @@ Mantenha os dois terminais abertos enquanto estiver utilizando a aplicação.
 
 O projeto utiliza SQLite para persistência local. O banco é criado conforme a configuração do backend e utiliza o caminho definido na implementação.
 
+Ao iniciar, a API adiciona colunas/tabelas novas sem apagar dados e, se precisar alterar um banco existente, cria antes uma cópia em `data/backups/`.
+
 O diretório `data/` pode conter arquivos locais com informações pessoais. Esses arquivos não devem ser publicados no repositório. Para preservar dados existentes ao trocar de ambiente, faça uma cópia de segurança antes de qualquer migração.
 
 ## Configuração de e-mail
 
-Os lembretes por e-mail dependem das configurações de um servidor SMTP.
+Os lembretes por e-mail e o envio de candidaturas por e-mail dependem das configurações de um servidor SMTP.
 
 1. Copie o arquivo `.env.example` para `.env`.
 2. Preencha as variáveis com as credenciais fornecidas pelo seu provedor.
@@ -155,10 +181,11 @@ Os scripts de agendamento existentes estão em `scripts/instalar_agendador.ps1`.
 Com o ambiente virtual ativado, execute na raiz do projeto:
 
 ```bash
+pip install -r requirements-dev.txt
 pytest -q
 ```
 
-Os testes automatizados existentes verificam funcionalidades do projeto sem depender de chamadas reais às APIs externas ou do envio efetivo de e-mails.
+Os testes usam um banco temporário (nunca `data/jobfinder.db`), respostas simuladas das fontes e um SMTP simulado: não fazem chamadas reais às APIs externas nem enviam e-mails. Cobrem filtros e deduplicação, migração do banco, fontes, compatibilidade, preparo/envio/falha/limite diário de candidaturas, o agente e as rotas da API.
 
 ## Estrutura de diretórios
 
@@ -172,6 +199,10 @@ JobFinderAI/
 │   ├── matching.py
 │   ├── service.py
 │   ├── sources.py
+│   ├── filters.py
+│   ├── applying.py
+│   ├── agent.py
+│   ├── agent_runner.py
 │   └── mailer.py
 ├── frontend/
 │   ├── src/
@@ -191,6 +222,9 @@ JobFinderAI/
 O arquivo `jobfinder/app.py` mantém a interface Streamlit anterior como referência. Para executar a versão React, utilize a API `jobfinder.api:app` e o frontend com Vite.
 
 ## Limitações conhecidas
+
+- Nenhuma das fontes integradas oferece API de candidatura; o envio automático só ocorre por e-mail quando a vaga publica um contato.
+- A coleta das fontes depende de serviços externos e não é coberta por testes contra os sites reais.
 
 - A pontuação de compatibilidade é uma heurística explicável e não representa uma previsão de contratação.
 - A disponibilidade e a qualidade dos resultados dependem das fontes integradas e de seus dados.

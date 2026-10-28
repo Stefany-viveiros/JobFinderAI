@@ -4,6 +4,7 @@ from sqlalchemy.exc import IntegrityError
 from .db import SessionLocal
 from .models import Job, Profile, Task, Application
 from .matching import score_job
+from .filters import normalize_url, dedupe_key, classify_level
 
 STATUSES=["Nova oportunidade","Salva","Candidatura enviada","Teste técnico","Entrevista","Aprovada","Reprovada","Encerrada"]
 
@@ -22,7 +23,9 @@ def save_jobs(items):
             existing=db.scalar(select(Job).where(Job.url==url))
             if existing: continue
             score, reasons, missing=score_job(item,p)
-            j=Job(**{k:item.get(k) for k in ["source","source_id","title","company","description","location","modality","job_type","published_at","url"]}, compatibility=score, match_reasons="\n".join(reasons), missing_reasons="\n".join(missing))
+            j=Job(**{k:item.get(k) for k in ["source","source_id","title","company","description","location","modality","job_type","published_at","url"]}, compatibility=score, match_reasons="\n".join(reasons), missing_reasons="\n".join(missing),
+                  level=classify_level(item.get("title"),item.get("description"),item.get("job_type")) or "outro",
+                  dedupe_key=dedupe_key(item.get("title"),item.get("company")))
             db.add(j)
             try: db.commit(); added+=1
             except IntegrityError: db.rollback()
@@ -44,115 +47,79 @@ def complete_task(db, task):
     task.status="Concluída"; task.completed_at=datetime.utcnow(); db.commit()
 
 
-def prepare_ranked_items(items, profile, existing_urls=(), limit=80):
-    """Remove duplicatas e prioriza vagas compatíveis com o perfil."""
-    existing = {
-        str(url or "").strip().lower().rstrip("/")
-        for url in existing_urls
-        if url
-    }
-    seen = set()
-    candidates = []
-    duplicates = 0
+_JOB_FIELDS = ["source", "source_id", "title", "company", "description", "location",
+               "modality", "job_type", "published_at", "url"]
+
+
+def _rank(items, profile, existing_urls=(), existing_keys=(), limit=80, only_target=False):
+    """Deduplica (URL normalizada e título+empresa), filtra estágio/júnior e ordena por compatibilidade."""
+    from .filters import is_target_job
+
+    seen_urls = {normalize_url(u) for u in existing_urls if u}
+    seen_keys = {k for k in existing_keys if k}
+    candidates, duplicates, filtered_out = [], 0, 0
 
     for item in items:
         url = str(item.get("url") or "").strip()
-
         if not url:
             continue
-
-        key = url.lower().rstrip("/")
-
-        if key in seen or key in existing:
+        url_key = normalize_url(url)
+        title_key = dedupe_key(item.get("title"), item.get("company"))
+        if url_key in seen_urls or (title_key and title_key in seen_keys):
             duplicates += 1
             continue
-
-        seen.add(key)
-
+        if only_target and not is_target_job(item):
+            filtered_out += 1
+            continue
+        seen_urls.add(url_key)
+        if title_key:
+            seen_keys.add(title_key)
         score, reasons, missing = score_job(item, profile)
+        candidates.append({"item": item, "score": score, "reasons": reasons, "missing": missing,
+                           "dedupe_key": title_key})
 
-        candidates.append({
-            "item": item,
-            "score": score,
-            "reasons": reasons,
-            "missing": missing,
-        })
-
-    candidates.sort(
-        key=lambda candidate: (
-            candidate["score"],
-            str(candidate["item"].get("published_at") or ""),
-        ),
-        reverse=True,
-    )
-
+    candidates.sort(key=lambda c: (c["score"], str(c["item"].get("published_at") or "")), reverse=True)
     safe_limit = max(1, min(80, int(limit)))
+    return {"ranked": candidates[:safe_limit], "duplicates": duplicates,
+            "eligible": len(candidates), "filtered_out": filtered_out}
 
-    return candidates[:safe_limit], duplicates, len(candidates)
+
+def prepare_ranked_items(items, profile, existing_urls=(), limit=80, existing_keys=(), only_target=False):
+    """Remove duplicatas e prioriza vagas compatíveis com o perfil."""
+    r = _rank(items, profile, existing_urls, existing_keys, limit, only_target)
+    return r["ranked"], r["duplicates"], r["eligible"]
 
 
-def collect_and_save_ranked(items, limit=80):
-    """Classifica as vagas, elimina duplicatas e salva as melhores."""
+def collect_and_save_ranked(items, limit=80, only_target=True):
+    """Classifica, elimina duplicatas, mantém só estágio/júnior de tecnologia e salva as melhores."""
     db = SessionLocal()
-
     try:
         profile = get_profile(db)
         existing_urls = db.scalars(select(Job.url)).all()
+        existing_keys = db.scalars(select(Job.dedupe_key).where(Job.dedupe_key.is_not(None))).all()
+        r = _rank(items, profile, existing_urls, existing_keys, limit, only_target)
 
-        ranked, duplicates, eligible = prepare_ranked_items(
-            items,
-            profile,
-            existing_urls,
-            limit,
-        )
-
-        saved = 0
-        highest_compatibility = None
-
-        for candidate in ranked:
+        saved, duplicates, highest = 0, r["duplicates"], None
+        for candidate in r["ranked"]:
             item = candidate["item"]
-
-            job = Job(
-                **{
-                    key: item.get(key)
-                    for key in [
-                        "source",
-                        "source_id",
-                        "title",
-                        "company",
-                        "description",
-                        "location",
-                        "modality",
-                        "job_type",
-                        "published_at",
-                        "url",
-                    ]
-                },
-                compatibility=candidate["score"],
-                match_reasons="\n".join(candidate["reasons"]),
-                missing_reasons="\n".join(candidate["missing"]),
-            )
-
+            job = Job(**{k: item.get(k) for k in _JOB_FIELDS},
+                      compatibility=candidate["score"],
+                      match_reasons="\n".join(candidate["reasons"]),
+                      missing_reasons="\n".join(candidate["missing"]),
+                      level=classify_level(item.get("title"), item.get("description"), item.get("job_type")) or "outro",
+                      dedupe_key=candidate["dedupe_key"])
             db.add(job)
-
             try:
                 db.commit()
                 saved += 1
-
-                if highest_compatibility is None:
-                    highest_compatibility = candidate["score"]
-
+                if highest is None:
+                    highest = candidate["score"]
             except IntegrityError:
                 db.rollback()
                 duplicates += 1
 
-        return {
-            "saved": saved,
-            "duplicates": duplicates,
-            "eligible": eligible,
-            "limit": max(1, min(80, int(limit))),
-            "highest_compatibility": highest_compatibility,
-        }
-
+        return {"saved": saved, "duplicates": duplicates, "eligible": r["eligible"],
+                "filtered_out": r["filtered_out"], "limit": max(1, min(80, int(limit))),
+                "highest_compatibility": highest}
     finally:
         db.close()

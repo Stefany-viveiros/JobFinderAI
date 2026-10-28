@@ -1,17 +1,83 @@
+import os
+import sqlite3
+from datetime import datetime
 from pathlib import Path
-from sqlalchemy import create_engine
+
+from dotenv import load_dotenv
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
+
+load_dotenv()
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
-DATA_DIR.mkdir(exist_ok=True)
-DB_URL = f"sqlite:///{(DATA_DIR / 'jobfinder.db').as_posix()}"
+# JOBFINDER_DB_PATH permite isolar o banco (usado nos testes).
+DB_PATH = Path(os.getenv("JOBFINDER_DB_PATH") or (DATA_DIR / "jobfinder.db"))
+DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+DB_URL = f"sqlite:///{DB_PATH.as_posix()}"
 engine = create_engine(DB_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+
 
 class Base(DeclarativeBase):
     pass
 
+
+# (tabela, coluna, DDL). create_all() não altera tabelas existentes, então
+# colunas novas são adicionadas aqui sem apagar nenhum dado.
+MIGRATIONS = [
+    ("jobs", "dedupe_key", "VARCHAR(400)"),
+    ("jobs", "level", "VARCHAR(20) DEFAULT ''"),
+]
+
+
+def backup_database() -> Path | None:
+    """Cópia consistente do banco antes de qualquer migração estrutural."""
+    if not DB_PATH.exists() or DB_PATH.stat().st_size == 0:
+        return None
+    target_dir = DB_PATH.parent / "backups"
+    target_dir.mkdir(exist_ok=True)
+    target = target_dir / f"{DB_PATH.stem}-{datetime.now():%Y%m%d-%H%M%S}.db"
+    src = sqlite3.connect(DB_PATH)
+    dst = sqlite3.connect(target)
+    try:
+        src.backup(dst)
+    finally:
+        dst.close()
+        src.close()
+    return target
+
+
+def _missing_columns():
+    insp = inspect(engine)
+    missing = []
+    for table, column, ddl in MIGRATIONS:
+        if insp.has_table(table) and column not in {c["name"] for c in insp.get_columns(table)}:
+            missing.append((table, column, ddl))
+    return missing
+
+
 def init_db():
     from . import models  # noqa: F401
+    from .filters import dedupe_key, classify_level
+
+    missing = _missing_columns()
+    if missing:
+        backup_database()
+        with engine.begin() as conn:
+            for table, column, ddl in missing:
+                conn.execute(text(f'ALTER TABLE "{table}" ADD COLUMN "{column}" {ddl}'))
     Base.metadata.create_all(bind=engine)
+    with engine.begin() as conn:
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_jobs_dedupe_key ON jobs (dedupe_key)"))
+        # Preenche metadados das vagas já existentes (sem tocar nos demais campos).
+        rows = conn.execute(text(
+            "SELECT id, title, company, description, job_type FROM jobs "
+            "WHERE level IS NULL OR level = '' OR dedupe_key IS NULL"
+        )).all()
+        for row in rows:
+            conn.execute(
+                text("UPDATE jobs SET level=:level, dedupe_key=:key WHERE id=:id"),
+                {"id": row.id, "level": classify_level(row.title, row.description, row.job_type) or "outro",
+                 "key": dedupe_key(row.title, row.company)},
+            )

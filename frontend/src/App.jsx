@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import AgentPage, { AttemptPill } from './AgentPage.jsx'
 import {
-  Activity, ArrowDownRight, ArrowUpRight, Bell, BriefcaseBusiness, CalendarDays,
+  Activity, Bot, ArrowDownRight, ArrowUpRight, Bell, BriefcaseBusiness, CalendarDays,
   Check, CheckCircle2, ChevronDown, CircleHelp, Clock3, ExternalLink, Filter,
   LayoutDashboard, LoaderCircle, LogOut, Menu, Plus, Search, Send, Settings,
   SlidersHorizontal, Sparkles, Star, Target, Trash2, UserRound, X, Zap,
@@ -50,7 +51,14 @@ function App() {
   const [editingTask, setEditingTask] = useState(null)
   const [editingApp, setEditingApp] = useState(null)
   const [appForm, setAppForm] = useState({})
-  const [sourceSelection, setSourceSelection] = useState(['Remotive', 'Arbeitnow'])
+  const [sourceSelection, setSourceSelection] = useState(['Remotive', 'Arbeitnow', 'OkEmprego', 'Nerdin'])
+  const [levelFilter, setLevelFilter] = useState('alvo')
+  const [sourceFilter, setSourceFilter] = useState('Todas')
+  const [attemptFilter, setAttemptFilter] = useState('todas')
+  const [attempts, setAttempts] = useState([])
+  const [agentSettings, setAgentSettings] = useState({ auto_apply_enabled: false, require_approval: true, daily_limit: 5, min_score: 60, profile_ready: true })
+  const [agentRun, setAgentRun] = useState(null)
+  const [sourcesInfo, setSourcesInfo] = useState(null)
 
   const notify = useCallback((message, type = 'success') => {
     setNotice({ message, type })
@@ -60,21 +68,24 @@ function App() {
 
   const loadDashboard = useCallback(async () => setDashboard(await api('/dashboard')), [])
   const loadJobs = useCallback(async () => {
-    const params = new URLSearchParams({ q: query, min_score: String(minScore), favorite: String(favoriteOnly), modality, sort, limit: '250' })
+    const params = new URLSearchParams({ q: query, min_score: String(minScore), favorite: String(favoriteOnly), modality, sort, level: levelFilter, source: sourceFilter, attempt_status: attemptFilter, limit: '250' })
     setJobs(await api(`/jobs?${params}`))
-  }, [query, minScore, favoriteOnly, modality, sort])
+  }, [query, minScore, favoriteOnly, modality, sort, levelFilter, sourceFilter, attemptFilter])
   const loadApps = useCallback(async () => setApplications(await api('/applications')), [])
   const loadTasks = useCallback(async (view = taskView) => setTasks(await api(`/tasks?view=${encodeURIComponent(view)}`)), [taskView])
   const loadProfile = useCallback(async () => setProfile({ ...emptyProfile, ...(await api('/profile')) }), [])
+  const loadAttempts = useCallback(async () => setAttempts(await api('/attempts')), [])
+  const loadAgent = useCallback(async () => setAgentSettings(await api('/agent/settings')), [])
+  const loadSources = useCallback(async () => setSourcesInfo(await api('/sources')), [])
   const loadNotifications = useCallback(async () => setNotificationHistory(await api('/notifications')), [])
 
   const refreshCurrent = useCallback(async () => {
     setLoading(true)
     try {
-      await Promise.all([loadDashboard(), loadJobs(), loadApps(), loadTasks(), loadProfile(), loadNotifications()])
+      await Promise.all([loadDashboard(), loadJobs(), loadApps(), loadTasks(), loadProfile(), loadNotifications(), loadAttempts(), loadAgent(), loadSources()])
     } catch (e) { notify(`Não foi possível conectar à API: ${e.message}. Confira se o backend está iniciado.`, 'error') }
     finally { setLoading(false) }
-  }, [loadDashboard, loadJobs, loadApps, loadTasks, loadProfile, loadNotifications, notify])
+  }, [loadDashboard, loadJobs, loadApps, loadTasks, loadProfile, loadNotifications, loadAttempts, loadAgent, loadSources, notify])
 
   useEffect(() => { refreshCurrent() }, [])
   useEffect(() => { if (page === 'Buscar vagas') loadJobs().catch(e => notify(e.message, 'error')) }, [page, loadJobs])
@@ -83,7 +94,7 @@ function App() {
   const changePage = (next) => { setPage(next); setSidebarOpen(false) }
   const doAction = async (action, success) => {
     setBusy(true)
-    try { await action(); await Promise.all([loadDashboard(), loadJobs(), loadApps(), loadTasks(), loadNotifications()]); notify(success) }
+    try { await action(); await Promise.all([loadDashboard(), loadJobs(), loadApps(), loadTasks(), loadNotifications(), loadAttempts(), loadAgent()]); notify(success) }
     catch (e) { notify(e.message, 'error') }
     finally { setBusy(false) }
   }
@@ -92,9 +103,9 @@ function App() {
     setBusy(true)
     try {
       const result = await api('/jobs/collect', { method: 'POST', body: JSON.stringify({ sources: sourceSelection, limit: 80 }) })
-      await Promise.all([loadDashboard(), loadJobs(), loadApps(), loadTasks(), loadNotifications()])
+      await Promise.all([loadDashboard(), loadJobs(), loadApps(), loadTasks(), loadNotifications(), loadAttempts()])
       const warnings = result.errors?.length ? ` Avisos: ${result.errors.join(' · ')}` : ''
-      notify(`Busca concluída: ${result.received} registros recebidos, ${result.eligible ?? 0} oportunidades novas elegíveis, ${result.saved} salvas e ${result.duplicates ?? 0} duplicadas.${warnings}`, result.errors?.length ? 'error' : 'success')
+      notify(`Busca concluída: ${result.received} registros recebidos, ${result.filtered_out ?? 0} fora do perfil (nível/área), ${result.eligible ?? 0} elegíveis, ${result.saved} salvas e ${result.duplicates ?? 0} duplicadas.${warnings}`, result.errors?.length ? 'error' : 'success')
     } catch (e) { notify(e.message, 'error') }
     finally { setBusy(false) }
   }
@@ -111,7 +122,31 @@ function App() {
     await doAction(() => api(`/jobs/${id}/favorite`, { method: 'PATCH' }), 'Favoritos atualizados.')
   }
   async function applyJob(id) {
-    await doAction(() => api(`/jobs/${id}/apply`, { method: 'POST' }), 'Candidatura registrada.')
+    if (!window.confirm('Registrar como ENVIADA? Confirme apenas se você já enviou a candidatura no site da vaga.')) return
+    await doAction(() => api(`/jobs/${id}/apply`, { method: 'POST', body: JSON.stringify({ confirmed: true }) }), 'Candidatura registrada como enviada (confirmação manual).')
+  }
+  async function prepareJob(id) {
+    await doAction(async () => { const r = await api(`/jobs/${id}/prepare`, { method: 'POST' }); notify(r.message) }, 'Candidatura preparada.')
+  }
+  async function saveAgentSettings() {
+    await doAction(async () => { const r = await api('/agent/settings', { method: 'PUT', body: JSON.stringify({ auto_apply_enabled: agentSettings.auto_apply_enabled, require_approval: agentSettings.require_approval, daily_limit: agentSettings.daily_limit, min_score: agentSettings.min_score }) }); setAgentSettings(r.settings) }, 'Configurações do agente salvas.')
+  }
+  async function runAgent() {
+    setBusy(true)
+    try {
+      const r = await api('/agent/run', { method: 'POST', body: JSON.stringify({ sources: sourceSelection, limit: 80 }) })
+      setAgentRun(r)
+      await Promise.all([loadDashboard(), loadJobs(), loadAttempts(), loadAgent()])
+      notify(r.message || `Agente concluído: ${r.saved} vagas salvas, ${r.awaiting_approval + r.manual_required + r.prepared} candidaturas preparadas, ${r.sent} enviadas, ${r.failed} falhas.`, r.errors?.length || r.failed ? 'error' : 'success')
+    } catch (e) { notify(e.message, 'error') } finally { setBusy(false) }
+  }
+  async function approveAttempt(id) {
+    setBusy(true)
+    try { const r = await api(`/attempts/${id}/approve`, { method: 'POST' }); await Promise.all([loadDashboard(), loadJobs(), loadAttempts(), loadAgent(), loadApps()]); notify(r.message, r.attempt.status === 'sent' ? 'success' : 'error') }
+    catch (e) { notify(e.message, 'error') } finally { setBusy(false) }
+  }
+  async function cancelAttempt(id) {
+    await doAction(() => api(`/attempts/${id}/cancel`, { method: 'POST' }), 'Candidatura cancelada.')
   }
   async function saveTask(e) {
     e.preventDefault()
@@ -154,7 +189,7 @@ function App() {
   }
 
   const metrics = dashboard?.metrics || {}
-  const pageLabel = { Dashboard: 'Visão geral', 'Buscar vagas': 'Buscar oportunidades', Candidaturas: 'Minhas candidaturas', Tarefas: 'Tarefas e prazos', 'Perfil e configurações': 'Perfil profissional' }[page]
+  const pageLabel = { Dashboard: 'Visão geral', 'Buscar vagas': 'Buscar oportunidades', Candidaturas: 'Minhas candidaturas', Agente: 'Agente de candidaturas', Tarefas: 'Tarefas e prazos', 'Perfil e configurações': 'Perfil profissional' }[page]
   const todayText = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })
 
   return <div className="app-shell">
@@ -164,6 +199,7 @@ function App() {
       <nav className="nav-list">
         <NavItem icon={LayoutDashboard} text="Visão geral" active={page === 'Dashboard'} onClick={() => changePage('Dashboard')} />
         <NavItem icon={Search} text="Buscar vagas" active={page === 'Buscar vagas'} onClick={() => changePage('Buscar vagas')} count={metrics.new_jobs} />
+        <NavItem icon={Bot} text="Agente" active={page === 'Agente'} onClick={() => changePage('Agente')} count={metrics.awaiting_approval} />
         <NavItem icon={BriefcaseBusiness} text="Candidaturas" active={page === 'Candidaturas'} onClick={() => changePage('Candidaturas')} />
         <NavItem icon={CheckCircle2} text="Tarefas" active={page === 'Tarefas'} onClick={() => changePage('Tarefas')} count={metrics.pending_tasks} />
       </nav>
@@ -180,7 +216,8 @@ function App() {
       <div className="content-wrap">
         {loading && !dashboard ? <div className="loading-panel"><LoaderCircle className="spin" size={25}/><span>Carregando seu workspace...</span></div> : <>
           {page === 'Dashboard' && <DashboardPage dashboard={dashboard} jobs={jobs} onNavigate={changePage} onCreateTask={() => { setEditingTask(null); setTaskForm(emptyTask); setModal('task') }} onFavorite={toggleFavorite} />}
-          {page === 'Buscar vagas' && <JobsPage jobs={jobs} query={query} setQuery={setQuery} minScore={minScore} setMinScore={setMinScore} favoriteOnly={favoriteOnly} setFavoriteOnly={setFavoriteOnly} modality={modality} setModality={setModality} sort={sort} setSort={setSort} onCollect={collectJobs} sourceSelection={sourceSelection} setSourceSelection={setSourceSelection} busy={busy} onAdd={() => setModal('job')} onFavorite={toggleFavorite} onApply={applyJob} />}
+          {page === 'Buscar vagas' && <JobsPage jobs={jobs} query={query} setQuery={setQuery} minScore={minScore} setMinScore={setMinScore} favoriteOnly={favoriteOnly} setFavoriteOnly={setFavoriteOnly} modality={modality} setModality={setModality} sort={sort} setSort={setSort} onCollect={collectJobs} sourceSelection={sourceSelection} setSourceSelection={setSourceSelection} busy={busy} onAdd={() => setModal('job')} onFavorite={toggleFavorite} onApply={applyJob} onPrepare={prepareJob} levelFilter={levelFilter} setLevelFilter={setLevelFilter} sourceFilter={sourceFilter} setSourceFilter={setSourceFilter} attemptFilter={attemptFilter} setAttemptFilter={setAttemptFilter} />}
+          {page === 'Agente' && <AgentPage settings={agentSettings} setSettings={setAgentSettings} onSave={saveAgentSettings} onRun={runAgent} runResult={agentRun} attempts={attempts} sources={sourcesInfo} onApprove={approveAttempt} onCancel={cancelAttempt} onConfirmManual={applyJob} busy={busy} />}
           {page === 'Candidaturas' && <ApplicationsPage applications={applications} onEdit={(a) => { setEditingApp(a); setAppForm({ status: a.status, applied_at: a.applied_at || '', deadline: a.deadline || '', recruiter: a.recruiter || '', notes: a.notes || '' }); setModal('application') }} />}
           {page === 'Tarefas' && <TasksPage tasks={tasks} view={taskView} setView={setTaskView} onCreate={() => { setEditingTask(null); setTaskForm(emptyTask); setModal('task') }} onEdit={(t) => { setEditingTask(t); setTaskForm({ title: t.title, description: t.description || '', due_date: t.due_date || '', priority: t.priority, notify: t.notify }); setModal('task') }} onComplete={completeTask} onDelete={deleteTask} onSendReminders={sendReminders} smtpReady={Boolean(dashboard?.smtp_ready)} notificationHistory={notificationHistory} busy={busy} />}
           {page === 'Perfil e configurações' && <ProfilePage profile={profile} setProfile={setProfile} onSave={saveProfile} busy={busy} />}
@@ -207,38 +244,38 @@ function DashboardPage({ dashboard, jobs, onNavigate, onCreateTask, onFavorite }
   return <>
     <SectionHeading eyebrow="SEU PAINEL DE CARREIRA" title={`Olá${dashboard?.profile_name ? `, ${dashboard.profile_name.split(' ')[0]}` : ''} 👋`} subtitle="Um lugar para encontrar oportunidades e avançar na sua carreira." ><button className="btn btn-secondary" onClick={onCreateTask}><Plus size={16}/> Nova tarefa</button><button className="btn btn-primary" onClick={() => onNavigate('Buscar vagas')}><Search size={16}/> Explorar vagas</button></SectionHeading>
     <div className="welcome-strip"><div className="welcome-symbol"><Sparkles size={22}/></div><div className="welcome-copy"><strong>Pequenos passos constroem grandes oportunidades.</strong><span>Revise suas candidaturas e priorize a próxima ação do dia.</span></div><div className="welcome-side"><span>COMPATIBILIDADE MÉDIA</span><strong>{m.average_compatibility || 0}%</strong></div></div>
-    <div className="metric-grid"><MetricCard label="Vagas encontradas" value={m.total_jobs} hint="na sua biblioteca" icon={BriefcaseBusiness} tone="violet"/><MetricCard label="Novas oportunidades" value={m.new_jobs} hint="ainda sem candidatura" icon={Zap} tone="blue"/><MetricCard label="Vagas favoritas" value={m.favorites} hint="salvas para rever" icon={Star} tone="amber"/><MetricCard label="Candidaturas" value={m.applications} hint={`${m.interviews || 0} entrevista(s)`} icon={Send} tone="green"/></div>
+    <div className="metric-grid five"><MetricCard label="Vagas encontradas" value={m.total_jobs} hint={`${m.target_jobs || 0} estágio/júnior`} icon={BriefcaseBusiness} tone="violet"/><MetricCard label="Vagas compatíveis" value={m.compatible_jobs} hint={`estágio/júnior ≥ ${m.min_score ?? 60}%`} icon={Target} tone="blue"/><MetricCard label="Candidaturas enviadas" value={m.sent_applications} hint={`${m.sent_automatically || 0} automática(s) · ${m.sent_manually_confirmed || 0} confirmada(s) por você`} icon={Send} tone="green"/><MetricCard label="Candidaturas pendentes" value={m.pending_applications} hint={`${m.awaiting_approval || 0} aguardando aprovação`} icon={Clock3} tone="amber"/><MetricCard label="Candidaturas com falha" value={m.failed_applications} hint="envio recusado ou com erro" icon={Activity} tone="violet"/></div>
     <div className="dashboard-grid"><section className="panel recent-panel"><div className="panel-heading"><div><h2>Oportunidades recentes</h2><p>Vagas adicionadas à sua busca</p></div><button className="text-action" onClick={() => onNavigate('Buscar vagas')}>Ver todas <ArrowUpRight size={15}/></button></div>{topJobs.length ? <div className="recent-list">{topJobs.map(j => <JobRow key={j.id} job={j} compact onFavorite={() => onFavorite(j.id)}/>)}</div> : <EmptyState icon={Search} title="Sua próxima oportunidade começa aqui" text="Busque novas vagas ou adicione uma oportunidade manualmente." action={<button className="btn btn-primary btn-sm" onClick={() => onNavigate('Buscar vagas')}>Buscar vagas</button>}/>}</section>
       <section className="panel upcoming-panel"><div className="panel-heading"><div><h2>Próximos prazos</h2><p>O que precisa da sua atenção</p></div><button className="circle-action" onClick={onCreateTask} title="Criar tarefa"><Plus size={17}/></button></div>{upcoming.length ? <div className="timeline">{upcoming.map((t, i) => <div className="timeline-item" key={t.id}><div className={`timeline-dot ${t.due_date && t.due_date < new Date().toISOString().slice(0,10) ? 'overdue' : ''}`}><CalendarDays size={14}/></div><div className="timeline-copy"><strong>{t.title}</strong><span>{datePt(t.due_date)} · {t.priority}</span>{t.due_date && t.due_date < new Date().toISOString().slice(0,10) && <em>Prazo vencido</em>}</div></div>)}</div> : <EmptyState icon={CalendarDays} title="Agenda livre por enquanto" text="Crie uma tarefa para organizar seu próximo passo." action={<button className="text-action" onClick={onCreateTask}>Adicionar tarefa <Plus size={14}/></button>}/>}<div className="task-summary"><div><span className="summary-icon"><Activity size={16}/></span><span>Tarefas pendentes</span></div><strong>{m.pending_tasks || 0}</strong></div>{(m.overdue_tasks || 0) > 0 && <div className="overdue-note"><Clock3 size={15}/>{m.overdue_tasks} tarefa(s) vencida(s)</div>}<button className="panel-footer-link" onClick={() => onNavigate('Tarefas')}>Abrir minhas tarefas <ArrowUpRight size={15}/></button></section>
     </div>
     <div className="bottom-insight"><div className="insight-icon"><Target size={20}/></div><div><strong>Seu perfil influencia a compatibilidade</strong><span>Adicione tecnologias, habilidades e áreas de interesse para calcular uma pontuação mais útil.</span></div><button className="text-action" onClick={() => onNavigate('Perfil e configurações')}>Revisar perfil <ArrowUpRight size={15}/></button></div>
   </>
 }
-function JobsPage({ jobs, query, setQuery, minScore, setMinScore, favoriteOnly, setFavoriteOnly, modality, setModality, sort, setSort, onCollect, sourceSelection, setSourceSelection, busy, onAdd, onFavorite, onApply }) {
+function JobsPage({ jobs, query, setQuery, minScore, setMinScore, favoriteOnly, setFavoriteOnly, modality, setModality, sort, setSort, onCollect, sourceSelection, setSourceSelection, busy, onAdd, onFavorite, onApply, onPrepare, levelFilter, setLevelFilter, sourceFilter, setSourceFilter, attemptFilter, setAttemptFilter }) {
   const [showSources, setShowSources] = useState(false)
   return <><SectionHeading eyebrow="DESCUBRA SEU PRÓXIMO PASSO" title="Buscar oportunidades" subtitle="Encontre vagas, compare a compatibilidade e organize suas candidaturas."><button className="btn btn-secondary" onClick={onAdd}><Plus size={16}/> Adicionar manualmente</button><button className="btn btn-primary" onClick={onCollect} disabled={busy}><span className={busy ? 'spin-wrap' : ''}>{busy ? <LoaderCircle size={16}/> : <Search size={16}/>}</span> Buscar agora</button></SectionHeading>
     <div className="search-banner"><div className="search-banner-icon"><Sparkles size={19}/></div><div><strong>Encontre vagas alinhadas ao seu perfil</strong><span>Busque nas fontes públicas configuradas ou use os filtros para refinar sua lista.</span></div><button className="banner-tune" onClick={() => setShowSources(!showSources)}><SlidersHorizontal size={15}/> Fontes</button></div>
-    {showSources && <div className="source-picker">{['Remotive', 'Arbeitnow'].map(s => <label key={s} className="check-row"><input type="checkbox" checked={sourceSelection.includes(s)} onChange={e => setSourceSelection(e.target.checked ? [...sourceSelection, s] : sourceSelection.filter(x => x !== s))}/>{s}</label>)}<span className="muted small">As APIs são globais e não garantem vagas de estágio no Brasil.</span></div>}
-    <div className="panel job-filter-panel"><div className="search-input-wrap"><Search size={18}/><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Buscar por cargo, empresa ou tecnologia..."/><kbd>Buscar</kbd></div><div className="filter-row"><label className="filter-control"><span>Compatibilidade mínima</span><div className="range-field"><input type="range" min="0" max="100" step="5" value={minScore} onChange={e => setMinScore(Number(e.target.value))}/><strong>{minScore}%</strong></div></label><label className="filter-control"><span>Modalidade</span><select value={modality} onChange={e => setModality(e.target.value)}><option>Todas</option><option>Remoto</option><option>Híbrido</option><option>Presencial</option></select></label><label className="filter-control"><span>Ordenar por</span><select value={sort} onChange={e => setSort(e.target.value)}><option>Compatibilidade</option><option>Mais recentes</option></select></label><label className="favorite-filter"><input type="checkbox" checked={favoriteOnly} onChange={e => setFavoriteOnly(e.target.checked)}/><Star size={16}/> Favoritas</label></div></div>
+    {showSources && <div className="source-picker">{['Remotive', 'Arbeitnow', 'OkEmprego', 'Nerdin'].map(s => <label key={s} className="check-row"><input type="checkbox" checked={sourceSelection.includes(s)} onChange={e => setSourceSelection(e.target.checked ? [...sourceSelection, s] : sourceSelection.filter(x => x !== s))}/>{s}</label>)}<span className="muted small">Indeed e Vagas.com não permitem coleta automática: veja os links na página Agente. Só vagas de estágio/júnior em tecnologia são salvas.</span></div>}
+    <div className="panel job-filter-panel"><div className="search-input-wrap"><Search size={18}/><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Buscar por cargo, empresa ou tecnologia..."/><kbd>Buscar</kbd></div><div className="filter-row"><label className="filter-control"><span>Compatibilidade mínima</span><div className="range-field"><input type="range" min="0" max="100" step="5" value={minScore} onChange={e => setMinScore(Number(e.target.value))}/><strong>{minScore}%</strong></div></label><label className="filter-control"><span>Modalidade</span><select value={modality} onChange={e => setModality(e.target.value)}><option>Todas</option><option>Remoto</option><option>Híbrido</option><option>Presencial</option></select></label><label className="filter-control"><span>Ordenar por</span><select value={sort} onChange={e => setSort(e.target.value)}><option>Compatibilidade</option><option>Mais recentes</option></select></label><label className="filter-control"><span>Nível</span><select value={levelFilter} onChange={e => setLevelFilter(e.target.value)}><option value="alvo">Estágio + Júnior (tecnologia)</option><option value="estagio">Estágio</option><option value="junior">Júnior</option><option value="todas">Todas as vagas salvas</option></select></label><label className="filter-control"><span>Fonte</span><select value={sourceFilter} onChange={e => setSourceFilter(e.target.value)}>{['Todas', 'Remotive', 'Arbeitnow', 'OkEmprego', 'Nerdin', 'Manual'].map(x => <option key={x}>{x}</option>)}</select></label><label className="filter-control"><span>Candidatura</span><select value={attemptFilter} onChange={e => setAttemptFilter(e.target.value)}><option value="todas">Todas</option><option value="sem_tentativa">Sem candidatura</option><option value="awaiting_approval">Aguardando aprovação</option><option value="manual_required">Finalizar manualmente</option><option value="sent">Enviadas</option><option value="failed">Com falha</option></select></label><label className="favorite-filter"><input type="checkbox" checked={favoriteOnly} onChange={e => setFavoriteOnly(e.target.checked)}/><Star size={16}/> Favoritas</label></div></div>
     <div className="list-toolbar"><div><strong>{jobs.length}</strong> oportunidade(s) encontradas <span>· Até 250 resultados</span></div><div className="toolbar-status"><span className="status-dot"/>Pontuação explicável</div></div>
-    {jobs.length ? <div className="job-results">{jobs.map(j => <JobCard key={j.id} job={j} onFavorite={() => onFavorite(j.id)} onApply={() => onApply(j.id)}/>)}</div> : <div className="panel"><EmptyState icon={Filter} title="Nenhuma vaga com esses filtros" text="Tente reduzir a compatibilidade mínima ou remover algum filtro." action={<button className="btn btn-secondary btn-sm" onClick={() => {setQuery('');setMinScore(0);setFavoriteOnly(false);setModality('Todas')}}>Limpar filtros</button>}/></div>}
+    {jobs.length ? <div className="job-results">{jobs.map(j => <JobCard key={j.id} job={j} onFavorite={() => onFavorite(j.id)} onApply={() => onApply(j.id)} onPrepare={() => onPrepare(j.id)}/>)}</div> : <div className="panel"><EmptyState icon={Filter} title="Nenhuma vaga com esses filtros" text="Tente reduzir a compatibilidade mínima ou remover algum filtro." action={<button className="btn btn-secondary btn-sm" onClick={() => {setQuery('');setMinScore(0);setFavoriteOnly(false);setModality('Todas');setLevelFilter('todas');setSourceFilter('Todas');setAttemptFilter('todas')}}>Limpar filtros</button>}/></div>}
   </>
 }
 function JobRow({ job, compact = false, onFavorite }) { return <div className="recent-job"><div className="company-avatar">{initials(job.company)}</div><div className="recent-job-copy"><strong>{job.title}</strong><span>{job.company} <i>·</i> {job.location || 'Local não informado'}</span></div><div className={`score-mini ${job.compatibility >= 70 ? 'score-good' : job.compatibility >= 40 ? 'score-mid' : 'score-low'}`}>{job.compatibility}%</div>{onFavorite && <button className={`tiny-star ${job.is_favorite ? 'selected' : ''}`} onClick={onFavorite} title="Favoritar"><Star size={16} fill={job.is_favorite ? 'currentColor' : 'none'}/></button>}</div> }
-function JobCard({ job, onFavorite, onApply }) {
+function JobCard({ job, onFavorite, onApply, onPrepare }) {
   const [expanded, setExpanded] = useState(false)
   const reasons = (job.match_reasons || '').split('\n').filter(Boolean)
   const missing = (job.missing_reasons || '').split('\n').filter(Boolean)
-  return <article className="job-card"><div className="job-card-main"><div className="company-avatar job-company-avatar">{initials(job.company)}</div><div className="job-title-wrap"><div className="job-title-line"><h3>{job.title}</h3>{job.is_favorite && <span className="saved-badge"><Star size={12} fill="currentColor"/> Salva</span>}</div><div className="job-company-line">{job.company} <span>·</span> {job.location || 'Local não informado'}</div><div className="job-tags"><span><BriefcaseBusiness size={13}/>{job.job_type || 'Tipo não informado'}</span><span><Activity size={13}/>{job.modality || 'Modalidade não informada'}</span><span className="source-tag">{job.source}</span></div></div><div className="compatibility-block"><div className={`compatibility-ring ${job.compatibility >= 70 ? 'ring-good' : job.compatibility >= 40 ? 'ring-mid' : 'ring-low'}`}><strong>{job.compatibility}%</strong></div><span>compatibilidade</span></div></div>
+  return <article className="job-card"><div className="job-card-main"><div className="company-avatar job-company-avatar">{initials(job.company)}</div><div className="job-title-wrap"><div className="job-title-line"><h3>{job.title}</h3>{job.is_favorite && <span className="saved-badge"><Star size={12} fill="currentColor"/> Salva</span>}</div><div className="job-company-line">{job.company} <span>·</span> {job.location || 'Local não informado'}</div><div className="job-tags"><span><BriefcaseBusiness size={13}/>{job.job_type || 'Tipo não informado'}</span><span><Activity size={13}/>{job.modality || 'Modalidade não informada'}</span><span className="source-tag">{job.source}</span>{job.level && job.level !== 'outro' && <span className="level-tag">{job.level === 'estagio' ? 'Estágio' : 'Júnior'}</span>}{job.latest_attempt && <AttemptPill status={job.latest_attempt.status}/>}</div></div><div className="compatibility-block"><div className={`compatibility-ring ${job.compatibility >= 70 ? 'ring-good' : job.compatibility >= 40 ? 'ring-mid' : 'ring-low'}`}><strong>{job.compatibility}%</strong></div><span>compatibilidade</span></div></div>
     <div className="score-track"><div style={{ width: `${job.compatibility}%` }} className={job.compatibility >= 70 ? 'fill-good' : job.compatibility >= 40 ? 'fill-mid' : 'fill-low'}/></div>
     {expanded && <div className="job-details"><div className="description-text">{job.description ? <p>{job.description.replace(/<[^>]*>/g, ' ').slice(0, 6000)}</p> : <p className="muted">Descrição não fornecida pela fonte.</p>}</div><div className="match-columns"><div><strong className="match-title good"><CheckCircle2 size={15}/> Critérios encontrados</strong>{reasons.length ? <ul>{reasons.map((r,i) => <li key={i}>{r}</li>)}</ul> : <p className="muted small">Nenhum critério identificado.</p>}</div><div><strong className="match-title warn"><CircleHelp size={15}/> Pontos a verificar</strong>{missing.length ? <ul>{missing.map((r,i) => <li key={i}>{r}</li>)}</ul> : <p className="muted small">Nenhum alerta calculado.</p>}</div></div></div>}
-    <div className="job-card-actions"><button className="text-action" onClick={() => setExpanded(!expanded)}>{expanded ? 'Ocultar detalhes' : 'Ver detalhes'} <ChevronDown size={14} className={expanded ? 'rotate-180' : ''}/></button><div className="job-action-right"><button className={`icon-btn favorite-action ${job.is_favorite ? 'selected' : ''}`} onClick={onFavorite} title={job.is_favorite ? 'Remover dos favoritos' : 'Favoritar'}><Star size={17} fill={job.is_favorite ? 'currentColor' : 'none'}/></button>{job.application ? <span className="application-status"><Check size={14}/>{job.application.status}</span> : <button className="btn btn-secondary btn-sm" onClick={onApply}><Plus size={14}/> Registrar candidatura</button>}<a href={job.url} target="_blank" rel="noreferrer" className="btn btn-primary btn-sm">Abrir vaga <ExternalLink size={14}/></a></div></div>
+    <div className="job-card-actions"><button className="text-action" onClick={() => setExpanded(!expanded)}>{expanded ? 'Ocultar detalhes' : 'Ver detalhes'} <ChevronDown size={14} className={expanded ? 'rotate-180' : ''}/></button><div className="job-action-right"><button className={`icon-btn favorite-action ${job.is_favorite ? 'selected' : ''}`} onClick={onFavorite} title={job.is_favorite ? 'Remover dos favoritos' : 'Favoritar'}><Star size={17} fill={job.is_favorite ? 'currentColor' : 'none'}/></button>{job.application ? <span className="application-status"><Check size={14}/>{job.application.status}</span> : <>{!job.latest_attempt && <button className="btn btn-secondary btn-sm" onClick={onPrepare}><Bot size={14}/> Preparar candidatura</button>}<button className="btn btn-secondary btn-sm" onClick={onApply} title="Use somente depois de enviar no site da vaga"><Check size={14}/> Já enviei</button></>}<a href={job.url} target="_blank" rel="noreferrer" className="btn btn-primary btn-sm">Abrir vaga <ExternalLink size={14}/></a></div></div>
   </article>
 }
 function ApplicationsPage({ applications, onEdit }) {
   const [filter, setFilter] = useState('Todas')
   const shown = useMemo(() => applications.filter(a => filter === 'Todas' || a.status === filter), [applications, filter])
-  return <><SectionHeading eyebrow="ACOMPANHE SEU PROGRESSO" title="Minhas candidaturas" subtitle="Registre cada etapa para não perder o fio da sua busca."/><div className="app-stats-row"><div className="app-stat"><span>Total de candidaturas</span><strong>{applications.length}</strong></div><div className="app-stat"><span>Entrevistas</span><strong>{applications.filter(a => a.status === 'Entrevista').length}</strong></div><div className="app-stat"><span>Em andamento</span><strong>{applications.filter(a => !['Aprovada','Reprovada','Encerrada'].includes(a.status)).length}</strong></div><div className="app-stat"><span>Aprovadas</span><strong>{applications.filter(a => a.status === 'Aprovada').length}</strong></div></div><div className="panel applications-panel"><div className="panel-heading"><div><h2>Pipeline de candidaturas</h2><p>Atualize a etapa sempre que houver uma novidade</p></div><select className="compact-select" value={filter} onChange={e => setFilter(e.target.value)}><option>Todas</option>{STATUS.map(s => <option key={s}>{s}</option>)}</select></div>{shown.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Oportunidade</th><th>Etapa</th><th>Data de envio</th><th>Prazo</th><th></th></tr></thead><tbody>{shown.map(a => <tr key={a.id}><td><div className="table-job"><div className="company-avatar small-avatar">{initials(a.job?.company)}</div><div><strong>{a.job?.title}</strong><span>{a.job?.company}</span></div></div></td><td><StatusPill status={a.status}/></td><td>{datePt(a.applied_at)}</td><td>{datePt(a.deadline)}</td><td><button className="btn btn-secondary btn-sm" onClick={() => onEdit(a)}>Atualizar <ChevronDown size={13}/></button></td></tr>)}</tbody></table></div> : <EmptyState icon={BriefcaseBusiness} title="Sua jornada começa com uma candidatura" text="Na tela Buscar vagas, use “Registrar candidatura” para acompanhar as oportunidades por aqui."/>}</div></>
+  return <><SectionHeading eyebrow="ACOMPANHE SEU PROGRESSO" title="Minhas candidaturas" subtitle="Registre cada etapa para não perder o fio da sua busca."/><div className="app-stats-row"><div className="app-stat"><span>Total de candidaturas</span><strong>{applications.length}</strong></div><div className="app-stat"><span>Entrevistas</span><strong>{applications.filter(a => a.status === 'Entrevista').length}</strong></div><div className="app-stat"><span>Em andamento</span><strong>{applications.filter(a => !['Aprovada','Reprovada','Encerrada'].includes(a.status)).length}</strong></div><div className="app-stat"><span>Aprovadas</span><strong>{applications.filter(a => a.status === 'Aprovada').length}</strong></div></div><div className="panel applications-panel"><div className="panel-heading"><div><h2>Pipeline de candidaturas</h2><p>Atualize a etapa sempre que houver uma novidade</p></div><select className="compact-select" value={filter} onChange={e => setFilter(e.target.value)}><option>Todas</option>{STATUS.map(s => <option key={s}>{s}</option>)}</select></div>{shown.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Oportunidade</th><th>Etapa</th><th>Data de envio</th><th>Prazo</th><th></th></tr></thead><tbody>{shown.map(a => <tr key={a.id}><td><div className="table-job"><div className="company-avatar small-avatar">{initials(a.job?.company)}</div><div><strong>{a.job?.title}</strong><span>{a.job?.company}</span></div></div></td><td><StatusPill status={a.status}/></td><td>{datePt(a.applied_at)}</td><td>{datePt(a.deadline)}</td><td><button className="btn btn-secondary btn-sm" onClick={() => onEdit(a)}>Atualizar <ChevronDown size={13}/></button></td></tr>)}</tbody></table></div> : <EmptyState icon={BriefcaseBusiness} title="Sua jornada começa com uma candidatura" text="Candidaturas enviadas (pelo agente ou confirmadas por você) aparecem aqui para acompanhar cada etapa."/>}</div></>
 }
 function StatusPill({ status }) { const cls = status === 'Entrevista' ? 'purple' : status === 'Aprovada' ? 'green' : ['Reprovada','Encerrada'].includes(status) ? 'gray' : status === 'Teste técnico' ? 'blue' : 'amber'; return <span className={`status-pill ${cls}`}><i/>{status}</span> }
 function TasksPage({ tasks, view, setView, onCreate, onEdit, onComplete, onDelete, onSendReminders, smtpReady, notificationHistory, busy }) {

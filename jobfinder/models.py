@@ -22,6 +22,9 @@ class Job(Base):
     is_favorite: Mapped[bool] = mapped_column(Boolean, default=False)
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    dedupe_key: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    level: Mapped[str] = mapped_column(String(20), default="")  # estagio | junior | outro
+    attempts: Mapped[list["ApplicationAttempt"]] = relationship(back_populates="job", cascade="all, delete-orphan", order_by="ApplicationAttempt.id")
     application: Mapped["Application | None"] = relationship(back_populates="job", uselist=False, cascade="all, delete-orphan")
     tasks: Mapped[list["Task"]] = relationship(back_populates="job", cascade="all, delete-orphan")
 
@@ -85,3 +88,31 @@ class NotificationLog(Base):
     status: Mapped[str] = mapped_column(String(30))
     detail: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class AgentSettings(Base):
+    """Configuração singleton (id=1) do agente de candidaturas."""
+    __tablename__ = "agent_settings"
+    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    auto_apply_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    require_approval: Mapped[bool] = mapped_column(Boolean, default=True)
+    daily_limit: Mapped[int] = mapped_column(Integer, default=5)
+    min_score: Mapped[int] = mapped_column(Integer, default=60)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class ApplicationAttempt(Base):
+    """Histórico de candidaturas. 'sent' só existe quando houve envio real ou confirmação explícita do usuário."""
+    __tablename__ = "application_attempts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"))
+    # prepared | awaiting_approval | manual_required | sent | failed | cancelled
+    status: Mapped[str] = mapped_column(String(30), default="prepared")
+    channel: Mapped[str] = mapped_column(String(30), default="manual")  # email | manual | manual_confirmed
+    recipient: Mapped[str] = mapped_column(String(300), default="")
+    subject: Mapped[str] = mapped_column(String(400), default="")
+    message: Mapped[str] = mapped_column(Text, default="")
+    detail: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    job: Mapped[Job] = relationship(back_populates="attempts")
