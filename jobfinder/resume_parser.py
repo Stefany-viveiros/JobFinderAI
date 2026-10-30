@@ -78,11 +78,6 @@ def parse_resume(content: bytes, filename: str) -> dict[str, str]:
     phone = re.search(r"(?:\+?55\s*)?(?:\(?\d{2}\)?\s*)?9?\d{4}[-. ]?\d{4}", text)
     if lines and len(lines[0]) <= 90 and not re.search(r"@|https?://|\d{4}", lines[0]):
         result["name"] = lines[0]
-    if email:
-        result["keywords"] = f"E-mail: {email.group(0)}"
-    if phone:
-        result["keywords"] = (result.get("keywords", "") + f" | Telefone: {phone.group(0)}").strip(" |")
-
     found_tech = []
     lower_text = text.lower()
     for tech in TECHNOLOGIES:
