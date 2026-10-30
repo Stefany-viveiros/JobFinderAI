@@ -292,7 +292,7 @@ function ProfilePage({ profile, setProfile, onSave, busy }) {
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file) return
-    if (!/\\.(pdf|docx)$/i.test(file.name)) { setImportError('Selecione um arquivo PDF ou DOCX.'); return }
+    if (!/\.(pdf|docx)$/i.test(file.name)) { setImportError('Selecione um arquivo PDF ou DOCX.'); return }
     if (file.size > 5 * 1024 * 1024) { setImportError('O arquivo deve ter no máximo 5 MB.'); return }
     const form = new FormData()
     form.append('file', file)
