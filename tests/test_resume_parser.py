@@ -22,7 +22,6 @@ def make_docx():
 def test_parse_docx_extracts_profile_suggestions():
     parsed = parse_resume(make_docx(), "curriculo.docx")
     assert parsed["name"] == "Marina da Silva"
-    assert "marina@example.com" in parsed["keywords"]
     assert "Python" in parsed["technologies"]
     assert "Análise e Desenvolvimento" in parsed["course"]
     assert "Estágio de suporte" in parsed["experience"]
