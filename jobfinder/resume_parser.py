@@ -15,7 +15,7 @@ TECHNOLOGIES = [
     "React", "Angular", "Vue", "Node.js", "FastAPI", "Django", "Flask",
     "HTML5", "HTML", "CSS3", "CSS", "SQL", "MySQL", "PostgreSQL", "SQLite",
     "MongoDB", "Git", "GitHub", "Docker", "AWS", "Azure", "Google Cloud",
-    "Power BI", "Excel", " pandas", "TensorFlow", "PyTorch", "Linux",
+    "Power BI", "Excel", "TensorFlow", "PyTorch", "Linux",
 ]
 
 
