@@ -8,6 +8,13 @@ A aplicação evoluiu de uma interface construída com Streamlit para uma arquit
 
 > **Estado atual:** o projeto está em desenvolvimento e sua execução documentada é local. Ainda não há uma versão pública hospedada para acesso pela internet. A arquitetura de avaliação objetiva de código está documentada como próxima evolução, mas o runner isolado ainda não foi implementado.
 
+
+## Ambiente de demonstração na nuvem
+
+A configuração inicial para Render + Neon está em [render.yaml](render.yaml). O passo a passo está em [docs/DEPLOYMENT_DEMO.md](docs/DEPLOYMENT_DEMO.md).
+
+**Atenção:** o ambiente público é configurado como somente leitura (`DEMO_READ_ONLY=true`). Não desative essa proteção nem conecte dados pessoais reais enquanto a aplicação não tiver autenticação e autorização por usuário. O banco Neon deve ser novo e exclusivo para a demonstração.
+
 ## Funcionalidades
 
 ### Busca e organização de vagas
