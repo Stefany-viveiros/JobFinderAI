@@ -84,7 +84,7 @@ def profile_technology_terms(profile):
 def _mandatory_technologies(description):
     """Identifica tecnologias próximas a marcadores explícitos de obrigatoriedade."""
     required = set()
-    for sentence in re.split(r"[.!?;\\n]+", normalize(description)):
+    for sentence in re.split(r"[.!?;\n]+", normalize(description)):
         mandatory = list(MANDATORY_MARKERS.finditer(sentence))
         if not mandatory:
             continue
