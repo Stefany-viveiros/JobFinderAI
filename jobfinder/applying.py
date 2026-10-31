@@ -36,7 +36,13 @@ def profile_gaps(profile) -> list[str]:
         gaps.append("nome")
     if not ((profile.technologies or "").strip() or (profile.skills or "").strip()):
         gaps.append("tecnologias ou habilidades")
-    if not any((getattr(profile, f, "") or "").strip() for f in ("course", "experience", "projects")):
+    has_structured_context = any(
+        getattr(profile, field, None)
+        for field in ("educations", "experiences", "portfolio_projects")
+    )
+    if not has_structured_context and not any(
+        (getattr(profile, f, "") or "").strip() for f in ("course", "experience", "projects")
+    ):
         gaps.append("curso, experiência ou projetos")
     return gaps
 
@@ -60,28 +66,72 @@ def matched_profile_terms(job, profile) -> list[str]:
 
 def build_cover_letter(job, profile) -> tuple[str, str]:
     name = profile.name.strip()
+    education_items = list(getattr(profile, "educations", []) or [])
     study = []
-    if profile.course:
-        study.append(profile.course.strip())
-    if profile.institution:
-        study.append(f"na {profile.institution.strip()}")
-    if profile.academic_stage:
-        study.append(f"({profile.academic_stage.strip()})")
+    if education_items:
+        for item in education_items:
+            course = (getattr(item, "course", "") or "").strip()
+            institution = (getattr(item, "institution", "") or "").strip()
+            status = (getattr(item, "status", "") or "").strip()
+            if course:
+                detail = course + (f" — {institution}" if institution else "")
+                if status:
+                    detail += f" ({status.lower()})"
+                study.append(detail)
+    elif profile.course:
+        detail = profile.course.strip()
+        if profile.institution:
+            detail += f" — {profile.institution.strip()}"
+        if profile.academic_stage:
+            detail += f" ({profile.academic_stage.strip()})"
+        study.append(detail)
+
     lines = ["Prezados(as),", ""]
     intro = f"Meu nome é {name}"
     if study:
-        intro += f" e estou cursando {' '.join(study)}" if profile.course else f" ({' '.join(study)})"
+        intro += " e minha formação acadêmica inclui " + "; ".join(study)
     intro += f". Tenho interesse na vaga de {job.title}"
     if job.company and "não informada" not in job.company.lower():
         intro += f" na {job.company}"
     lines.append(intro + ".")
+
     terms = matched_profile_terms(job, profile)
     if terms:
         lines += ["", "Tenho conhecimentos em " + ", ".join(terms) + ", citados na descrição da vaga."]
-    if (profile.projects or "").strip():
-        lines += ["", "Projetos: " + _clip(profile.projects)]
-    if (profile.experience or "").strip():
+
+    experience_items = list(getattr(profile, "experiences", []) or [])
+    if experience_items:
+        summaries = []
+        for item in experience_items:
+            role = (getattr(item, "role", "") or "").strip()
+            company = (getattr(item, "company", "") or "").strip()
+            description = _clip(getattr(item, "description", ""), 350)
+            heading = " — ".join(part for part in (role, company) if part)
+            summary = ": ".join(part for part in (heading, description) if part)
+            if summary:
+                summaries.append(summary)
+        if summaries:
+            lines += ["", "Experiências profissionais: " + "; ".join(summaries[:3])]
+    elif (profile.experience or "").strip():
         lines += ["", "Experiência: " + _clip(profile.experience)]
+
+    project_items = list(getattr(profile, "portfolio_projects", []) or [])
+    if project_items:
+        summaries = []
+        for item in project_items:
+            project_name = (getattr(item, "name", "") or "").strip()
+            description = _clip(getattr(item, "description", ""), 300)
+            technologies = (getattr(item, "technologies", "") or "").strip()
+            detail = " — ".join(part for part in (project_name, description) if part)
+            if technologies:
+                detail += f" (tecnologias: {technologies})"
+            if detail.strip():
+                summaries.append(detail)
+        if summaries:
+            lines += ["", "Projetos acadêmicos e pessoais: " + "; ".join(summaries[:3])]
+    elif (profile.projects or "").strip():
+        lines += ["", "Projetos: " + _clip(profile.projects)]
+
     lines += ["", "Agradeço a atenção e fico à disposição para uma conversa.", "", "Atenciosamente,", name]
     return f"Candidatura: {job.title} - {name}", "\n".join(lines)
 
