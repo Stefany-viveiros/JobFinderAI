@@ -14,8 +14,16 @@ DATA_DIR = ROOT / "data"
 # JOBFINDER_DB_PATH permite isolar o banco (usado nos testes).
 DB_PATH = Path(os.getenv("JOBFINDER_DB_PATH") or (DATA_DIR / "jobfinder.db"))
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-DB_URL = f"sqlite:///{DB_PATH.as_posix()}"
-engine = create_engine(DB_URL, connect_args={"check_same_thread": False})
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg://", 1)
+elif DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://", 1)
+DB_URL = DATABASE_URL or f"sqlite:///{DB_PATH.as_posix()}"
+engine_options = {"pool_pre_ping": True}
+if DB_URL.startswith("sqlite:"):
+    engine_options["connect_args"] = {"check_same_thread": False}
+engine = create_engine(DB_URL, **engine_options)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 
@@ -63,7 +71,8 @@ def init_db():
 
     missing = _missing_columns()
     if missing:
-        backup_database()
+        if engine.dialect.name == "sqlite":
+            backup_database()
         with engine.begin() as conn:
             for table, column, ddl in missing:
                 conn.execute(text(f'ALTER TABLE "{table}" ADD COLUMN "{column}" {ddl}'))
