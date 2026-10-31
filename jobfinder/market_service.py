@@ -224,6 +224,26 @@ def build_profile_gap(db: Session, *, run_id: int | None = None) -> dict:
         .order_by(MarketSkillMetric.rank)
     ).all()
 
+    # Desafios enviados entram como evidência de autoavaliação, nunca como
+    # validação independente. Mantém a tentativa mais recente por competência.
+    from .models import SkillAssessmentAttempt
+    assessment_rows = db.scalars(
+        select(SkillAssessmentAttempt)
+        .where(SkillAssessmentAttempt.status == "self_reviewed")
+        .order_by(
+            SkillAssessmentAttempt.submitted_at.desc(),
+            SkillAssessmentAttempt.id.desc(),
+        )
+    ).all()
+    assessments_by_skill = {}
+    for attempt in assessment_rows:
+        current = assessments_by_skill.setdefault(
+            attempt.skill_id, {"attempts_count": 0, "latest": None}
+        )
+        current["attempts_count"] += 1
+        if current["latest"] is None:
+            current["latest"] = attempt
+
     # Cada campo é analisado separadamente para preservar a origem da evidência.
     profile_texts = {
         "experiencia": " ".join(
@@ -291,9 +311,14 @@ def build_profile_gap(db: Session, *, run_id: int | None = None) -> dict:
             {"source": source, "label": priorities[source][1]}
             for source in priorities if skill.canonical_name in detected[source]
         ]
+        assessment_data = assessments_by_skill.get(skill.id)
+        latest_assessment = assessment_data["latest"] if assessment_data else None
         if evidence:
             status = evidence[0]["source"]
             status_label = priorities[status][1]
+        elif latest_assessment is not None:
+            status = "autoavaliada"
+            status_label = "Desafio prático autoavaliado"
         else:
             status = "nao_identificada"
             status_label = "Não identificada no perfil"
@@ -303,10 +328,23 @@ def build_profile_gap(db: Session, *, run_id: int | None = None) -> dict:
             recommendation = "Entre as mais citadas neste recorte; avaliar prioridade"
         elif status == "nao_identificada":
             recommendation = "Acompanhar a demanda"
+        elif status == "autoavaliada":
+            recommendation = "Revise o feedback e fortaleça a evidência prática"
         elif status in {"em_estudo", "curso_concluido", "certificacao", "formacao", "projeto"}:
             recommendation = "Considerar prática em projeto"
         else:
             recommendation = "Fortalecer e demonstrar com evidências"
+
+        assessment_summary = None
+        if latest_assessment is not None:
+            assessment_summary = {
+                "attempts_count": assessment_data["attempts_count"],
+                "score": latest_assessment.score,
+                "submitted_at": latest_assessment.submitted_at.isoformat() if latest_assessment.submitted_at else None,
+                "evidence_url": latest_assessment.evidence_url,
+                "feedback": latest_assessment.feedback,
+                "result_kind": "autoavaliação",
+            }
 
         items.append({
             "skill_id": skill.id,
@@ -317,6 +355,7 @@ def build_profile_gap(db: Session, *, run_id: int | None = None) -> dict:
             "status": status,
             "status_label": status_label,
             "evidence": evidence,
+            "assessment": assessment_summary,
             "recommendation": recommendation,
         })
 
@@ -330,7 +369,7 @@ def build_profile_gap(db: Session, *, run_id: int | None = None) -> dict:
         "total_skills": len(items),
         "counts": counts,
         "items": items,
-        "notice": "O cruzamento identifica menções textuais no perfil. Curso, certificação ou projeto não comprovam domínio; ausência de menção não significa falta de conhecimento.",
+        "notice": "O cruzamento identifica menções textuais no perfil. Desafios são autoavaliações e não comprovam domínio de forma independente. Curso, certificação ou projeto também não comprovam domínio; ausência de menção não significa falta de conhecimento.",
     }
 
 
