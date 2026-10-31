@@ -86,3 +86,12 @@ def test_cancel_sent_attempt_is_refused(db, ready_profile, smtp_on):
     attempt = applying.send_attempt(db, applying.prepare_attempt(db, make_job(db), ready_profile))
     with pytest.raises(applying.ApplyError):
         applying.cancel_attempt(db, attempt)
+
+
+def test_profile_projects_can_supply_technical_evidence(db, ready_profile):
+    ready_profile.technologies = ""
+    ready_profile.skills = ""
+    ready_profile.projects = "BS Construtora: projeto Full Stack com React, FastAPI e Python."
+    db.commit()
+    gaps = applying.profile_gaps(ready_profile)
+    assert not any("tecnologias" in gap for gap in gaps)
