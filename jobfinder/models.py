@@ -64,7 +64,7 @@ class Job(Base):
     dedupe_key: Mapped[str | None] = mapped_column(String(400), nullable=True)
     level: Mapped[str] = mapped_column(String(20), default="")  # estagio | junior | outro
     attempts: Mapped[list["ApplicationAttempt"]] = relationship(back_populates="job", cascade="all, delete-orphan", order_by="ApplicationAttempt.id")
-    application: Mapped["Application | None"] = relationship(back_populates="job", uselist=False, cascade="all, delete-orphan")
+    applications: Mapped[list["Application"]] = relationship(back_populates="job", cascade="all, delete-orphan")
     tasks: Mapped[list["Task"]] = relationship(back_populates="job", cascade="all, delete-orphan")
 
 class JobMatch(Base):
@@ -85,7 +85,7 @@ class JobMatch(Base):
 class Profile(Base):
     __tablename__ = "profile"
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, unique=True, index=True)
-    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(150), default="")
     course: Mapped[str] = mapped_column(String(200), default="")
     institution: Mapped[str] = mapped_column(String(200), default="")
@@ -194,7 +194,7 @@ class Application(Base):
     recruiter: Mapped[str] = mapped_column(String(200), default="")
     notes: Mapped[str] = mapped_column(Text, default="")
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    job: Mapped[Job] = relationship(back_populates="application")
+    job: Mapped[Job] = relationship(back_populates="applications")
 
 class Task(Base):
     __tablename__ = "tasks"
@@ -228,7 +228,7 @@ class AgentSettings(Base):
     """Configuração individual do agente por usuário."""
     __tablename__ = "agent_settings"
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, unique=True, index=True)
-    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    id: Mapped[int] = mapped_column(primary_key=True)
     auto_apply_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     require_approval: Mapped[bool] = mapped_column(Boolean, default=True)
     daily_limit: Mapped[int] = mapped_column(Integer, default=5)
@@ -239,6 +239,7 @@ class ApplicationAttempt(Base):
     """Histórico de candidaturas. 'sent' só existe quando houve envio real ou confirmação explícita do usuário."""
     __tablename__ = "application_attempts"
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"))
     # prepared | awaiting_approval | manual_required | sent | failed | cancelled
     status: Mapped[str] = mapped_column(String(30), default="prepared")
@@ -369,6 +370,7 @@ class SkillAssessmentAttempt(Base):
     """Registro de desafio prático e autoavaliação de uma competência."""
     __tablename__ = "skill_assessment_attempts"
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     skill_id: Mapped[int] = mapped_column(ForeignKey("market_skills.id"), index=True)
     plan_item_id: Mapped[int | None] = mapped_column(
         ForeignKey("development_plan_items.id", ondelete="SET NULL"), nullable=True, index=True
