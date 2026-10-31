@@ -35,7 +35,7 @@ export default function AgentPage({ settings, setSettings, onSave, onRun, runRes
       <label className="check-row"><input type="checkbox" checked={!!settings.require_approval} onChange={e => set('require_approval', e.target.checked)}/> Exigir minha aprovação antes de cada envio</label>
       <div className="form-grid">
         <label className="field"><span>Limite diário de envios automáticos</span><input type="number" min="0" max="50" value={settings.daily_limit ?? 5} onChange={e => set('daily_limit', Number(e.target.value))}/></label>
-        <label className="field"><span>Compatibilidade mínima para preparar (%)</span><input type="number" min="0" max="100" value={settings.min_score ?? 60} onChange={e => set('min_score', Number(e.target.value))}/></label>
+        <label className="field"><span>Compatibilidade mínima para preparar (%)</span><input type="number" min="0" max="100" value={settings.min_score ?? 80} onChange={e => set('min_score', Number(e.target.value))}/></label>
       </div>
       <div className="modal-actions"><button className="btn btn-secondary" onClick={onSave} disabled={busy}><Check size={15}/> Salvar configurações</button></div>
     </div>
@@ -49,13 +49,13 @@ export default function AgentPage({ settings, setSettings, onSave, onRun, runRes
       <div className="panel-heading"><div><h2>Fila e histórico de candidaturas</h2><p>Revise o texto antes de aprovar</p></div>
         <select className="compact-select" value={filter} onChange={e => setFilter(e.target.value)}><option value="todas">Todas</option>{Object.entries(ATTEMPT_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
       {shown.length ? <div className="attempt-list">{shown.map(a => {
-        const belowMinimum = Number(a.job.compatibility || 0) < Number(settings.min_score ?? 60)
+        const belowMinimum = Number(a.job.compatibility || 0) < Number(settings.min_score ?? 80)
         const mandatoryUnconfirmed = (a.job.missing_reasons || '').includes('Requisito(s) obrigatório(s) não identificado(s)')
         return <article className="attempt-card" key={a.id}>
         <div className="attempt-head"><div><strong>{a.job.title}</strong><span>{a.job.company} · {a.job.source} · {a.job.compatibility}%</span></div><AttemptPill status={a.status}/></div>
         <div className="attempt-meta"><span>{CHANNEL_LABEL[a.channel] || a.channel}</span>{a.recipient && <span>Para: {a.recipient}</span>}<span>{a.updated_at ? new Date(a.updated_at + 'Z').toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : ''}</span></div>
         {a.detail && <p className="attempt-detail">{a.detail}</p>}
-        {belowMinimum && <p className="attempt-detail">A compatibilidade atual ({a.job.compatibility}%) está abaixo do mínimo configurado ({settings.min_score ?? 60}%). Revise antes de continuar.</p>}
+        {belowMinimum && <p className="attempt-detail">A compatibilidade atual ({a.job.compatibility}%) está abaixo do mínimo configurado ({settings.min_score ?? 80}%). Revise antes de continuar.</p>}
         {mandatoryUnconfirmed && <p className="attempt-detail">Há requisito(s) obrigatório(s) ainda não identificados no perfil. A aprovação por e-mail fica bloqueada até a revisão.</p>}
         {open === a.id && <pre className="attempt-message">{a.subject}{'\n\n'}{a.message}</pre>}
         <div className="attempt-actions">
