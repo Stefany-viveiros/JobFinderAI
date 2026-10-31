@@ -210,3 +210,65 @@ def test_development_plan_prevents_duplicate_active_goal_for_same_skill(db):
         assert False, "Era esperado impedir uma meta ativa duplicada."
     except ValueError as exc:
         assert "Já existe uma meta ativa" in str(exc)
+
+
+def test_skill_assessment_generates_challenge_and_records_self_review(db):
+    from jobfinder.market_service import (
+        create_skill_assessment, submit_skill_assessment, list_skill_assessments,
+    )
+    skill = Skill(canonical_name="Python", category="language", aliases_json="[]", active=True)
+    db.add(skill)
+    db.commit()
+    db.refresh(skill)
+
+    attempt = create_skill_assessment(db, skill_id=skill.id)
+    assert attempt["status"] == "draft"
+    assert "Python" in attempt["title"]
+    assert len(attempt["criteria"]) == 4
+    assert attempt["notice"].startswith("Resultado de autoavaliação")
+
+    answers = {criterion["id"]: True for criterion in attempt["criteria"]}
+    submitted = submit_skill_assessment(
+        db,
+        attempt["id"],
+        response_text="Implementei uma pequena aplicação, tratei entradas e documentei como executar.",
+        evidence_url="https://github.com/example/python-challenge",
+        rubric_answers=answers,
+    )
+    assert submitted["status"] == "self_reviewed"
+    assert submitted["score"] == 100
+    assert "autoavaliação" in submitted["result_kind"]
+    assert "não é uma certificação" in submitted["notice"]
+
+    history = list_skill_assessments(db)
+    assert history["summary"]["total"] == 1
+    assert history["summary"]["submitted"] == 1
+    assert history["summary"]["average_self_score"] == 100.0
+
+
+def test_skill_assessment_requires_all_rubric_items_and_evidence(db):
+    from jobfinder.market_service import create_skill_assessment, submit_skill_assessment
+    skill = Skill(canonical_name="SQL", category="database", aliases_json="[]", active=True)
+    db.add(skill)
+    db.commit()
+    db.refresh(skill)
+
+    attempt = create_skill_assessment(db, skill_id=skill.id)
+    try:
+        submit_skill_assessment(
+            db, attempt["id"], response_text="", evidence_url="",
+            rubric_answers={},
+        )
+        assert False, "Era esperado exigir resposta e evidência."
+    except ValueError as exc:
+        assert "Responda a todos os critérios" in str(exc)
+
+    answers = {criterion["id"]: False for criterion in attempt["criteria"]}
+    try:
+        submit_skill_assessment(
+            db, attempt["id"], response_text="", evidence_url="",
+            rubric_answers=answers,
+        )
+        assert False, "Era esperado exigir uma descrição ou link de evidência."
+    except ValueError as exc:
+        assert "Descreva sua solução" in str(exc)
