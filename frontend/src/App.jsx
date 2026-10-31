@@ -388,7 +388,7 @@ function RecordSection({ title, description, collection, records, onAdd, onChang
         <div className="record-fields">{fields.map(([name,label,placeholder,type]) => <Field key={name} label={label}>
           {type === 'textarea' ? <textarea rows="3" value={record[name] || ''} placeholder={placeholder} onChange={e => onChange(collection, index, name, e.target.value)}/> :
            type === 'checkbox' ? <input type="checkbox" checked={Boolean(record[name])} onChange={e => onChange(collection, index, name, e.target.checked)}/> :
-           <input value={record[name] || ''} placeholder={placeholder} onChange={e => onChange(fields.collection, index, name, e.target.value)}/>}
+           <input value={record[name] || ''} placeholder={placeholder} onChange={e => onChange(collection, index, name, e.target.value)}/>}
         </Field>)}</div>
       </article>
     )}
