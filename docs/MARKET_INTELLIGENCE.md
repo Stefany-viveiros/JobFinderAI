@@ -257,10 +257,12 @@ A branch agora contém o primeiro cruzamento entre o snapshot de mercado e o per
 
 Estados identificados:
 - Evidenciada em experiência profissional.
-- Evidenciada em projeto.
+- Praticada em projeto concluído.
+- Evidenciada em projeto em desenvolvimento.
 - Mencionada em curso concluído.
 - Mencionada em certificação.
-- Em estudo (curso em andamento).
+- Em estudo ou prática em andamento.
+- Mencionada na formação acadêmica.
 - Declarada no perfil.
 - Não identificada no perfil.
 
