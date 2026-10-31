@@ -7,7 +7,7 @@ from sqlalchemy import select, delete
 from sqlalchemy.orm import Session
 
 from .market import SKILL_CATALOG, extract_skills, taxonomy_version
-from .models import Job, Skill, JobSkill, JobSkillExtraction, MarketAnalysisRun, MarketSkillMetric, MarketSkillPair
+from .models import Job, Skill, JobSkill, JobSkillExtraction, MarketAnalysisRun, MarketSkillMetric, MarketSkillPair, DevelopmentPlanItem
 
 EXTRACTOR_VERSION = "dictionary-1"
 
@@ -332,3 +332,136 @@ def build_profile_gap(db: Session, *, run_id: int | None = None) -> dict:
         "items": items,
         "notice": "O cruzamento identifica menções textuais no perfil. Curso, certificação ou projeto não comprovam domínio; ausência de menção não significa falta de conhecimento.",
     }
+
+
+DEVELOPMENT_STATUSES = {"planned", "in_progress", "completed", "paused"}
+
+
+def development_item_dict(item: "DevelopmentPlanItem", skill: Skill) -> dict:
+    return {
+        "id": item.id,
+        "skill_id": skill.id,
+        "skill_name": skill.canonical_name,
+        "category": skill.category,
+        "source_run_id": item.source_run_id,
+        "title": item.title,
+        "objective": item.objective,
+        "activity": item.activity,
+        "resource_url": item.resource_url,
+        "estimated_hours": item.estimated_hours,
+        "due_date": item.due_date.isoformat() if item.due_date else None,
+        "status": item.status,
+        "progress_percent": item.progress_percent,
+        "notes": item.notes,
+        "created_at": item.created_at.isoformat() if item.created_at else None,
+        "updated_at": item.updated_at.isoformat() if item.updated_at else None,
+        "completed_at": item.completed_at.isoformat() if item.completed_at else None,
+    }
+
+
+def list_development_plan(db: Session) -> dict:
+    from .models import DevelopmentPlanItem
+    rows = db.execute(
+        select(DevelopmentPlanItem, Skill)
+        .join(Skill, Skill.id == DevelopmentPlanItem.skill_id)
+        .order_by(
+            DevelopmentPlanItem.due_date.is_(None),
+            DevelopmentPlanItem.due_date,
+            DevelopmentPlanItem.created_at.desc(),
+        )
+    ).all()
+    items = [development_item_dict(item, skill) for item, skill in rows]
+    total = len(items)
+    completed = sum(item["status"] == "completed" for item in items)
+    active = sum(item["status"] == "in_progress" for item in items)
+    hours = sum(item["estimated_hours"] for item in items)
+    return {
+        "items": items,
+        "summary": {
+            "total": total, "completed": completed, "in_progress": active,
+            "planned": sum(item["status"] == "planned" for item in items),
+            "estimated_hours": hours,
+            "completion_rate": round((completed / total) * 100, 1) if total else 0,
+        },
+    }
+
+
+def create_development_item(
+    db: Session, *, skill_id: int, run_id: int | None = None,
+    title: str | None = None, objective: str = "", activity: str = "",
+    estimated_hours: int = 4, due_date=None, resource_url: str = "",
+) -> dict:
+    from .models import DevelopmentPlanItem
+
+    skill = db.get(Skill, skill_id)
+    if skill is None or not skill.active:
+        raise ValueError("Competência não encontrada no catálogo.")
+    if run_id is not None:
+        run = db.get(MarketAnalysisRun, run_id)
+        if run is None or run.status != "completed":
+            raise ValueError("Análise de mercado não encontrada.")
+        metric_exists = db.scalar(
+            select(MarketSkillMetric.id).where(
+                MarketSkillMetric.run_id == run_id,
+                MarketSkillMetric.skill_id == skill_id,
+            )
+        )
+        if metric_exists is None:
+            raise ValueError("A competência não pertence à análise selecionada.")
+    duplicate = db.scalar(
+        select(DevelopmentPlanItem).where(
+            DevelopmentPlanItem.skill_id == skill_id,
+            DevelopmentPlanItem.status.in_({"planned", "in_progress", "paused"}),
+        ).limit(1)
+    )
+    if duplicate:
+        raise ValueError("Já existe uma meta ativa para esta competência no seu plano.")
+    category = (skill.category or "").lower()
+    if not activity:
+        if any(term in category for term in ("framework", "biblioteca", "linguagem")):
+            activity = f"Estude os fundamentos de {skill.canonical_name} e desenvolva uma pequena aplicação que demonstre seu uso."
+        elif any(term in category for term in ("banco", "database")):
+            activity = f"Modele um banco de dados simples usando {skill.canonical_name}, faça consultas e documente as decisões."
+        elif any(term in category for term in ("cloud", "infra")):
+            activity = f"Faça uma atividade prática guiada com {skill.canonical_name} e registre configuração, etapas e resultado."
+        else:
+            activity = f"Pesquise os fundamentos de {skill.canonical_name}, pratique em um cenário pequeno e registre o que conseguiu realizar."
+    item = DevelopmentPlanItem(
+        skill_id=skill_id,
+        source_run_id=run_id,
+        title=(title or f"Desenvolver {skill.canonical_name}").strip(),
+        objective=(objective or f"Construir evidência prática de contato com {skill.canonical_name}.").strip(),
+        activity=activity.strip(),
+        resource_url=resource_url.strip(),
+        estimated_hours=estimated_hours,
+        due_date=due_date,
+        status="planned",
+        progress_percent=0,
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return development_item_dict(item, skill)
+
+
+def update_development_item(db: Session, item_id: int, payload: dict) -> dict:
+    from .models import DevelopmentPlanItem
+
+    item = db.get(DevelopmentPlanItem, item_id)
+    if item is None:
+        raise ValueError("Meta de desenvolvimento não encontrada.")
+    allowed = {"status", "progress_percent", "due_date", "notes", "title", "objective", "activity", "estimated_hours", "resource_url"}
+    for key, value in payload.items():
+        if key in allowed:
+            setattr(item, key, value)
+    if item.status == "completed":
+        item.progress_percent = 100
+        item.completed_at = datetime.utcnow()
+    else:
+        item.completed_at = None
+        if item.progress_percent == 100:
+            item.progress_percent = 99
+    db.commit()
+    db.refresh(item)
+    skill = db.get(Skill, item.skill_id)
+    return development_item_dict(item, skill)
