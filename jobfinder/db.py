@@ -36,6 +36,17 @@ class Base(DeclarativeBase):
 MIGRATIONS = [
     ("jobs", "dedupe_key", "VARCHAR(400)"),
     ("jobs", "level", "VARCHAR(20) DEFAULT ''"),
+    # Colunas de propriedade começam nullable para preservar os bancos existentes.
+    # Os dados legados permanecem sem proprietário até o bootstrap administrativo
+    # seguro atribuí-los explicitamente; nenhuma conta nova os recebe por padrão.
+    ("profile", "user_id", "INTEGER REFERENCES users(id) ON DELETE CASCADE"),
+    ("applications", "user_id", "INTEGER REFERENCES users(id) ON DELETE CASCADE"),
+    ("tasks", "user_id", "INTEGER REFERENCES users(id) ON DELETE CASCADE"),
+    ("notification_log", "user_id", "INTEGER REFERENCES users(id) ON DELETE CASCADE"),
+    ("agent_settings", "user_id", "INTEGER REFERENCES users(id) ON DELETE CASCADE"),
+    ("application_attempts", "user_id", "INTEGER REFERENCES users(id) ON DELETE CASCADE"),
+    ("development_plan_items", "user_id", "INTEGER REFERENCES users(id) ON DELETE CASCADE"),
+    ("skill_assessment_attempts", "user_id", "INTEGER REFERENCES users(id) ON DELETE CASCADE"),
 ]
 
 
