@@ -55,3 +55,20 @@ def test_project_technology_counts_as_profile_evidence():
     )
     assert any("Tecnologias do perfil" in reason for reason in matched)
     assert score > 0
+
+
+def test_desirable_technology_is_not_treated_as_mandatory():
+    score, matched, missing = score_job(
+        {
+            "title": "Estágio Backend",
+            "description": "Java é desejável, mas Python é obrigatório.",
+            "location": "Brasil",
+            "modality": "Remoto",
+            "job_type": "Estágio",
+        },
+        profile(technologies="Java"),
+    )
+    requirement_notes = " ".join(missing)
+    assert score <= 49
+    assert "python" in requirement_notes
+    assert "java" not in requirement_notes
