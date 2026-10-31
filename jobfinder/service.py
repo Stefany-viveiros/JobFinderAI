@@ -8,9 +8,18 @@ from .filters import normalize_url, dedupe_key, classify_level
 
 STATUSES=["Nova oportunidade","Salva","Candidatura enviada","Teste técnico","Entrevista","Aprovada","Reprovada","Encerrada"]
 
-def get_profile(db):
-    p=db.get(Profile,1)
-    if not p: p=Profile(id=1); db.add(p); db.commit(); db.refresh(p)
+def get_profile(db, user_id=None):
+    """Retorna perfil do usuário; sem user_id, mantém compatibilidade apenas para rotinas legadas internas."""
+    if user_id is None:
+        p = db.get(Profile, 1)
+        if not p:
+            p = Profile(id=1)
+            db.add(p); db.commit(); db.refresh(p)
+        return p
+    p = db.scalar(select(Profile).where(Profile.user_id == user_id))
+    if p is None:
+        p = Profile(user_id=user_id)
+        db.add(p); db.commit(); db.refresh(p)
     return p
 
 def save_jobs(items):
