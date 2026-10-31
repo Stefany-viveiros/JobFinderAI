@@ -102,6 +102,7 @@ async def require_authenticated_session(request, call_next):
         ))
         if not session or not session.user.is_active:
             return JSONResponse(status_code=401, content={"detail": "Sessão inválida ou expirada."})
+        request.state.user_id = session.user_id
         if request.method not in {"GET", "HEAD", "OPTIONS"}:
             supplied = request.headers.get("X-CSRF-Token", "")
             if not supplied or not secrets.compare_digest(supplied, session.csrf_token):
