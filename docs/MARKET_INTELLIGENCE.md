@@ -273,3 +273,20 @@ Estados identificados:
 - Não identificada no perfil.
 
 **Limites:** a primeira versão usa correspondência determinística por aliases no texto cadastrado. Não avalia profundidade, qualidade ou domínio real; curso/projeto/certificação são indícios de contato com a tecnologia. A prioridade exibida usa apenas a posição no ranking observado (top 5) como sinal para avaliação, não como ordem definitiva de estudo. A recomendação deve ser contextualizada pela área de interesse e pelo objetivo profissional da pessoa.
+
+## 15. Plano de desenvolvimento — primeira versão
+
+A primeira versão persistente do plano foi adicionada à branch `feature/market-intelligence`:
+
+- Modelo `DevelopmentPlanItem` na tabela `development_plan_items`, vinculado a uma competência do catálogo e, opcionalmente, ao snapshot que motivou a meta.
+- `GET /api/market/development-plan`: lista metas e resumo de progresso.
+- `POST /api/market/development-plan`: adiciona uma competência do Skill Gap ao plano, com atividade prática sugerida e estimativa inicial de horas.
+- `PATCH /api/market/development-plan/{item_id}`: atualiza status, percentual, prazo, anotações e detalhes da meta.
+- `DELETE /api/market/development-plan/{item_id}`: remove uma meta.
+- A interface permite adicionar competências do Skill Gap, acompanhar status e progresso, registrar anotações e remover metas.
+
+Estados persistidos: `planned`, `in_progress`, `paused` e `completed`. Marcar como concluída registra 100% e data de conclusão. Uma competência não pode ter duas metas ativas simultâneas; uma meta concluída pode ser refeita posteriormente.
+
+A atividade inicial é um roteiro genérico e determinístico por categoria da taxonomia, não uma trilha didática completa nem uma recomendação de curso verificada. Links de recursos externos não são inventados ou preenchidos automaticamente nesta fase. As horas são estimativas editáveis, não previsões de tempo de aprendizagem.
+
+**Validação pendente:** os testes de serviço foram adicionados, mas ainda precisam ser executados no ambiente do projeto; também falta confirmar o build de produção do frontend e a criação da tabela em uma instalação com banco existente. O fluxo atual usa `Base.metadata.create_all` na inicialização; uma estratégia formal de migrações continua recomendada para o deployment.
