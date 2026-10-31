@@ -198,3 +198,118 @@ def create_market_snapshot(
         "quality_notes": run.quality_notes,
         "skills_detected": len(ranked), "skill_pairs_detected": len(pair_counts),
     }
+
+
+def build_profile_gap(db: Session, *, run_id: int | None = None) -> dict:
+    """Cruza competências demandadas no snapshot com evidências explícitas do perfil."""
+    from .models import Profile
+
+    profile = db.get(Profile, 1)
+    if profile is None:
+        return {"available": False, "message": "Cadastre seu perfil para comparar as competências."}
+
+    run = db.get(MarketAnalysisRun, run_id) if run_id else db.scalar(
+        select(MarketAnalysisRun)
+        .where(MarketAnalysisRun.status == "completed")
+        .order_by(MarketAnalysisRun.created_at.desc(), MarketAnalysisRun.id.desc())
+        .limit(1)
+    )
+    if run is None:
+        return {"available": False, "message": "Gere uma análise de mercado antes de consultar o Skill Gap."}
+
+    metric_rows = db.execute(
+        select(MarketSkillMetric, Skill)
+        .join(Skill, Skill.id == MarketSkillMetric.skill_id)
+        .where(MarketSkillMetric.run_id == run.id)
+        .order_by(MarketSkillMetric.rank)
+    ).all()
+
+    # Cada campo é analisado separadamente para preservar a origem da evidência.
+    profile_texts = {
+        "experiencia": " ".join(
+            f"{item.role} {item.company} {item.description}"
+            for item in profile.experiences
+        ),
+        "projeto": " ".join(
+            f"{item.name} {item.description} {item.technologies}"
+            for item in profile.portfolio_projects
+        ) + " " + (profile.projects or ""),
+        "curso_concluido": " ".join(
+            f"{item.name} {item.provider}"
+            for item in profile.courses
+            if (item.status or "").strip().lower() in {"concluído", "concluido", "completed"}
+        ),
+        "em_estudo": " ".join(
+            f"{item.name} {item.provider}"
+            for item in profile.courses
+            if (item.status or "").strip().lower() in {"em andamento", "em curso", "in progress", "em estudo"}
+        ),
+        "certificacao": " ".join(
+            f"{item.name} {item.issuer}"
+            for item in profile.certifications_items
+        ) + " " + (profile.certifications or ""),
+        "declarada": " ".join([
+            profile.technologies or "", profile.skills or "", profile.keywords or "",
+        ]),
+    }
+
+    detected = {
+        source: {item["canonical_name"] for item in extract_skills(value, source_field=source)}
+        for source, value in profile_texts.items()
+    }
+    priorities = {
+        "experiencia": (1, "Evidenciada em experiência profissional"),
+        "projeto": (2, "Evidenciada em projeto"),
+        "curso_concluido": (3, "Mencionada em curso concluído"),
+        "certificacao": (4, "Mencionada em certificação"),
+        "em_estudo": (5, "Em estudo (curso em andamento)"),
+        "declarada": (6, "Declarada no perfil"),
+    }
+
+    items = []
+    for metric, skill in metric_rows:
+        evidence = [
+            {"source": source, "label": priorities[source][1]}
+            for source in priorities if skill.canonical_name in detected[source]
+        ]
+        if evidence:
+            status = evidence[0]["source"]
+            status_label = priorities[status][1]
+        else:
+            status = "nao_identificada"
+            status_label = "Não identificada no perfil"
+
+        demand_rate = round(metric.mention_rate * 100, 1)
+        if status == "nao_identificada" and metric.mention_rate >= 0.20:
+            recommendation = "Explorar como possível prioridade"
+        elif status == "nao_identificada":
+            recommendation = "Acompanhar a demanda"
+        elif status in {"em_estudo", "curso_concluido", "certificacao"}:
+            recommendation = "Considerar prática em projeto"
+        else:
+            recommendation = "Fortalecer e demonstrar com evidências"
+
+        items.append({
+            "skill_id": skill.id,
+            "name": skill.canonical_name,
+            "category": skill.category,
+            "jobs_count": metric.jobs_count,
+            "mention_rate": demand_rate,
+            "status": status,
+            "status_label": status_label,
+            "evidence": evidence,
+            "recommendation": recommendation,
+        })
+
+    counts = {}
+    for item in items:
+        counts[item["status"]] = counts.get(item["status"], 0) + 1
+
+    return {
+        "available": True,
+        "run_id": run.id,
+        "total_skills": len(items),
+        "counts": counts,
+        "items": items,
+        "notice": "O cruzamento identifica menções textuais no perfil. Curso, certificação ou projeto não comprovam domínio; ausência de menção não significa falta de conhecimento.",
+    }
