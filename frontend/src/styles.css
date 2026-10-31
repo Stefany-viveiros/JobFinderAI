@@ -49,3 +49,31 @@
 .resume-import-success{color:#25805b}.resume-import-error{color:#b43f3b}
 .resume-import-success svg{flex:none;margin-top:1px}
 @media(max-width:600px){.resume-import-panel{align-items:stretch}.resume-upload-button{justify-content:center}}
+
+
+/* Profile records: accessible typography and consistent repeatable sections */
+.profile-panel-title h2,.record-section-heading h2{font-size:16px!important;line-height:1.4}
+.profile-panel-title p,.record-section-heading p{font-size:13px!important;line-height:1.55}
+.field>span{font-size:14px!important;font-weight:600;color:#424862}
+.field input,.field textarea,.field select{font-size:15px!important;line-height:1.5;min-height:44px}
+.field textarea{min-height:88px}
+.record-section{padding:22px}
+.record-section-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:16px}
+.record-section-heading h2{font:750 16px Manrope,sans-serif;color:#252943;margin:0}
+.record-section-heading p{margin:5px 0 0;color:#777e96;font-size:13px}
+.record-card{border:1px solid #e7e9f1;border-radius:12px;padding:17px;margin-top:13px;background:#fcfcfe}
+.record-card-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:13px;color:#343a55;font-size:14px}
+.record-remove{color:#a34b59}
+.record-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px 16px}
+.record-fields .field:has(textarea){grid-column:1/-1}
+.record-fields .field:has(input[type="checkbox"]){display:flex;flex-direction:row;align-items:center;gap:12px}
+.record-fields input[type="checkbox"]{width:18px;min-height:18px;accent-color:var(--purple)}
+.record-empty{border:1px dashed #d9dce8;border-radius:10px;padding:18px;text-align:center;color:#777e96;font-size:14px;background:#fafbfe}
+.legacy-profile-data{padding:18px 20px}
+.legacy-profile-data summary{cursor:pointer;font-size:14px;font-weight:700;color:#515875}
+.legacy-profile-data p{font-size:13px;line-height:1.6;color:#777e96}
+.profile-panel .field{margin-bottom:14px}
+.resume-import-panel>small{font-size:13px!important;line-height:1.6}
+.resume-import-copy p{font-size:14px!important;line-height:1.6}
+.profile-save-bar>span{font-size:13px}
+@media(max-width:720px){.record-fields{grid-template-columns:1fr}.record-section{padding:16px}.record-section-heading{align-items:flex-start}.record-section-heading .btn{white-space:nowrap}}
