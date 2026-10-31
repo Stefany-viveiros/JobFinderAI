@@ -305,3 +305,17 @@ A branch inclui uma primeira camada de avaliação prática com registro histór
 Os desafios iniciais são gerados por regras determinísticas conforme a categoria da competência (linguagem/framework/biblioteca/web, banco de dados, ferramenta/cloud ou outras práticas). A rubrica fica salva como snapshot na tentativa para preservar o histórico mesmo se o modelo do desafio mudar.
 
 A pontuação é calculada somente pelas caixas que a própria pessoa marcou como atendidas. O feedback aponta critérios pendentes e próximos passos; não analisa automaticamente código, repositório, link ou qualidade técnica da resposta. O resultado é explicitamente identificado como **autoavaliação**, não como certificação, validação independente ou prova de proficiência. Para validação externa, será necessária uma etapa futura com execução de testes/código em ambiente isolado ou revisão por avaliador.
+
+
+
+## 17. Reavaliação do Skill Gap com desafios concluídos
+
+O Skill Gap agora considera também os desafios práticos enviados:
+
+- Ao concluir uma autoavaliação, a página atualiza novamente o Skill Gap sem exigir uma nova análise de mercado.
+- Quando não há evidência anterior no perfil, a competência passa a aparecer como **Desafio prático autoavaliado**, com pontuação, data/registro e quantidade de tentativas.
+- A autoavaliação não substitui evidências de experiência profissional, projeto concluído, formação ou cursos. Quando já existe uma evidência do perfil, ela continua sendo a classificação principal; a autoavaliação aparece como informação complementar.
+- O resultado não é chamado de competência validada, certificada ou dominada. A pontuação depende das respostas da própria pessoa e o link informado não é inspecionado automaticamente.
+- Uma nova tentativa enviada atualiza o resultado mais recente exibido, preservando a contagem de tentativas.
+
+A classificação é recalculada a partir dos registros atuais do perfil e dos desafios enviados sempre que o endpoint de Skill Gap é consultado. Rascunhos não alteram a classificação.

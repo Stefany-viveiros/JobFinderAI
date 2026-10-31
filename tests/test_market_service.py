@@ -272,3 +272,80 @@ def test_skill_assessment_requires_all_rubric_items_and_evidence(db):
         assert False, "Era esperado exigir uma descrição ou link de evidência."
     except ValueError as exc:
         assert "Descreva sua solução" in str(exc)
+
+
+
+def test_profile_gap_reassesses_skill_from_submitted_self_assessment(db):
+    from jobfinder.market_service import (
+        build_profile_gap, create_skill_assessment, submit_skill_assessment,
+    )
+    from jobfinder.models import Profile
+
+    db.add(Profile(id=1, technologies="", skills="", keywords=""))
+    db.commit()
+    make_job(
+        db,
+        title="Estágio Python",
+        description="Python é usado para desenvolver serviços e automatizar tarefas.",
+    )
+    snapshot = create_market_snapshot(db, level_scope="estagio", days=30, min_jobs=1)
+    python_skill = db.scalar(select(Skill).where(Skill.canonical_name == "Python"))
+    attempt = create_skill_assessment(db, skill_id=python_skill.id)
+    answers = {item["id"]: True for item in attempt["criteria"]}
+    submit_skill_assessment(
+        db,
+        attempt["id"],
+        response_text="Implementei a solução, tratei erros, testei os cenários e documentei a execução.",
+        evidence_url="https://github.com/example/python-evidence",
+        rubric_answers=answers,
+    )
+
+    gap = build_profile_gap(db, run_id=snapshot["run_id"])
+    python = next(item for item in gap["items"] if item["name"] == "Python")
+
+    assert python["status"] == "autoavaliada"
+    assert python["status_label"] == "Desafio prático autoavaliado"
+    assert python["assessment"]["score"] == 100
+    assert python["assessment"]["attempts_count"] == 1
+    assert python["assessment"]["result_kind"] == "autoavaliação"
+    assert "não comprovam domínio" in gap["notice"]
+
+
+def test_profile_evidence_keeps_precedence_over_self_assessment(db):
+    from jobfinder.market_service import (
+        build_profile_gap, create_skill_assessment, submit_skill_assessment,
+    )
+    from jobfinder.models import Profile, PortfolioProject
+
+    db.add(Profile(
+        id=1,
+        portfolio_projects=[PortfolioProject(
+            name="Projeto React concluído",
+            description="Aplicação web desenvolvida com React.",
+            technologies="React",
+            status="Concluído",
+        )],
+    ))
+    db.commit()
+    make_job(
+        db,
+        title="Estágio React",
+        description="React é utilizado para construir interfaces web.",
+    )
+    snapshot = create_market_snapshot(db, level_scope="estagio", days=30, min_jobs=1)
+    react_skill = db.scalar(select(Skill).where(Skill.canonical_name == "React"))
+    attempt = create_skill_assessment(db, skill_id=react_skill.id)
+    answers = {item["id"]: True for item in attempt["criteria"]}
+    submit_skill_assessment(
+        db,
+        attempt["id"],
+        response_text="Implementei uma interface funcional, tratei erros, testei e documentei o projeto.",
+        evidence_url="https://github.com/example/react-evidence",
+        rubric_answers=answers,
+    )
+
+    gap = build_profile_gap(db, run_id=snapshot["run_id"])
+    react = next(item for item in gap["items"] if item["name"] == "React")
+
+    assert react["status"] == "praticada"
+    assert react["assessment"]["score"] == 100

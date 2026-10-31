@@ -289,3 +289,7 @@
 .market-assessment-history-result b{font:800 12px Manrope,sans-serif;color:#5c63aa}
 .market-assessment-history-result small{font-size:8px;color:#969bb0}
 @media(max-width:620px){.market-assessment-history-item{grid-template-columns:minmax(0,1fr) auto}.market-assessment-history-item>.market-secondary-button{grid-column:1/-1;justify-self:start}.market-assessment-editor{padding:12px}}
+
+
+.market-status-pill.status-autoavaliada{background:#fff6e8;color:#986b24}
+.market-assessment-gap-note{display:block;color:#8b713e;font-size:9px;line-height:1.4;margin-top:2px}
