@@ -1,7 +1,9 @@
 from datetime import date, datetime
+import os
 from typing import Optional
 
 from fastapi import FastAPI, Depends, HTTPException, Query, UploadFile, File
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select, func, or_
@@ -25,14 +27,33 @@ from .market_service import (create_market_snapshot, index_unprocessed_jobs, bui
     list_development_plan, create_development_item, update_development_item, DEVELOPMENT_STATUSES,
     create_skill_assessment, submit_skill_assessment, list_skill_assessments)
 
-app = FastAPI(title="JobFinder AI API", version="1.1.0", description="API local do JobFinder AI")
+app = FastAPI(title="JobFinder AI API", version="1.1.0", description="API do JobFinder AI")
+cors_origins = [
+    origin.strip()
+    for origin in os.getenv(
+        "CORS_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173",
+    ).split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def demo_read_only_guard(request, call_next):
+    """Bloqueia mutações no ambiente público de demonstração."""
+    read_only = os.getenv("DEMO_READ_ONLY", "false").lower() == "true"
+    if read_only and request.method not in {"GET", "HEAD", "OPTIONS"} and request.url.path.startswith("/api/"):
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Ambiente de demonstração: alterações estão desativadas."},
+        )
+    return await call_next(request)
 
 
 def get_db():
