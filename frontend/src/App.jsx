@@ -330,7 +330,7 @@ function ProfilePage({ profile, setProfile, onSave, busy }) {
       <label className="btn btn-secondary resume-upload-button">{importing ? <LoaderCircle size={16} className="spin"/> : <UserRound size={16}/>} {importing ? 'Analisando currículo...' : 'Selecionar currículo'}<input type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={importResume} disabled={importing} hidden/></label>
       {importMessage && <p className="resume-import-success"><CheckCircle2 size={15}/>{importMessage}</p>}
       {importError && <p className="resume-import-error">{importError}</p>}
-      <small>Limite de 5 MB. O arquivo original não é armazenado. Nada é salvo até você clicar em “Salvar perfil”.</small>
+      <small>Limite de 5 MB. Com Gemini configurado, o texto extraído é enviado ao Google Gemini para análise. O arquivo original não é armazenado pelo JobFinder AI. Nada é salvo no perfil até você clicar em “Salvar perfil”.</small>
     </section>
     <form className="profile-form" onSubmit={onSave}>
       <div className="profile-header-card"><div className="profile-large-avatar">{initials(profile.name)}</div><div><strong>{profile.name || 'Seu nome'}</strong><span>{profile.course || 'Área profissional'}{profile.institution ? ` · ${profile.institution}` : ''}</span><p>Informações revisáveis utilizadas pelo mecanismo de compatibilidade.</p></div><div className="profile-status"><span className="status-dot"/>Perfil editável</div></div>
