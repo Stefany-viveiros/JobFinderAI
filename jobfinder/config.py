@@ -18,6 +18,9 @@ class Settings:
     # Caminho opcional de um PDF do currículo a anexar em candidaturas por e-mail.
     # O arquivo fica FORA do repositório; nunca versione currículos.
     cv_path: str = os.getenv("CV_PATH", "")
+    # Credenciais Gemini ficam somente no ambiente; nunca versionar a chave.
+    gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
+    gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 
     @property
     def smtp_ready(self) -> bool:
