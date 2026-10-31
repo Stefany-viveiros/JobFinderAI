@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   Activity, BarChart3, CalendarDays, CheckCircle2, Clock3, Database,
   Layers3, LoaderCircle, RefreshCw, Sparkles, TrendingUp, TriangleAlert,
+  Target, BookOpen, Plus, Trash2,
 } from 'lucide-react'
 
 const API = 'http://127.0.0.1:8000/api'
@@ -23,6 +24,10 @@ export default function MarketIntelligencePage() {
   const [analysis, setAnalysis] = useState(null)
   const [combinations, setCombinations] = useState([])
   const [gap, setGap] = useState(null)
+  const [plan, setPlan] = useState({ items: [], summary: {} })
+  const [planLoading, setPlanLoading] = useState(true)
+  const [addingSkill, setAddingSkill] = useState(null)
+  const [updatingItem, setUpdatingItem] = useState(null)
   const [level, setLevel] = useState('both')
   const [days, setDays] = useState(30)
   const [loading, setLoading] = useState(true)
@@ -54,7 +59,70 @@ export default function MarketIntelligencePage() {
     }
   }, [])
 
-  useEffect(() => { loadAnalysis() }, [loadAnalysis])
+  const loadPlan = useCallback(async () => {
+    setPlanLoading(true)
+    try {
+      const result = await request('/market/development-plan')
+      setPlan(result)
+    } catch (err) {
+      setError(err.message || 'Não foi possível carregar seu plano de desenvolvimento.')
+    } finally {
+      setPlanLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { loadAnalysis(); loadPlan() }, [loadAnalysis, loadPlan])
+
+  async function addToPlan(skill) {
+    setAddingSkill(skill.skill_id)
+    setError('')
+    setMessage('')
+    try {
+      const result = await request('/market/development-plan', {
+        method: 'POST',
+        body: JSON.stringify({ skill_id: skill.skill_id, run_id: gap?.run_id, estimated_hours: 4 }),
+      })
+      setPlan(result.plan)
+      setMessage(`${skill.name} foi adicionada ao seu plano de desenvolvimento.`)
+    } catch (err) {
+      setError(err.message || 'Não foi possível adicionar a competência ao plano.')
+    } finally {
+      setAddingSkill(null)
+    }
+  }
+
+  async function updatePlanItem(itemId, changes) {
+    setUpdatingItem(itemId)
+    setError('')
+    try {
+      const result = await request(`/market/development-plan/${itemId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(changes),
+      })
+      setPlan(current => ({
+        ...current,
+        items: current.items.map(item => item.id === itemId ? result.item : item),
+      }))
+      await loadPlan()
+    } catch (err) {
+      setError(err.message || 'Não foi possível atualizar a meta.')
+    } finally {
+      setUpdatingItem(null)
+    }
+  }
+
+  async function removePlanItem(itemId) {
+    setUpdatingItem(itemId)
+    try {
+      await request(`/market/development-plan/${itemId}`, { method: 'DELETE' })
+      await loadPlan()
+      setMessage('Meta removida do plano.')
+    } catch (err) {
+      setError(err.message || 'Não foi possível remover a meta.')
+    } finally {
+      setUpdatingItem(null)
+    }
+  }
 
   async function runAnalysis() {
     setRunning(true)
@@ -193,11 +261,51 @@ export default function MarketIntelligencePage() {
                 <div className="market-gap-status">
                   <span className={`market-status-pill status-${item.status}`}>{item.status_label}</span>
                   <small>{item.recommendation}</small>
+                  <button className="market-add-goal" onClick={() => addToPlan(item)} disabled={addingSkill === item.skill_id || plan.items.some(goal => goal.skill_id === item.skill_id && goal.status !== 'completed')}>
+                    {addingSkill === item.skill_id ? <LoaderCircle size={13} className="spin"/> : <Plus size={13}/>}
+                    {plan.items.some(goal => goal.skill_id === item.skill_id && goal.status !== 'completed') ? 'Já no plano' : 'Adicionar ao plano'}
+                  </button>
                 </div>
               </article>
             )}</div>
             <p className="market-footnote">{gap.notice}</p>
           </>}
+        </section>
+
+        <section className="panel market-panel market-development-panel">
+          <div className="panel-heading">
+            <div><h2>Meu plano de desenvolvimento</h2><p>Transforme competências relevantes em atividades práticas e acompanhe seu progresso.</p></div>
+            <span className="market-count">{plan.summary?.completion_rate || 0}% concluído</span>
+          </div>
+          <div className="market-plan-summary">
+            <div><strong>{plan.summary?.total || 0}</strong><span>Metas</span></div>
+            <div><strong>{plan.summary?.in_progress || 0}</strong><span>Em andamento</span></div>
+            <div><strong>{plan.summary?.completed || 0}</strong><span>Concluídas</span></div>
+            <div><strong>{number(plan.summary?.estimated_hours || 0)}h</strong><span>Horas estimadas</span></div>
+          </div>
+          {planLoading ? <div className="market-inline-empty"><LoaderCircle size={16} className="spin"/> Carregando plano...</div> :
+            !plan.items?.length ? <div className="market-plan-empty"><Target size={23}/><strong>Seu plano começa com uma meta.</strong><span>Escolha uma competência no Skill Gap e adicione uma atividade prática.</span></div> :
+            <div className="market-plan-list">{plan.items.map(item =>
+              <article className={`market-plan-item ${item.status === 'completed' ? 'is-completed' : ''}`} key={item.id}>
+                <div className="market-plan-item-head">
+                  <div className="market-plan-title"><div className="market-plan-icon"><BookOpen size={16}/></div><div><strong>{item.title}</strong><span>{item.skill_name} · {item.estimated_hours}h estimadas</span></div></div>
+                  <button className="market-plan-delete" title="Remover meta" onClick={() => removePlanItem(item.id)} disabled={updatingItem === item.id}><Trash2 size={15}/></button>
+                </div>
+                <p>{item.objective}</p>
+                <div className="market-plan-activity"><strong>Atividade sugerida</strong><span>{item.activity}</span></div>
+                <div className="market-plan-controls">
+                  <label><span>Status</span><select value={item.status} disabled={updatingItem === item.id} onChange={event => updatePlanItem(item.id, { status: event.target.value })}>
+                    <option value="planned">Planejada</option><option value="in_progress">Em andamento</option><option value="paused">Pausada</option><option value="completed">Concluída</option>
+                  </select></label>
+                  <label><span>Progresso</span><select value={item.progress_percent} disabled={updatingItem === item.id || item.status === 'completed'} onChange={event => updatePlanItem(item.id, { progress_percent: Number(event.target.value), status: Number(event.target.value) > 0 ? 'in_progress' : 'planned' })}>
+                    <option value="0">0%</option><option value="25">25%</option><option value="50">50%</option><option value="75">75%</option><option value="99">Quase concluída</option>
+                  </select></label>
+                  <div className="market-plan-progress"><i style={{width: `${item.progress_percent}%`}}/></div>
+                </div>
+                <label className="market-plan-notes"><span>Suas anotações</span><textarea defaultValue={item.notes || ''} placeholder="Registre aprendizados, dificuldades ou links do seu projeto..." onBlur={event => { if(event.target.value !== (item.notes || '')) updatePlanItem(item.id, { notes: event.target.value }) }}/></label>
+              </article>
+            )}</div>
+          }
         </section>
 
         <section className="market-disclaimer"><Database size={16}/><p>Os indicadores refletem somente as vagas armazenadas no seu JobFinder AI, dentro do período selecionado. A data considerada é a primeira coleta local, não necessariamente a publicação original. Competência não identificada no texto não significa que a empresa não a exija.</p></section>
