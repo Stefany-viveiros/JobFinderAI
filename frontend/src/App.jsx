@@ -13,6 +13,7 @@ const emptyJob = { title: '', company: '', url: '', location: '', description: '
 const emptyTask = { title: '', description: '', due_date: '', priority: 'Média', notify: true }
 const emptyProfile = {
   name: '', course: '', institution: '', academic_stage: '', technologies: '', skills: '', experience: '', projects: '', certifications: '', keywords: '', interests: 'Estágio em Tecnologia', location: '', modality: 'Remoto, Híbrido, Presencial', job_types: 'Estágio, Júnior', exclude_terms: '', weight_keywords: 40, weight_area: 25, weight_modality: 15, weight_location: 10, weight_level: 10,
+  educations: [], experiences: [], courses: [], certifications_items: [], portfolio_projects: [],
 }
 
 async function api(path, options = {}) {
@@ -288,6 +289,15 @@ function ProfilePage({ profile, setProfile, onSave, busy }) {
   const [importMessage, setImportMessage] = useState('')
   const [importError, setImportError] = useState('')
   const set = (field, value) => setProfile(p => ({ ...p, [field]: value }))
+  const updateRecord = (collection, index, field, value) => setProfile(p => ({
+    ...p, [collection]: (p[collection] || []).map((item, i) => i === index ? { ...item, [field]: value } : item),
+  }))
+  const addRecord = (collection, defaults) => setProfile(p => ({
+    ...p, [collection]: [...(p[collection] || []), { ...defaults, id: null, _key: `draft-${Date.now()}-${Math.random()}` }],
+  }))
+  const removeRecord = (collection, index) => setProfile(p => ({
+    ...p, [collection]: (p[collection] || []).filter((_, i) => i !== index),
+  }))
   async function importResume(event) {
     const file = event.target.files?.[0]
     event.target.value = ''
@@ -301,13 +311,90 @@ function ProfilePage({ profile, setProfile, onSave, busy }) {
       const response = await fetch(`${API}/profile/import`, { method: 'POST', body: form })
       const body = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(body.detail || `Erro ${response.status}`)
-      setProfile(current => ({ ...current, ...body.extracted }))
-      setImportMessage(body.message || 'Informações extraídas. Revise os campos preenchidos e clique em “Salvar perfil”.')
+      setProfile(current => {
+        const extracted = body.extracted || {}
+        const next = { ...current, ...extracted }
+        for (const key of ['educations', 'experiences', 'courses', 'certifications_items', 'portfolio_projects']) {
+          if (Array.isArray(extracted[key])) next[key] = [...(current[key] || []), ...extracted[key]]
+        }
+        return next
+      })
+      setImportMessage(body.message || 'Informações extraídas. Revise os registros e clique em “Salvar perfil”.')
     } catch (error) { setImportError(error.message || 'Não foi possível importar o currículo.') }
     finally { setImporting(false) }
   }
-  return <><SectionHeading eyebrow="PERSONALIZE SUA BUSCA" title="Perfil profissional" subtitle="Informe suas experiências e interesses reais. A pontuação das vagas é recalculada ao salvar."/><section className="panel resume-import-panel"><div className="resume-import-copy"><div className="resume-import-icon"><Sparkles size={19}/></div><div><strong>Preencher com meu currículo</strong><p>Envie um PDF ou DOCX. O JobFinder AI sugere os dados encontrados para você revisar antes de salvar.</p></div></div><label className="btn btn-secondary resume-upload-button">{importing ? <LoaderCircle size={16} className="spin"/> : <UserRound size={16}/>} {importing ? 'Analisando currículo...' : 'Selecionar currículo'}<input type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={importResume} disabled={importing} hidden/></label>{importMessage && <p className="resume-import-success"><CheckCircle2 size={15}/>{importMessage}</p>}{importError && <p className="resume-import-error">{importError}</p>}<small>Limite de 5 MB. O arquivo é processado para extração e não é armazenado. Nada é salvo no perfil até você clicar em “Salvar perfil”.</small></section><form className="profile-form" onSubmit={onSave}><div className="profile-header-card"><div className="profile-large-avatar">{initials(profile.name)}</div><div><strong>{profile.name || 'Seu nome'}</strong><span>{profile.course || 'Área profissional'}{profile.institution ? ` · ${profile.institution}` : ''}</span><p>Este perfil é usado localmente para comparar vagas com seus interesses e conhecimentos.</p></div><div className="profile-status"><span className="status-dot"/>Perfil editável</div></div><div className="profile-grid"><section className="panel profile-panel"><div className="profile-panel-title"><div className="form-section-icon"><UserRound size={17}/></div><div><h2>Informações profissionais</h2><p>Contexto da sua formação</p></div></div><div className="form-grid"><Field label="Nome ou identificação"><input value={profile.name || ''} onChange={e => set('name', e.target.value)} placeholder="Seu nome"/></Field><Field label="Curso / área"><input value={profile.course || ''} onChange={e => set('course', e.target.value)} placeholder="Ex.: Engenharia da Computação"/></Field><Field label="Instituição"><input value={profile.institution || ''} onChange={e => set('institution', e.target.value)} placeholder="Faculdade ou instituição"/></Field><Field label="Semestre / etapa"><input value={profile.academic_stage || ''} onChange={e => set('academic_stage', e.target.value)} placeholder="Ex.: 5º semestre"/></Field><Field label="Localização desejada"><input value={profile.location || ''} onChange={e => set('location', e.target.value)} placeholder="Ex.: São Paulo, SP"/></Field><Field label="Modalidades aceitas"><input value={profile.modality || ''} onChange={e => set('modality', e.target.value)} placeholder="Remoto, Híbrido, Presencial"/></Field></div></section><section className="panel profile-panel"><div className="profile-panel-title"><div className="form-section-icon blue"><Zap size={17}/></div><div><h2>Conhecimentos e objetivos</h2><p>Usados no cálculo de compatibilidade</p></div></div><Field label="Tecnologias (separadas por vírgula)"><textarea rows="2" value={profile.technologies || ''} onChange={e => set('technologies', e.target.value)} placeholder="Python, JavaScript, React, SQL..."/></Field><Field label="Habilidades técnicas"><textarea rows="2" value={profile.skills || ''} onChange={e => set('skills', e.target.value)} placeholder="APIs REST, Git, análise de dados..."/></Field><Field label="Palavras-chave"><textarea rows="2" value={profile.keywords || ''} onChange={e => set('keywords', e.target.value)} placeholder="Palavras que aparecem nas vagas de interesse"/></Field><Field label="Áreas de interesse"><input value={profile.interests || ''} onChange={e => set('interests', e.target.value)} placeholder="Estágio em Tecnologia, Backend, Dados..."/></Field><Field label="Tipos de oportunidade"><input value={profile.job_types || ''} onChange={e => set('job_types', e.target.value)} placeholder="Estágio, Júnior"/></Field><Field label="Termos a excluir"><input value={profile.exclude_terms || ''} onChange={e => set('exclude_terms', e.target.value)} placeholder="Termos separados por vírgula (opcional)"/></Field></section><section className="panel profile-panel"><div className="profile-panel-title"><div className="form-section-icon green"><BriefcaseBusiness size={17}/></div><div><h2>Experiência e portfólio</h2><p>Conteúdos opcionais para seu perfil</p></div></div><Field label="Experiência"><textarea rows="3" value={profile.experience || ''} onChange={e => set('experience', e.target.value)} placeholder="Descreva experiências reais de trabalho ou estudos"/></Field><Field label="Projetos"><textarea rows="3" value={profile.projects || ''} onChange={e => set('projects', e.target.value)} placeholder="Projetos acadêmicos e pessoais"/></Field><Field label="Certificações"><textarea rows="2" value={profile.certifications || ''} onChange={e => set('certifications', e.target.value)} placeholder="Cursos e certificações"/></Field></section><section className="panel profile-panel weights-panel"><div className="profile-panel-title"><div className="form-section-icon amber"><Target size={17}/></div><div><h2>Critérios de compatibilidade</h2><p>Pesos relativos que ajudam a calcular a pontuação</p></div></div>{[['weight_keywords','Palavras-chave'],['weight_area','Área de interesse'],['weight_modality','Modalidade'],['weight_location','Localização'],['weight_level','Nível da vaga']].map(([key,label]) => <div className="weight-row" key={key}><div><span>{label}</span><strong>{profile[key] ?? 0}</strong></div><input type="range" min="0" max="100" value={profile[key] ?? 0} onChange={e => set(key, Number(e.target.value))}/></div>)}<p className="weight-tip">Os pesos são normalizados no cálculo. A pontuação é uma estimativa explicável, não uma previsão de contratação.</p></section></div><div className="profile-save-bar"><span>As alterações recalculam as compatibilidades das vagas cadastradas.</span><button type="submit" className="btn btn-primary" disabled={busy}>{busy ? <LoaderCircle size={16} className="spin"/> : <Check size={16}/>} Salvar perfil</button></div></form></>
+  return <>
+    <SectionHeading eyebrow="PERSONALIZE SUA BUSCA" title="Perfil profissional" subtitle="Mantenha seu histórico acadêmico e profissional organizado. O agente usa essas informações para avaliar oportunidades."/>
+    <section className="panel resume-import-panel">
+      <div className="resume-import-copy"><div className="resume-import-icon"><Sparkles size={19}/></div><div><strong>Preencher com meu currículo</strong><p>Envie PDF ou DOCX. A extração sugere registros separados para você revisar antes de salvar.</p></div></div>
+      <label className="btn btn-secondary resume-upload-button">{importing ? <LoaderCircle size={16} className="spin"/> : <UserRound size={16}/>} {importing ? 'Analisando currículo...' : 'Selecionar currículo'}<input type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={importResume} disabled={importing} hidden/></label>
+      {importMessage && <p className="resume-import-success"><CheckCircle2 size={15}/>{importMessage}</p>}
+      {importError && <p className="resume-import-error">{importError}</p>}
+      <small>Limite de 5 MB. O arquivo original não é armazenado. Nada é salvo até você clicar em “Salvar perfil”.</small>
+    </section>
+    <form className="profile-form" onSubmit={onSave}>
+      <div className="profile-header-card"><div className="profile-large-avatar">{initials(profile.name)}</div><div><strong>{profile.name || 'Seu nome'}</strong><span>{profile.course || 'Área profissional'}{profile.institution ? ` · ${profile.institution}` : ''}</span><p>Informações revisáveis utilizadas pelo mecanismo de compatibilidade.</p></div><div className="profile-status"><span className="status-dot"/>Perfil editável</div></div>
+      <div className="profile-grid">
+        <section className="panel profile-panel">
+          <div className="profile-panel-title"><div className="form-section-icon"><UserRound size={17}/></div><div><h2>Informações profissionais</h2><p>Identificação e preferências de trabalho</p></div></div>
+          <div className="form-grid">
+            <Field label="Nome completo"><input value={profile.name || ''} onChange={e => set('name', e.target.value)} placeholder="Seu nome"/></Field>
+            <Field label="Localização desejada"><input value={profile.location || ''} onChange={e => set('location', e.target.value)} placeholder="Ex.: São Paulo, SP"/></Field>
+            <Field label="Modalidades aceitas"><input value={profile.modality || ''} onChange={e => set('modality', e.target.value)} placeholder="Remoto, híbrido, presencial"/></Field>
+            <Field label="Tipos de oportunidade"><input value={profile.job_types || ''} onChange={e => set('job_types', e.target.value)} placeholder="Estágio, júnior"/></Field>
+            <Field label="Áreas de interesse"><input value={profile.interests || ''} onChange={e => set('interests', e.target.value)} placeholder="Backend, frontend, dados..."/></Field>
+            <Field label="Termos a excluir"><input value={profile.exclude_terms || ''} onChange={e => set('exclude_terms', e.target.value)} placeholder="Termos separados por vírgula"/></Field>
+          </div>
+        </section>
+        <RecordSection title="Formação acadêmica" description="Cadastre quantas graduações e formações forem necessárias." collection="educations" records={profile.educations || []} onAdd={() => addRecord('educations', { course: '', institution: '', degree: 'Bacharelado', status: 'Em andamento', start_date: '', end_date: '', description: '' })} onChange={updateRecord} onRemove={removeRecord} fields={[
+          ['course','Curso','Ex.: Engenharia da Computação'],['institution','Instituição','Nome da instituição'],['degree','Grau','Bacharelado, tecnólogo, licenciatura...'],['status','Situação','Em andamento, concluído, trancado'],['start_date','Início','Ano ou mês/ano'],['end_date','Conclusão ou previsão','Ano ou mês/ano'],['description','Detalhes adicionais','Semestre, disciplinas relevantes etc.','textarea']
+        ]}/>
+        <RecordSection title="Experiências profissionais" description="Diferencie cada empresa, cargo, período e responsabilidade." collection="experiences" records={profile.experiences || []} onAdd={() => addRecord('experiences', { company: '', role: '', employment_type: '', location: '', start_date: '', end_date: '', is_current: false, description: '' })} onChange={updateRecord} onRemove={removeRecord} fields={[
+          ['role','Cargo','Ex.: Cronoanalista'],['company','Empresa','Nome da empresa'],['employment_type','Tipo de vínculo','CLT, estágio, temporário...'],['location','Localidade','Cidade/UF ou remoto'],['start_date','Início','Ano ou mês/ano'],['end_date','Término','Ano ou mês/ano'],['description','Atividades e resultados','Descreva responsabilidades e resultados reais','textarea'],['is_current','Trabalho atual','', 'checkbox']
+        ]}/>
+        <RecordSection title="Cursos e capacitações" description="Cursos livres, treinamentos e formações complementares." collection="courses" records={profile.courses || []} onAdd={() => addRecord('courses', { name: '', provider: '', workload: '', completed_at: '', status: 'Concluído', credential_url: '' })} onChange={updateRecord} onRemove={removeRecord} fields={[
+          ['name','Nome do curso','Ex.: Desenvolvimento Web'],['provider','Instituição / plataforma','SENAI, Google Cloud...'],['workload','Carga horária','Ex.: 160 horas'],['completed_at','Conclusão','Ano ou mês/ano'],['status','Situação','Concluído ou em andamento'],['credential_url','Link do certificado','https://...']
+        ]}/>
+        <RecordSection title="Certificações" description="Credenciais emitidas por instituições ou plataformas." collection="certifications_items" records={profile.certifications_items || []} onAdd={() => addRecord('certifications_items', { name: '', issuer: '', issued_at: '', expires_at: '', credential_id: '', credential_url: '' })} onChange={updateRecord} onRemove={removeRecord} fields={[
+          ['name','Certificação','Nome da credencial'],['issuer','Emissor','Instituição responsável'],['issued_at','Emissão','Ano ou mês/ano'],['expires_at','Validade','Opcional'],['credential_id','ID da credencial','Opcional'],['credential_url','Link de validação','https://...']
+        ]}/>
+        <RecordSection title="Projetos e portfólio" description="Projetos acadêmicos e pessoais não são confundidos com experiência profissional." collection="portfolio_projects" records={profile.portfolio_projects || []} onAdd={() => addRecord('portfolio_projects', { name: '', description: '', technologies: '', repository_url: '', demo_url: '', status: 'Em desenvolvimento' })} onChange={updateRecord} onRemove={removeRecord} fields={[
+          ['name','Nome do projeto','Ex.: JobFinder AI'],['technologies','Tecnologias','Python, React, FastAPI...'],['status','Situação','Em desenvolvimento, concluído...'],['repository_url','Repositório','https://github.com/...'],['demo_url','Demonstração','https://...'],['description','Descrição','Objetivo, funcionalidades e sua contribuição','textarea']
+        ]}/>
+        <section className="panel profile-panel">
+          <div className="profile-panel-title"><div className="form-section-icon blue"><Zap size={17}/></div><div><h2>Conhecimentos e objetivos</h2><p>Informações usadas no cálculo de compatibilidade</p></div></div>
+          <Field label="Tecnologias"><textarea rows="3" value={profile.technologies || ''} onChange={e => set('technologies', e.target.value)} placeholder="Python, JavaScript, React, SQL..."/></Field>
+          <Field label="Habilidades"><textarea rows="3" value={profile.skills || ''} onChange={e => set('skills', e.target.value)} placeholder="APIs REST, Git, análise de dados..."/></Field>
+          <Field label="Palavras-chave"><textarea rows="3" value={profile.keywords || ''} onChange={e => set('keywords', e.target.value)} placeholder="Competências e termos profissionais"/></Field>
+        </section>
+        <section className="panel profile-panel weights-panel">
+          <div className="profile-panel-title"><div className="form-section-icon amber"><Target size={17}/></div><div><h2>Critérios de compatibilidade</h2><p>Pesos relativos da análise de vagas</p></div></div>
+          { [['weight_keywords','Palavras-chave'],['weight_area','Área de interesse'],['weight_modality','Modalidade'],['weight_location','Localização'],['weight_level','Nível da vaga']].map(([key,label]) => <div className="weight-row" key={key}><div><span>{label}</span><strong>{profile[key] ?? 0}</strong></div><input type="range" min="0" max="100" value={profile[key] ?? 0} onChange={e => set(key, Number(e.target.value))}/></div>)}
+          <p className="weight-tip">Os pesos são normalizados no cálculo. A pontuação é uma estimativa explicável, não uma previsão de contratação.</p>
+        </section>
+        {(profile.experience || profile.projects || profile.certifications) && <details className="panel legacy-profile-data"><summary>Textos antigos do perfil — revisar dados migrados</summary><p>Esses campos foram mantidos para não perder informações de versões anteriores. Transfira o conteúdo para os registros acima antes de removê-los.</p><Field label="Experiência antiga"><textarea rows="3" value={profile.experience || ''} onChange={e => set('experience', e.target.value)}/></Field><Field label="Projetos antigos"><textarea rows="3" value={profile.projects || ''} onChange={e => set('projects', e.target.value)}/></Field><Field label="Certificações antigas"><textarea rows="3" value={profile.certifications || ''} onChange={e => set('certifications', e.target.value)}/></Field></details>}
+      </div>
+      <div className="profile-save-bar"><span>Salve para persistir os registros e recalcular as compatibilidades.</span><button type="submit" className="btn btn-primary" disabled={busy}>{busy ? <LoaderCircle size={16} className="spin"/> : <Check size={16}/>} Salvar perfil</button></div>
+    </form>
+  </>
 }
+
+function RecordSection({ title, description, collection, records, onAdd, onChange, onRemove, fields }) {
+  return <section className="panel profile-panel record-section">
+    <div className="record-section-heading"><div><h2>{title}</h2><p>{description}</p></div><button type="button" className="btn btn-secondary btn-sm" onClick={onAdd}><Plus size={15}/> Adicionar</button></div>
+    {!records.length ? <div className="record-empty">Nenhum registro cadastrado ainda.</div> : records.map((record, index) =>
+      <article className="record-card" key={record.id || record._key || `${title}-${index}`}>
+        <div className="record-card-heading"><strong>Registro {index + 1}</strong><button type="button" className="icon-btn record-remove" onClick={() => onRemove(collection, index)} aria-label="Remover registro" title="Remover registro"><Trash2 size={16}/></button></div>
+        <div className="record-fields">{fields.map(([name,label,placeholder,type]) => <Field key={name} label={label}>
+          {type === 'textarea' ? <textarea rows="3" value={record[name] || ''} placeholder={placeholder} onChange={e => onChange(collection, index, name, e.target.value)}/> :
+           type === 'checkbox' ? <input type="checkbox" checked={Boolean(record[name])} onChange={e => onChange(collection, index, name, e.target.checked)}/> :
+           <input value={record[name] || ''} placeholder={placeholder} onChange={e => onChange(fields.collection, index, name, e.target.value)}/>}
+        </Field>)}</div>
+      </article>
+    )}
+  </section>
+}
+
 function Field({ label, children }) { return <label className="field"><span>{label}</span>{children}</label> }
 function Modal({ title, children, onClose }) { useEffect(() => { const f = e => e.key === 'Escape' && onClose(); document.addEventListener('keydown', f); document.body.style.overflow = 'hidden'; return () => {document.removeEventListener('keydown',f);document.body.style.overflow = ''} }, [onClose]); return <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && onClose()}><div className="modal"><div className="modal-header"><div><span className="eyebrow">JOBFINDER AI</span><h2>{title}</h2></div><button className="icon-btn" onClick={onClose} aria-label="Fechar"><X size={20}/></button></div>{children}</div></div> }
 function ModalActions({ busy, onCancel, submit }) { return <div className="modal-actions"><button type="button" className="btn btn-secondary" onClick={onCancel}>Cancelar</button><button type="submit" disabled={busy} className="btn btn-primary">{busy ? <LoaderCircle size={15} className="spin"/> : <Check size={15}/>} {submit}</button></div> }
