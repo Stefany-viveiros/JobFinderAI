@@ -49,3 +49,21 @@
 .resume-import-success{color:#25805b}.resume-import-error{color:#b43f3b}
 .resume-import-success svg{flex:none;margin-top:1px}
 @media(max-width:600px){.resume-import-panel{align-items:stretch}.resume-upload-button{justify-content:center}}
+
+
+/* Legibilidade: tamanho mínimo de leitura em todas as telas e painéis. */
+:where(.app-shell) :is(.content-wrap, .sidebar, .topbar, .footer) :is(
+  p, span, small, label, th, td, li, button, input, select, textarea
+) {
+  font-size: max(12px, 1em);
+}
+:where(.content-wrap) :is(.eyebrow, .muted, .metric-title, .metric-foot, .field > span,
+  .panel-heading p, .section-heading p, .recent-job-copy span, .timeline-copy span,
+  .attempt-meta, .attempt-detail, .check-row, .status-pill, .empty-state p,
+  .external-links .small, .data-table .small) {
+  font-size: max(12px, 1em);
+}
+:where(.sidebar) :is(.workspace-label, .nav-item, .nav-item small, .upgrade-card p,
+  .upgrade-card button, .user-info strong, .user-info span) {
+  font-size: max(12px, 1em);
+}
