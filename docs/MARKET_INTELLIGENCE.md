@@ -245,3 +245,23 @@ Endpoints disponíveis nesta etapa:
 A janela temporal usa `jobs.created_at`, que representa quando a vaga foi observada pela primeira vez neste banco. Não equivale necessariamente à data original de publicação. A indexação registra também vagas processadas sem competências reconhecidas, evitando reprocessamento repetitivo.
 
 **Ainda não implementado nesta etapa:** interface React, análise de evolução entre snapshots, skill gap do perfil, plano de desenvolvimento e agendamento em nuvem. Os testes foram adicionados, mas precisam de execução no CI antes de considerar a etapa validada.
+
+## 14. Skill Gap — implementação inicial
+
+A branch agora contém o primeiro cruzamento entre o snapshot de mercado e o perfil profissional:
+
+- `jobfinder/market_service.py`: função `build_profile_gap`, que consulta as competências do snapshot e procura menções no perfil estruturado.
+- `GET /api/market/profile-gap` (aceita `run_id` opcional): retorna demanda, quantidade de vagas, percentual, estado da evidência e recomendação de acompanhamento.
+- `frontend/src/MarketIntelligencePage.jsx`: seção “Skill Gap: mercado × seu perfil”, com resumo por tipo de evidência e lista de competências.
+- `tests/test_market_service.py`: cenário cobrindo competência em projeto, curso concluído, declaração no perfil e a ressalva de ausência de evidência.
+
+Estados identificados:
+- Evidenciada em experiência profissional.
+- Evidenciada em projeto.
+- Mencionada em curso concluído.
+- Mencionada em certificação.
+- Em estudo (curso em andamento).
+- Declarada no perfil.
+- Não identificada no perfil.
+
+**Limites:** a primeira versão usa correspondência determinística por aliases no texto cadastrado. Não avalia profundidade, qualidade ou domínio real; curso/projeto/certificação são indícios de contato com a tecnologia. A prioridade exibida usa apenas a posição no ranking observado (top 5) como sinal para avaliação, não como ordem definitiva de estudo. A recomendação deve ser contextualizada pela área de interesse e pelo objetivo profissional da pessoa.
