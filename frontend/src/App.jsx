@@ -8,7 +8,7 @@ import {
   SlidersHorizontal, Sparkles, Star, Target, Trash2, UserRound, X, Zap,
 } from 'lucide-react'
 
-const API = 'http://127.0.0.1:8000/api'
+const API = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api').replace(/\/$/, '')
 const STATUS = ['Nova oportunidade', 'Salva', 'Candidatura enviada', 'Teste técnico', 'Entrevista', 'Aprovada', 'Reprovada', 'Encerrada']
 const emptyJob = { title: '', company: '', url: '', location: '', description: '' }
 const emptyTask = { title: '', description: '', due_date: '', priority: 'Média', notify: true }
