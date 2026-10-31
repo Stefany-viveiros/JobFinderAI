@@ -546,7 +546,7 @@ def assessment_attempt_dict(attempt: "SkillAssessmentAttempt", skill: Skill) -> 
         "status": attempt.status,
         "created_at": attempt.created_at.isoformat() if attempt.created_at else None,
         "submitted_at": attempt.submitted_at.isoformat() if attempt.submitted_at else None,
-        "result_kind": "autoavaliacao" if attempt.status == "self_reviewed" else "rascunho",
+        "result_kind": "autoavaliação" if attempt.status == "self_reviewed" else "rascunho",
         "notice": "Resultado de autoavaliação. Não é uma certificação nem comprovação independente de proficiência.",
     }
 
