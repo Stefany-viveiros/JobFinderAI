@@ -8,7 +8,7 @@ from sqlalchemy import select, func, or_
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from .db import init_db, SessionLocal
-from .models import Job, Application, Task, Profile, NotificationLog, ApplicationAttempt
+from .models import (Job, Application, Task, Profile, NotificationLog, ApplicationAttempt,\n                     Education, Experience, Course, Certification, PortfolioProject)
 from .service import get_profile, save_jobs, refresh_scores, create_task, complete_task, STATUSES, collect_and_save_ranked
 from .sources import SOURCES, SOURCE_INFO, LINK_ONLY_SOURCES, collect_selected, external_search_links
 from . import applying
@@ -84,6 +84,59 @@ class TaskUpdate(BaseModel):
     notify: bool = True
 
 
+class EducationInput(BaseModel):
+    id: Optional[int] = None
+    course: str = Field("", max_length=200)
+    institution: str = Field("", max_length=200)
+    degree: str = Field("", max_length=80)
+    status: str = Field("Em andamento", max_length=40)
+    start_date: str = Field("", max_length=30)
+    end_date: str = Field("", max_length=30)
+    description: str = ""
+
+
+class ExperienceInput(BaseModel):
+    id: Optional[int] = None
+    company: str = Field("", max_length=200)
+    role: str = Field("", max_length=160)
+    employment_type: str = Field("", max_length=60)
+    location: str = Field("", max_length=160)
+    start_date: str = Field("", max_length=30)
+    end_date: str = Field("", max_length=30)
+    is_current: bool = False
+    description: str = ""
+
+
+class CourseInput(BaseModel):
+    id: Optional[int] = None
+    name: str = Field("", max_length=220)
+    provider: str = Field("", max_length=180)
+    workload: str = Field("", max_length=40)
+    completed_at: str = Field("", max_length=30)
+    status: str = Field("Concluído", max_length=40)
+    credential_url: str = ""
+
+
+class CertificationInput(BaseModel):
+    id: Optional[int] = None
+    name: str = Field("", max_length=220)
+    issuer: str = Field("", max_length=180)
+    issued_at: str = Field("", max_length=30)
+    expires_at: str = Field("", max_length=30)
+    credential_id: str = Field("", max_length=160)
+    credential_url: str = ""
+
+
+class PortfolioProjectInput(BaseModel):
+    id: Optional[int] = None
+    name: str = Field("", max_length=220)
+    description: str = ""
+    technologies: str = ""
+    repository_url: str = ""
+    demo_url: str = ""
+    status: str = Field("Em desenvolvimento", max_length=40)
+
+
 class ProfileUpdate(BaseModel):
     name: str = ""
     course: str = ""
@@ -105,6 +158,11 @@ class ProfileUpdate(BaseModel):
     weight_modality: int = 15
     weight_location: int = 10
     weight_level: int = 10
+    educations: list[EducationInput] = Field(default_factory=list)
+    experiences: list[ExperienceInput] = Field(default_factory=list)
+    courses: list[CourseInput] = Field(default_factory=list)
+    certifications_items: list[CertificationInput] = Field(default_factory=list)
+    portfolio_projects: list[PortfolioProjectInput] = Field(default_factory=list)
 
 
 def job_dict(j: Job, with_application=True):
@@ -156,12 +214,37 @@ def task_dict(t: Task):
 
 
 def profile_dict(p: Profile):
+    def records(items, fields):
+        return [{key: getattr(item, key) for key in ("id", *fields)} for item in items]
+
     return {k: getattr(p, k) for k in [
         "id", "name", "course", "institution", "academic_stage", "technologies", "skills",
         "experience", "projects", "certifications", "keywords", "interests", "location",
         "modality", "job_types", "exclude_terms", "weight_keywords", "weight_area",
         "weight_modality", "weight_location", "weight_level"
-    ]}
+    ]} | {
+        "educations": records(p.educations, ("course", "institution", "degree", "status", "start_date", "end_date", "description")),
+        "experiences": records(p.experiences, ("company", "role", "employment_type", "location", "start_date", "end_date", "is_current", "description")),
+        "courses": records(p.courses, ("name", "provider", "workload", "completed_at", "status", "credential_url")),
+        "certifications_items": records(p.certifications_items, ("name", "issuer", "issued_at", "expires_at", "credential_id", "credential_url")),
+        "portfolio_projects": records(p.portfolio_projects, ("name", "description", "technologies", "repository_url", "demo_url", "status")),
+    }
+
+
+def _sync_profile_records(existing, incoming, model, fields):
+    current = {item.id: item for item in existing}
+    retained = []
+    for payload in incoming:
+        data = payload.model_dump(exclude={"id"})
+        item_id = payload.id
+        item = current.pop(item_id, None) if item_id is not None else None
+        if item is None:
+            item = model(**data)
+        else:
+            for key, value in data.items():
+                setattr(item, key, value)
+        retained.append(item)
+    existing[:] = retained
 
 
 @app.get("/api/health")
@@ -521,7 +604,17 @@ def read_profile(db: Session = Depends(get_db)):
 @app.put("/api/profile")
 def update_profile(payload: ProfileUpdate, db: Session = Depends(get_db)):
     p = get_profile(db)
-    for key, value in payload.model_dump().items():
+    data = payload.model_dump()
+    collections = {
+        "educations": (Education, ("course", "institution", "degree", "status", "start_date", "end_date", "description")),
+        "experiences": (Experience, ("company", "role", "employment_type", "location", "start_date", "end_date", "is_current", "description")),
+        "courses": (Course, ("name", "provider", "workload", "completed_at", "status", "credential_url")),
+        "certifications_items": (Certification, ("name", "issuer", "issued_at", "expires_at", "credential_id", "credential_url")),
+        "portfolio_projects": (PortfolioProject, ("name", "description", "technologies", "repository_url", "demo_url", "status")),
+    }
+    for key, (model, fields) in collections.items():
+        _sync_profile_records(getattr(p, key), data.pop(key), model, fields)
+    for key, value in data.items():
         if key.startswith("weight_"):
             value = max(0, min(100, value))
         setattr(p, key, value)
