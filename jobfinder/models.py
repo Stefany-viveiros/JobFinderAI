@@ -302,3 +302,24 @@ class DevelopmentPlanItem(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class SkillAssessmentAttempt(Base):
+    """Registro de desafio prático e autoavaliação de uma competência."""
+    __tablename__ = "skill_assessment_attempts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    skill_id: Mapped[int] = mapped_column(ForeignKey("market_skills.id"), index=True)
+    plan_item_id: Mapped[int | None] = mapped_column(
+        ForeignKey("development_plan_items.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    challenge_title: Mapped[str] = mapped_column(String(220), nullable=False)
+    challenge_prompt: Mapped[str] = mapped_column(Text, default="")
+    rubric_json: Mapped[str] = mapped_column(Text, default="[]")
+    response_text: Mapped[str] = mapped_column(Text, default="")
+    evidence_url: Mapped[str] = mapped_column(Text, default="")
+    rubric_answers_json: Mapped[str] = mapped_column(Text, default="{}")
+    score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    feedback: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(24), default="draft")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
