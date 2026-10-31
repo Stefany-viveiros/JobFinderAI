@@ -172,7 +172,7 @@ class AgentSettings(Base):
     auto_apply_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     require_approval: Mapped[bool] = mapped_column(Boolean, default=True)
     daily_limit: Mapped[int] = mapped_column(Integer, default=5)
-    min_score: Mapped[int] = mapped_column(Integer, default=60)
+    min_score: Mapped[int] = mapped_column(Integer, default=80)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class ApplicationAttempt(Base):
