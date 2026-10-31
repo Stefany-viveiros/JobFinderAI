@@ -418,7 +418,7 @@ def create_development_item(
         raise ValueError("Já existe uma meta ativa para esta competência no seu plano.")
     category = (skill.category or "").lower()
     if not activity:
-        if any(term in category for term in ("framework", "biblioteca", "linguagem")):
+        if any(term in category for term in ("framework", "library", "language", "web")):
             activity = f"Estude os fundamentos de {skill.canonical_name} e desenvolva uma pequena aplicação que demonstre seu uso."
         elif any(term in category for term in ("banco", "database")):
             activity = f"Modele um banco de dados simples usando {skill.canonical_name}, faça consultas e documente as decisões."
