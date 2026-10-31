@@ -280,3 +280,25 @@ class JobSkillExtraction(Base):
     extractor_version: Mapped[str] = mapped_column(String(30), default="")
     skills_found: Mapped[int] = mapped_column(Integer, default=0)
     indexed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class DevelopmentPlanItem(Base):
+    """Meta individual de desenvolvimento ligada a uma competência do catálogo."""
+    __tablename__ = "development_plan_items"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    skill_id: Mapped[int] = mapped_column(ForeignKey("market_skills.id"), index=True)
+    source_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("market_analysis_runs.id", ondelete="SET NULL"), nullable=True
+    )
+    title: Mapped[str] = mapped_column(String(220), nullable=False)
+    objective: Mapped[str] = mapped_column(Text, default="")
+    activity: Mapped[str] = mapped_column(Text, default="")
+    resource_url: Mapped[str] = mapped_column(Text, default="")
+    estimated_hours: Mapped[int] = mapped_column(Integer, default=4)
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="planned")
+    progress_percent: Mapped[int] = mapped_column(Integer, default=0)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
