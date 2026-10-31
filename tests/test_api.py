@@ -147,3 +147,23 @@ def test_profile_update_recomputes_scores(client, db):
     job = make_job(db, title="Estágio Python", description="Python", compatibility=0)
     client.put("/api/profile", json={"technologies": "Python", "interests": "Estágio"})
     assert client.get("/api/jobs").json()[0]["compatibility"] > 0
+
+
+def test_approval_rejects_stale_or_unconfirmed_compatibility(client, db, ready_profile):
+    from jobfinder.agent import get_agent_settings
+
+    job = make_job(db, compatibility=55)
+    attempt = client.post(f"/api/jobs/{job.id}/prepare").json()["attempt"]
+    cfg = get_agent_settings(db)
+    cfg.min_score = 60
+    db.commit()
+    response = client.post(f"/api/attempts/{attempt['id']}/approve")
+    assert response.status_code == 409
+    assert "abaixo do mínimo" in response.json()["detail"]
+
+    job.compatibility = 90
+    job.missing_reasons = "Requisito(s) obrigatório(s) não identificado(s): java"
+    db.commit()
+    response = client.post(f"/api/attempts/{attempt['id']}/approve")
+    assert response.status_code == 409
+    assert "requisito(s) obrigatório(s)" in response.json()["detail"]

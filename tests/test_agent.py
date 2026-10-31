@@ -76,3 +76,23 @@ def test_jobs_below_min_score_are_not_prepared(db, ready_profile):
     r = run_agent(db, collector=lambda names: ([weak], []))
     assert r["saved"] == 1 and r["candidates"] == 0
     assert db.scalars(select(ApplicationAttempt)).all() == []
+
+
+def test_agent_does_not_prepare_job_with_unconfirmed_mandatory_technology(db, ready_profile):
+    cfg = get_agent_settings(db)
+    cfg.min_score = 0
+    db.commit()
+    item = {
+        "source": "Nerdin",
+        "title": "Estágio Backend Python",
+        "company": "Obrigatória",
+        "url": "https://a.test/mandatory",
+        "description": "Requisito obrigatório: Java. Python é desejável.",
+        "location": "Brasil",
+        "modality": "Remoto",
+        "job_type": "Estágio",
+    }
+    result = run_agent(db, collector=lambda names: ([item], []))
+    assert result["saved"] == 1
+    assert result["candidates"] == 0
+    assert db.scalars(select(ApplicationAttempt)).all() == []

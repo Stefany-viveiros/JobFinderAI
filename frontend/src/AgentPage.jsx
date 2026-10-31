@@ -48,18 +48,24 @@ export default function AgentPage({ settings, setSettings, onSave, onRun, runRes
     <div className="panel">
       <div className="panel-heading"><div><h2>Fila e histórico de candidaturas</h2><p>Revise o texto antes de aprovar</p></div>
         <select className="compact-select" value={filter} onChange={e => setFilter(e.target.value)}><option value="todas">Todas</option>{Object.entries(ATTEMPT_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
-      {shown.length ? <div className="attempt-list">{shown.map(a => <article className="attempt-card" key={a.id}>
+      {shown.length ? <div className="attempt-list">{shown.map(a => {
+        const belowMinimum = Number(a.job.compatibility || 0) < Number(settings.min_score ?? 60)
+        const mandatoryUnconfirmed = (a.job.missing_reasons || '').includes('Requisito(s) obrigatório(s) não identificado(s)')
+        return <article className="attempt-card" key={a.id}>
         <div className="attempt-head"><div><strong>{a.job.title}</strong><span>{a.job.company} · {a.job.source} · {a.job.compatibility}%</span></div><AttemptPill status={a.status}/></div>
         <div className="attempt-meta"><span>{CHANNEL_LABEL[a.channel] || a.channel}</span>{a.recipient && <span>Para: {a.recipient}</span>}<span>{a.updated_at ? new Date(a.updated_at + 'Z').toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : ''}</span></div>
         {a.detail && <p className="attempt-detail">{a.detail}</p>}
+        {belowMinimum && <p className="attempt-detail">A compatibilidade atual ({a.job.compatibility}%) está abaixo do mínimo configurado ({settings.min_score ?? 60}%). Revise antes de continuar.</p>}
+        {mandatoryUnconfirmed && <p className="attempt-detail">Há requisito(s) obrigatório(s) ainda não identificados no perfil. A aprovação por e-mail fica bloqueada até a revisão.</p>}
         {open === a.id && <pre className="attempt-message">{a.subject}{'\n\n'}{a.message}</pre>}
         <div className="attempt-actions">
           <button className="text-action" onClick={() => setOpen(open === a.id ? null : a.id)}>{open === a.id ? 'Ocultar texto' : 'Ver texto preparado'}</button>
           <a className="btn btn-secondary btn-sm" href={a.job.url} target="_blank" rel="noreferrer">Abrir vaga <ExternalLink size={13}/></a>
-          {a.channel === 'email' && ['prepared', 'awaiting_approval', 'failed'].includes(a.status) && <button className="btn btn-primary btn-sm" disabled={busy || !settings.email_ready} onClick={() => onApprove(a.id)}><Send size={13}/> {a.status === 'failed' ? 'Tentar novamente' : 'Aprovar e enviar'}</button>}
+          {a.channel === 'email' && ['prepared', 'awaiting_approval', 'failed'].includes(a.status) && <button className="btn btn-primary btn-sm" disabled={busy || !settings.email_ready || belowMinimum || mandatoryUnconfirmed} onClick={() => onApprove(a.id)}><Send size={13}/> {a.status === 'failed' ? 'Tentar novamente' : 'Aprovar e enviar'}</button>}
           {['manual_required', 'prepared', 'awaiting_approval'].includes(a.status) && a.channel !== 'email' && <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => onConfirmManual(a.job.id)}><Check size={13}/> Já enviei no site</button>}
           {['prepared', 'awaiting_approval', 'manual_required', 'failed'].includes(a.status) && <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onCancel(a.id)}><X size={13}/> Cancelar</button>}
-        </div></article>)}</div>
+        </div></article>
+      })}</div>
         : <div className="empty-state"><div className="empty-icon"><Bot size={23}/></div><strong>Nenhuma candidatura nesta visão</strong><p>Execute o agente ou use “Preparar candidatura” em uma vaga.</p></div>}
     </div>
 

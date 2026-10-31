@@ -1,6 +1,30 @@
-"""Compatibilidade explicável entre vagas e perfil profissional."""
+"""Compatibilidade explicável entre vagas e perfil profissional.
+
+A pontuação é determinística: não presume domínio de uma tecnologia só porque
+ela aparece em um texto e não confunde nomes parecidos (Java/JavaScript).
+"""
 import re
 import unicodedata
+
+
+TECHNOLOGY_TERMS = (
+    "JavaScript", "TypeScript", "Node.js", "NodeJS", "FastAPI", "Power BI",
+    "PostgreSQL", "TensorFlow", "PyTorch", "Google Cloud", "Machine Learning",
+    "API REST", "REST API", "HTML5", "CSS3", "C++", "C#", ".NET",
+    "Python", "Java", "PHP", "React", "Angular", "Vue", "Django", "Flask",
+    "HTML", "CSS", "SQL", "MySQL", "SQLite", "MongoDB", "GitHub", "Git",
+    "Docker", "AWS", "Azure", "Excel", "Linux", "Kotlin", "Swift",
+    "Flutter", "Android", "iOS", "Spring", "Laravel", "Pandas", "NumPy",
+    "Selenium", "Cypress", "Jest", "Figma", "Ruby", "Golang",
+)
+MANDATORY_MARKERS = re.compile(
+    r"\b(obrigat\w*|necessar\w*|imprescind\w*|must[ -]have|required|"
+    r"mandatory|essential|minimum qualifications|requisitos minimos?|"
+    r"requisito minimo)\b"
+)
+DESIRABLE_MARKERS = re.compile(
+    r"\b(desej[aá]vel|diferencial|nice[ -]to[ -]have|preferred|plus)\b"
+)
 
 
 def normalize(value):
@@ -20,12 +44,69 @@ def terms(text):
 
 
 def split_values(value):
+    """Aceita listas separadas por vírgula, ponto e vírgula, barra ou quebra de linha."""
     return [
         normalize(part.strip())
-        for part in str(value or "").split(",")
+        for part in re.split(r"[,;|\n]+", str(value or ""))
         if part.strip()
     ]
 
+
+def _contains_phrase(text, phrase):
+    """Busca frase inteira: Java não pode casar dentro de JavaScript."""
+    phrase = normalize(phrase).strip()
+    if not phrase:
+        return False
+    pattern = r"(?<![a-z0-9])" + re.escape(phrase) + r"(?![a-z0-9])"
+    return re.search(pattern, normalize(text)) is not None
+
+
+def profile_technology_terms(profile):
+    """Tecnologias explicitamente listadas ou citadas em projetos/experiência/cursos.
+
+    A presença no perfil é evidência textual, não uma afirmação de nível de domínio.
+    """
+    explicit = split_values(getattr(profile, "technologies", ""))
+    context = " ".join(
+        getattr(profile, field, "") or ""
+        for field in (
+            "technologies", "skills", "keywords", "projects",
+            "experience", "certifications", "course",
+        )
+    )
+    contextual = [
+        normalize(item) for item in TECHNOLOGY_TERMS
+        if _contains_phrase(context, item)
+    ]
+    return sorted(set(item for item in explicit + contextual if item))
+
+
+def _mandatory_technologies(description):
+    """Identifica tecnologias próximas a marcadores explícitos de obrigatoriedade."""
+    required = set()
+    for sentence in re.split(r"[.!?;\n]+", normalize(description)):
+        mandatory = list(MANDATORY_MARKERS.finditer(sentence))
+        if not mandatory:
+            continue
+        desirable = list(DESIRABLE_MARKERS.finditer(sentence))
+        for technology in TECHNOLOGY_TERMS:
+            pattern = r"(?<![a-z0-9])" + re.escape(normalize(technology)) + r"(?![a-z0-9])"
+            for match in re.finditer(pattern, sentence):
+                def distance(marker):
+                    if marker.end() < match.start():
+                        return match.start() - marker.end()
+                    if marker.start() > match.end():
+                        return marker.start() - match.end()
+                    return 0
+
+                required_distance = min(distance(marker) for marker in mandatory)
+                desirable_distance = min(
+                    (distance(marker) for marker in desirable),
+                    default=float("inf"),
+                )
+                if required_distance <= desirable_distance:
+                    required.add(normalize(technology))
+    return sorted(required)
 
 def score_job(job, profile):
     title = normalize(job.get("title"))
@@ -57,28 +138,28 @@ def score_job(job, profile):
     ])
     tech = terms(tech_text)
     haystack = f"{title} {description}"
-    found = sorted(term for term in tech if term in haystack)
+    found = sorted(term for term in tech if _contains_phrase(haystack, term))
 
     excluded = split_values(getattr(profile, "exclude_terms", ""))
-    blocked = [term for term in excluded if term in haystack]
+    blocked = [term for term in excluded if _contains_phrase(haystack, term)]
     if blocked:
         return 0, [], ["Termos excluídos: " + ", ".join(blocked)]
 
     interests = split_values(getattr(profile, "interests", ""))
     area_hits = [
         item for item in interests
-        if item in title or item in description[:2500]
+        if _contains_phrase(title, item) or _contains_phrase(description[:2500], item)
     ]
 
     desired_modalities = split_values(getattr(profile, "modality", ""))
     modality_aliases = {
-        "remoto": ("remoto", "remote", "work from home"),
+        "remoto": ("remoto", "remote", "work from home", "home office"),
         "hibrido": ("hibrido", "hybrid"),
         "presencial": ("presencial", "on-site", "onsite", "on site"),
     }
-    normalized_modality = normalize(modality)
+    job_modality_text = " ".join((modality, location, description[:1200]))
     modality_hit = any(
-        alias in normalized_modality
+        _contains_phrase(job_modality_text, alias)
         for desired in desired_modalities
         for alias in modality_aliases.get(desired, (desired,))
     )
@@ -87,9 +168,11 @@ def score_job(job, profile):
     location_hit = bool(
         desired_locations
         and (
-            desired_locations in location
-            or "remoto" in location
-            or "remote" in location
+            _contains_phrase(location, desired_locations)
+            or _contains_phrase(location, "remoto")
+            or _contains_phrase(location, "remote")
+            or _contains_phrase(description[:1200], "remoto")
+            or _contains_phrase(description[:1200], "remote")
         )
     )
 
@@ -97,17 +180,16 @@ def score_job(job, profile):
         "intern", "internship", "estagio", "junior", "entry level",
         "entry-level", "graduate", "trainee", "aprendiz",
     )
-    level_hit = any(term in title for term in level_terms) or any(
-        term in description[:1800] for term in level_terms
+    level_hit = any(_contains_phrase(title, term) for term in level_terms) or any(
+        _contains_phrase(job_type, term) for term in level_terms
     )
 
     desired_types = split_values(getattr(profile, "job_types", ""))
     type_hit = any(
-        term in title or term in job_type
+        _contains_phrase(title, term) or _contains_phrase(job_type, term)
         for term in desired_types
     )
 
-    # Pesos são normalizados: a soma pode ser qualquer valor.
     weights = {
         "keywords": max(0, int(getattr(profile, "weight_keywords", 40) or 0)),
         "area": max(0, int(getattr(profile, "weight_area", 25) or 0)),
@@ -115,9 +197,6 @@ def score_job(job, profile):
         "location": max(0, int(getattr(profile, "weight_location", 10) or 0)),
         "level": max(0, int(getattr(profile, "weight_level", 10) or 0)),
     }
-
-    # Se o usuário cadastrou tipos de vaga, parte do peso de nível
-    # também considera estágio/júnior explicitamente.
     total = sum(weights.values()) or 1
     earned = (
         weights["keywords"] * (len(found) / max(1, len(tech)))
@@ -130,11 +209,12 @@ def score_job(job, profile):
 
     matched = []
     missing = []
-
     if found:
-        matched.append("Termos técnicos encontrados: " + ", ".join(found[:12]))
+        matched.append("Tecnologias do perfil também citadas na vaga: " + ", ".join(found[:12]))
     elif tech:
-        missing.append("Nenhuma tecnologia cadastrada foi localizada no texto da vaga")
+        missing.append("Nenhuma tecnologia identificada no perfil foi localizada no texto da vaga")
+    else:
+        missing.append("Perfil sem tecnologias identificadas; complete ou revise suas habilidades e projetos")
 
     if area_hits:
         matched.append("Área relacionada: " + ", ".join(area_hits[:5]))
@@ -151,18 +231,24 @@ def score_job(job, profile):
     elif desired_locations:
         missing.append("Localização não confirmada")
 
-    if level_hit:
-        matched.append("Indícios de estágio, júnior ou nível de entrada")
-    elif type_hit:
-        matched.append("Tipo de oportunidade relacionado ao perfil")
+    if level_hit or type_hit:
+        matched.append("Indícios de nível/tipo de oportunidade compatível")
     else:
         missing.append("Nível da vaga não confirmado; verifique os requisitos")
 
+    required = _mandatory_technologies(description)
+    unconfirmed_required = [item for item in required if item not in tech]
+    if unconfirmed_required:
+        # Não afirma que a pessoa não sabe a tecnologia: apenas impede a preparação
+        # automática quando o currículo/perfil não comprova um requisito obrigatório.
+        percentage = min(percentage, 49)
+        missing.append(
+            "Requisito(s) obrigatório(s) não identificado(s) no perfil — confirme antes de se candidatar: "
+            + ", ".join(unconfirmed_required)
+        )
+
     if not description.strip():
         missing.append("A fonte não forneceu descrição suficiente para análise")
-
-    # Não temos como confirmar elegibilidade, senioridade ou domínio
-    # apenas pela descrição. Esses pontos precisam ser verificados.
-    missing.append("Confira os requisitos obrigatórios antes de se candidatar")
+    missing.append("Pontuação é uma triagem inicial; revise os requisitos e a candidatura antes de enviar")
 
     return percentage, matched, missing

@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func, select
 
 from .config import settings
-from .matching import normalize
+from .matching import normalize, profile_technology_terms
 from .models import Application, ApplicationAttempt, Job
 
 OPEN_STATUSES = ("prepared", "awaiting_approval", "manual_required")

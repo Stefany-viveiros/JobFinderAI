@@ -36,3 +36,22 @@ def test_dedupe_key_matches_same_job_across_sources_and_skips_unknown_company():
     assert dedupe_key("Estágio Python", "ACME") == dedupe_key("Estágio Python", "ACME Ltda")
     assert dedupe_key("Estágio Python", "Empresa não informada") is None
     assert dedupe_key("Estágio Python", "Outra Empresa") != dedupe_key("Estágio Python", "ACME Ltda")
+
+
+@pytest.mark.parametrize("title", [
+    "Estágio Analista de Dados",
+    "Júnior Data Analyst",
+    "Estágio em Business Intelligence",
+    "Analista de BI Júnior",
+    "Estágio em QA e Testes de Software",
+    "Suporte Técnico Júnior",
+    "Estágio em Segurança da Informação",
+    "Desenvolvedor RPA Júnior",
+])
+def test_expanded_technology_roles_are_included(title):
+    assert is_target_job({"title": title})
+
+
+def test_non_technology_roles_are_still_excluded():
+    assert not is_target_job({"title": "Estágio em Recursos Humanos"})
+    assert not is_target_job({"title": "Analista Financeiro Júnior"})

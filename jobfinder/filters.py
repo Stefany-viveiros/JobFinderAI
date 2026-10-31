@@ -55,8 +55,11 @@ TECH_RE = re.compile(
     r"(software|developer|desenvolv|programador|programacao|engenheir[oa] de (software|dados)|"
     r"front[- ]?end|back[- ]?end|full[- ]?stack|\bweb\b|\bpython\b|javascript|typescript|\bphp\b|"
     r"\breact\b|node\.?js|\bapi\b|mobile|android|\bios\b|flutter|"
-    r"\bdados\b|\bdata\b|machine learning|\bia\b|\bai\b|inteligencia artificial|automacao|"
-    r"\bqa\b|devops|\bti\b|tecnologia|sistemas|informatica)")
+    r"\bdados\b|\bdata\b|data analyst|data engineer|data scientist|analytics|analista de (dados|bi|sistemas)|"
+    r"cientista de dados|business intelligence|\bbi\b|machine learning|\bia\b|\bai\b|inteligencia artificial|"
+    r"automacao|\bqa\b|quality assurance|testes de software|devops|infraestrutura|redes de computadores|"
+    r"banco de dados|seguranca da informacao|cybersecurity|\bti\b|tecnologia|sistemas|informatica|"
+    r"suporte tecnico|erp|rpa)")
 # 'engineer' sozinho é amplo demais: descarta engenharias não relacionadas a software.
 NON_TECH_ENGINEER_RE = re.compile(r"(sales|customer|support|mechanical|civil|chemical|electrical|"
                                   r"manufacturing|hardware|field|solutions) engineer")
