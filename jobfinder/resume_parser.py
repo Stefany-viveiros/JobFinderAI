@@ -137,7 +137,7 @@ def parse_resume(content: bytes, filename: str) -> dict[str, str]:
         education_lines = _section_lines(text, ("formação acadêmica", "formação", "educação"))
         records = []
         for line in education_lines:
-            parts = [part.strip() for part in re.split(r"\\s+[|–—-]\\s+", line) if part.strip()]
+            parts = [part.strip() for part in re.split(r"\s+[|–—-]\s+", line) if part.strip()]
             if parts:
                 records.append({
                     "course": parts[0][:200],
