@@ -64,7 +64,7 @@ export default function AgentPage({ settings, setSettings, onSave, onRun, runRes
           {a.channel === 'email' && ['prepared', 'awaiting_approval', 'failed'].includes(a.status) && <button className="btn btn-primary btn-sm" disabled={busy || !settings.email_ready || belowMinimum || mandatoryUnconfirmed} onClick={() => onApprove(a.id)}><Send size={13}/> {a.status === 'failed' ? 'Tentar novamente' : 'Aprovar e enviar'}</button>}
           {['manual_required', 'prepared', 'awaiting_approval'].includes(a.status) && a.channel !== 'email' && <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => onConfirmManual(a.job.id)}><Check size={13}/> Já enviei no site</button>}
           {['prepared', 'awaiting_approval', 'manual_required', 'failed'].includes(a.status) && <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onCancel(a.id)}><X size={13}/> Cancelar</button>}
-        </div></article>)}</div>
+        </div></article>\n      })}</div>
         : <div className="empty-state"><div className="empty-icon"><Bot size={23}/></div><strong>Nenhuma candidatura nesta visão</strong><p>Execute o agente ou use “Preparar candidatura” em uma vaga.</p></div>}
     </div>
 
