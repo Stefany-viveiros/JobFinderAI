@@ -158,7 +158,7 @@ def test_profile_gap_distinguishes_project_course_declaration_and_missing(db):
     gap = build_profile_gap(db, run_id=snapshot["run_id"])
     by_name = {item["name"]: item for item in gap["items"]}
 
-    assert by_name["React"]["status"] == "projeto"
+    assert by_name["React"]["status"] == "praticada"
     assert by_name["Python"]["status"] == "curso_concluido"
     assert by_name["JavaScript"]["status"] == "declarada"
     assert gap["available"] is True
