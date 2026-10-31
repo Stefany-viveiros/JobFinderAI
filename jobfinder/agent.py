@@ -24,8 +24,14 @@ def pick_candidates(db, min_score, limit=MAX_PREPARE_PER_RUN):
     """Vagas estágio/júnior compatíveis, sem candidatura e sem tentativa anterior (inclui falhas/canceladas)."""
     attempted = select(ApplicationAttempt.job_id)
     applied = select(Application.job_id)
-    stmt = (select(Job).where(Job.is_archived.is_(False), Job.level.in_(TARGET_LEVELS),
-                              Job.compatibility >= min_score, Job.id.not_in(attempted), Job.id.not_in(applied))
+    stmt = (select(Job).where(
+                Job.is_archived.is_(False),
+                Job.level.in_(TARGET_LEVELS),
+                Job.compatibility >= min_score,
+                Job.missing_reasons.not_like("%Requisito(s) obrigatório(s) não identificado(s)%"),
+                Job.id.not_in(attempted),
+                Job.id.not_in(applied),
+            )
             .order_by(Job.compatibility.desc(), Job.id.desc()).limit(limit))
     return list(db.scalars(stmt).all())
 
