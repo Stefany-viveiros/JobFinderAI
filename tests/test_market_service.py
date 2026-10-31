@@ -152,7 +152,7 @@ def test_profile_gap_distinguishes_project_course_declaration_and_missing(db):
     make_job(
         db,
         title="Estágio Frontend Python",
-        description="Python, React e JavaScript são competências desejáveis para esta vaga.",
+        description="Python, React, JavaScript e Docker são competências desejáveis para esta vaga.",
     )
     snapshot = create_market_snapshot(db, level_scope="estagio", days=30, min_jobs=1)
     gap = build_profile_gap(db, run_id=snapshot["run_id"])
@@ -161,5 +161,6 @@ def test_profile_gap_distinguishes_project_course_declaration_and_missing(db):
     assert by_name["React"]["status"] == "praticada"
     assert by_name["Python"]["status"] == "curso_concluido"
     assert by_name["JavaScript"]["status"] == "declarada"
+    assert by_name["Docker"]["status"] == "nao_identificada"
     assert gap["available"] is True
     assert "não significa falta de conhecimento" in gap["notice"]
