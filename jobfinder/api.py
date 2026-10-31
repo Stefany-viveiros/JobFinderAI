@@ -11,6 +11,7 @@ from .db import init_db, SessionLocal
 from .models import (
     Job, Application, Task, Profile, NotificationLog, ApplicationAttempt,
     Education, Experience, Course, Certification, PortfolioProject,
+    MarketAnalysisRun, MarketSkillMetric, Skill,
 )
 from .service import get_profile, save_jobs, refresh_scores, create_task, complete_task, STATUSES, collect_and_save_ranked
 from .sources import SOURCES, SOURCE_INFO, LINK_ONLY_SOURCES, collect_selected, external_search_links
@@ -20,6 +21,7 @@ from .mailer import send_daily_reminder
 from .config import settings
 from .resume_parser import parse_resume, extract_resume_text
 from .resume_ai import analyze_resume_with_gemini, ResumeAIError
+from .market_service import create_market_snapshot, index_unprocessed_jobs
 
 app = FastAPI(title="JobFinder AI API", version="1.1.0", description="API local do JobFinder AI")
 app.add_middleware(
@@ -698,3 +700,76 @@ def send_notifications(db: Session = Depends(get_db)):
         raise HTTPException(400, "Configure as variáveis SMTP no arquivo .env antes de enviar lembretes.")
     result = send_daily_reminder(db)
     return {"result": result}
+
+
+
+class MarketRunRequest(BaseModel):
+    level_scope: str = Field("both", pattern="^(both|estagio|junior)$")
+    days: int = Field(30, ge=1, le=365)
+
+
+@app.post("/api/market/analysis/run")
+def run_market_analysis(payload: MarketRunRequest, db: Session = Depends(get_db)):
+    """Indexa vagas alvo e cria um snapshot auditável de inteligência de mercado."""
+    try:
+        indexed = index_unprocessed_jobs(db)
+        result = create_market_snapshot(
+            db, level_scope=payload.level_scope, days=payload.days
+        )
+        result["indexing"] = indexed
+        return result
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.get("/api/market/analysis/latest")
+def latest_market_analysis(db: Session = Depends(get_db)):
+    run = db.scalar(
+        select(MarketAnalysisRun)
+        .where(MarketAnalysisRun.status == "completed")
+        .order_by(MarketAnalysisRun.created_at.desc(), MarketAnalysisRun.id.desc())
+        .limit(1)
+    )
+    if run is None:
+        return {"available": False, "message": "Ainda não existe uma análise de mercado."}
+
+    rows = db.execute(
+        select(MarketSkillMetric, Skill)
+        .join(Skill, Skill.id == MarketSkillMetric.skill_id)
+        .where(MarketSkillMetric.run_id == run.id)
+        .order_by(MarketSkillMetric.rank)
+    ).all()
+    return {
+        "available": True,
+        "run": {
+            "id": run.id, "created_at": run.created_at.isoformat() if run.created_at else None,
+            "period_start": run.period_start.isoformat() if run.period_start else None,
+            "period_end": run.period_end.isoformat() if run.period_end else None,
+            "level_scope": run.level_scope, "total_jobs": run.total_jobs,
+            "valid_jobs": run.valid_jobs, "jobs_with_description": run.jobs_with_description,
+            "sources": __import__("json").loads(run.sources_json or "[]"),
+            "taxonomy_version": run.taxonomy_version, "quality_notes": run.quality_notes,
+        },
+        "skills": [{
+            "id": metric.id, "skill_id": skill.id, "name": skill.canonical_name,
+            "category": skill.category, "jobs_count": metric.jobs_count,
+            "mention_rate": round(metric.mention_rate * 100, 1), "rank": metric.rank,
+        } for metric, skill in rows],
+    }
+
+
+@app.get("/api/market/analysis/history")
+def market_analysis_history(limit: int = Query(20, ge=1, le=100), db: Session = Depends(get_db)):
+    runs = db.scalars(
+        select(MarketAnalysisRun)
+        .where(MarketAnalysisRun.status == "completed")
+        .order_by(MarketAnalysisRun.created_at.desc(), MarketAnalysisRun.id.desc())
+        .limit(limit)
+    ).all()
+    return [{
+        "id": run.id, "created_at": run.created_at.isoformat() if run.created_at else None,
+        "period_start": run.period_start.isoformat() if run.period_start else None,
+        "period_end": run.period_end.isoformat() if run.period_end else None,
+        "level_scope": run.level_scope, "total_jobs": run.total_jobs,
+        "valid_jobs": run.valid_jobs, "quality_notes": run.quality_notes,
+    } for run in runs]
