@@ -102,7 +102,7 @@ def _section_lines(text: str, headings: tuple[str, ...]) -> list[str]:
     return result
 
 
-def parse_resume(content: bytes, filename: str) -> dict[str, str]:
+def parse_resume(content: bytes, filename: str) -> dict:
     suffix = Path(filename or "").suffix.lower()
     text = _read_text(content, suffix)
     text = re.sub(r"[ \t]+", " ", text)
