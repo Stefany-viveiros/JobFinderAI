@@ -22,7 +22,8 @@ from .config import settings
 from .resume_parser import parse_resume, extract_resume_text
 from .resume_ai import analyze_resume_with_gemini, ResumeAIError
 from .market_service import (create_market_snapshot, index_unprocessed_jobs, build_profile_gap,
-    list_development_plan, create_development_item, update_development_item, DEVELOPMENT_STATUSES)
+    list_development_plan, create_development_item, update_development_item, DEVELOPMENT_STATUSES,
+    create_skill_assessment, submit_skill_assessment, list_skill_assessments)
 
 app = FastAPI(title="JobFinder AI API", version="1.1.0", description="API local do JobFinder AI")
 app.add_middleware(
@@ -824,6 +825,39 @@ def delete_market_development_item(item_id: int, db: Session = Depends(get_db)):
     db.delete(item)
     db.commit()
     return {"message": "Meta removida do plano."}
+
+class SkillAssessmentCreate(BaseModel):
+    skill_id: int = Field(gt=0)
+    plan_item_id: Optional[int] = Field(None, gt=0)
+
+
+class SkillAssessmentSubmit(BaseModel):
+    response_text: str = Field("", max_length=12000)
+    evidence_url: str = Field("", max_length=2000)
+    rubric_answers: dict[str, bool]
+
+
+@app.get("/api/market/assessments")
+def get_market_assessments(skill_id: Optional[int] = Query(None, gt=0), db: Session = Depends(get_db)):
+    return list_skill_assessments(db, skill_id=skill_id)
+
+
+@app.post("/api/market/assessments")
+def start_market_assessment(payload: SkillAssessmentCreate, db: Session = Depends(get_db)):
+    try:
+        return {"attempt": create_skill_assessment(db, **payload.model_dump())}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.post("/api/market/assessments/{attempt_id}/submit")
+def submit_market_assessment(attempt_id: int, payload: SkillAssessmentSubmit, db: Session = Depends(get_db)):
+    try:
+        attempt = submit_skill_assessment(db, attempt_id, **payload.model_dump())
+        return {"message": "Autoavaliação registrada.", "attempt": attempt}
+    except ValueError as exc:
+        raise HTTPException(404 if "não encontrado" in str(exc) else 400, str(exc))
+
 
 
 @app.get("/api/market/analysis/history")
