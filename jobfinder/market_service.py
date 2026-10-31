@@ -465,3 +465,185 @@ def update_development_item(db: Session, item_id: int, payload: dict) -> dict:
     db.refresh(item)
     skill = db.get(Skill, item.skill_id)
     return development_item_dict(item, skill)
+
+
+ASSESSMENT_STATUSES = {"draft", "self_reviewed"}
+
+
+def _challenge_for_skill(skill: Skill) -> dict:
+    category = (skill.category or "").lower()
+    name = skill.canonical_name
+    if category in {"language", "web", "framework", "library"}:
+        title = f"Mini projeto prático com {name}"
+        prompt = (
+            f"Crie uma pequena aplicação usando {name}. Escolha um problema simples, "
+            "implemente uma funcionalidade completa, trate entradas inválidas e documente "
+            "como executar e testar o projeto. Inclua exemplos do resultado obtido."
+        )
+        criteria = [
+            {"id": "functional", "label": "Implementei uma funcionalidade que funciona de ponta a ponta."},
+            {"id": "quality", "label": "Tratei entradas inválidas ou situações de erro."},
+            {"id": "tests", "label": "Testei o comportamento com exemplos ou testes automatizados."},
+            {"id": "documentation", "label": "Documentei objetivo, execução e decisões do projeto."},
+        ]
+    elif category == "database":
+        title = f"Modelagem e consultas com {name}"
+        prompt = (
+            f"Modele um pequeno banco de dados usando {name}. Crie tabelas/coleções, "
+            "insira dados de exemplo, faça consultas úteis e demonstre como lida com "
+            "integridade, filtros e atualização dos dados."
+        )
+        criteria = [
+            {"id": "model", "label": "Modelei entidades/estruturas coerentes com o problema."},
+            {"id": "queries", "label": "Criei consultas que filtram e retornam dados úteis."},
+            {"id": "integrity", "label": "Considerei integridade, validação ou consistência dos dados."},
+            {"id": "documentation", "label": "Documentei estrutura, comandos e exemplos de resultado."},
+        ]
+    elif category in {"cloud", "tool"}:
+        title = f"Entrega técnica usando {name}"
+        prompt = (
+            f"Prepare uma demonstração prática de {name} aplicada a um projeto pequeno. "
+            "Registre a configuração, os comandos ou etapas executadas, o resultado e "
+            "como outra pessoa poderia reproduzir a atividade."
+        )
+        criteria = [
+            {"id": "setup", "label": "Configurei a ferramenta/ambiente e expliquei os passos."},
+            {"id": "execution", "label": "Executei uma tarefa real e registrei o resultado."},
+            {"id": "troubleshooting", "label": "Identifiquei e tratei ao menos um erro ou cuidado relevante."},
+            {"id": "documentation", "label": "Documentei como reproduzir a demonstração."},
+        ]
+    else:
+        title = f"Estudo de caso aplicado: {name}"
+        prompt = (
+            f"Escolha um cenário simples em que {name} seja relevante. Explique o problema, "
+            "apresente uma solução aplicada, registre as decisões e demonstre o resultado "
+            "com exemplos ou evidências."
+        )
+        criteria = [
+            {"id": "understanding", "label": "Expliquei o problema e os conceitos envolvidos."},
+            {"id": "application", "label": "Apliquei a competência em um cenário concreto."},
+            {"id": "result", "label": "Apresentei um resultado ou evidência verificável."},
+            {"id": "documentation", "label": "Registrei decisões, limitações e próximos passos."},
+        ]
+    return {"title": title, "prompt": prompt, "criteria": criteria}
+
+
+def assessment_attempt_dict(attempt: "SkillAssessmentAttempt", skill: Skill) -> dict:
+    return {
+        "id": attempt.id,
+        "skill_id": skill.id,
+        "skill_name": skill.canonical_name,
+        "category": skill.category,
+        "plan_item_id": attempt.plan_item_id,
+        "title": attempt.challenge_title,
+        "prompt": attempt.challenge_prompt,
+        "criteria": json.loads(attempt.rubric_json or "[]"),
+        "response_text": attempt.response_text,
+        "evidence_url": attempt.evidence_url,
+        "rubric_answers": json.loads(attempt.rubric_answers_json or "{}"),
+        "score": attempt.score,
+        "feedback": attempt.feedback,
+        "status": attempt.status,
+        "created_at": attempt.created_at.isoformat() if attempt.created_at else None,
+        "submitted_at": attempt.submitted_at.isoformat() if attempt.submitted_at else None,
+        "result_kind": "autoavaliacao" if attempt.status == "self_reviewed" else "rascunho",
+        "notice": "Resultado de autoavaliação. Não é uma certificação nem comprovação independente de proficiência.",
+    }
+
+
+def create_skill_assessment(db: Session, *, skill_id: int, plan_item_id: int | None = None) -> dict:
+    from .models import SkillAssessmentAttempt
+    skill = db.get(Skill, skill_id)
+    if skill is None or not skill.active:
+        raise ValueError("Competência não encontrada no catálogo.")
+    if plan_item_id is not None:
+        plan_item = db.get(DevelopmentPlanItem, plan_item_id)
+        if plan_item is None or plan_item.skill_id != skill_id:
+            raise ValueError("A meta informada não corresponde à competência.")
+    existing = db.scalar(
+        select(SkillAssessmentAttempt)
+        .where(SkillAssessmentAttempt.skill_id == skill_id, SkillAssessmentAttempt.status == "draft")
+        .order_by(SkillAssessmentAttempt.created_at.desc())
+        .limit(1)
+    )
+    if existing:
+        return assessment_attempt_dict(existing, skill)
+    challenge = _challenge_for_skill(skill)
+    attempt = SkillAssessmentAttempt(
+        skill_id=skill_id,
+        plan_item_id=plan_item_id,
+        challenge_title=challenge["title"],
+        challenge_prompt=challenge["prompt"],
+        rubric_json=json.dumps(challenge["criteria"], ensure_ascii=False),
+        status="draft",
+    )
+    db.add(attempt)
+    db.commit()
+    db.refresh(attempt)
+    return assessment_attempt_dict(attempt, skill)
+
+
+def submit_skill_assessment(
+    db: Session, attempt_id: int, *, response_text: str,
+    evidence_url: str, rubric_answers: dict,
+) -> dict:
+    from .models import SkillAssessmentAttempt
+    attempt = db.get(SkillAssessmentAttempt, attempt_id)
+    if attempt is None:
+        raise ValueError("Desafio não encontrado.")
+    if attempt.status != "draft":
+        raise ValueError("Este desafio já foi enviado. Inicie uma nova tentativa para refazê-lo.")
+    criteria = json.loads(attempt.rubric_json or "[]")
+    required_ids = {item["id"] for item in criteria}
+    if set(rubric_answers) != required_ids or any(not isinstance(value, bool) for value in rubric_answers.values()):
+        raise ValueError("Responda a todos os critérios da autoavaliação.")
+    if len((response_text or "").strip()) < 30 and not (evidence_url or "").strip():
+        raise ValueError("Descreva sua solução ou informe um link de evidência.")
+    passed = [item for item in criteria if rubric_answers[item["id"]]]
+    pending = [item["label"] for item in criteria if not rubric_answers[item["id"]]]
+    score = round((len(passed) / len(criteria)) * 100) if criteria else 0
+    if score == 100:
+        feedback = "Você marcou todos os critérios como atendidos. Guarde a evidência e tente explicar suas decisões; uma revisão externa pode fortalecer a comprovação."
+    elif score >= 50:
+        feedback = "Você marcou parte dos critérios como atendidos. Revise os pontos pendentes e complemente sua entrega antes de compartilhar o projeto."
+    else:
+        feedback = "Use os critérios pendentes como próximos passos. Você pode revisar o desafio, melhorar a solução e iniciar uma nova tentativa."
+    if pending:
+        feedback += " Pontos para revisar: " + " ".join(pending)
+    attempt.response_text = (response_text or "").strip()
+    attempt.evidence_url = (evidence_url or "").strip()
+    attempt.rubric_answers_json = json.dumps(rubric_answers, ensure_ascii=False)
+    attempt.score = score
+    attempt.feedback = feedback
+    attempt.status = "self_reviewed"
+    attempt.submitted_at = datetime.utcnow()
+    db.commit()
+    db.refresh(attempt)
+    skill = db.get(Skill, attempt.skill_id)
+    return assessment_attempt_dict(attempt, skill)
+
+
+def list_skill_assessments(db: Session, *, skill_id: int | None = None) -> dict:
+    from .models import SkillAssessmentAttempt
+    stmt = (
+        select(SkillAssessmentAttempt, Skill)
+        .join(Skill, Skill.id == SkillAssessmentAttempt.skill_id)
+        .order_by(SkillAssessmentAttempt.created_at.desc(), SkillAssessmentAttempt.id.desc())
+    )
+    if skill_id is not None:
+        stmt = stmt.where(SkillAssessmentAttempt.skill_id == skill_id)
+    rows = db.execute(stmt.limit(100)).all()
+    attempts = [assessment_attempt_dict(attempt, skill) for attempt, skill in rows]
+    return {
+        "attempts": attempts,
+        "summary": {
+            "total": len(attempts),
+            "submitted": sum(item["status"] == "self_reviewed" for item in attempts),
+            "drafts": sum(item["status"] == "draft" for item in attempts),
+            "average_self_score": round(
+                sum(item["score"] or 0 for item in attempts if item["score"] is not None)
+                / max(1, sum(item["score"] is not None for item in attempts)), 1
+            ),
+        },
+        "notice": "Pontuações são autoavaliações baseadas nos critérios marcados pela própria pessoa; não equivalem a validação independente de proficiência.",
+    }
