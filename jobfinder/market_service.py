@@ -230,20 +230,37 @@ def build_profile_gap(db: Session, *, run_id: int | None = None) -> dict:
             f"{item.role} {item.company} {item.description}"
             for item in profile.experiences
         ),
+        "praticada": " ".join(
+            f"{item.name} {item.description} {item.technologies}"
+            for item in profile.portfolio_projects
+            if (item.status or "").strip().lower() in {"concluído", "concluido", "completed"}
+        ),
         "projeto": " ".join(
             f"{item.name} {item.description} {item.technologies}"
             for item in profile.portfolio_projects
+            if (item.status or "").strip().lower() not in {"concluído", "concluido", "completed"}
         ) + " " + (profile.projects or ""),
+        "formacao": " ".join(
+            f"{item.course} {item.description}"
+            for item in profile.educations
+        ),
         "curso_concluido": " ".join(
             f"{item.name} {item.provider}"
             for item in profile.courses
             if (item.status or "").strip().lower() in {"concluído", "concluido", "completed"}
         ),
-        "em_estudo": " ".join(
-            f"{item.name} {item.provider}"
-            for item in profile.courses
-            if (item.status or "").strip().lower() in {"em andamento", "em curso", "in progress", "em estudo"}
-        ),
+        "em_estudo": " ".join([
+            *[
+                f"{item.name} {item.provider}"
+                for item in profile.courses
+                if (item.status or "").strip().lower() in {"em andamento", "em curso", "in progress", "em estudo"}
+            ],
+            *[
+                f"{item.name} {item.description} {item.technologies}"
+                for item in profile.portfolio_projects
+                if (item.status or "").strip().lower() in {"em desenvolvimento", "em andamento", "in progress"}
+            ],
+        ]),
         "certificacao": " ".join(
             f"{item.name} {item.issuer}"
             for item in profile.certifications_items
@@ -259,11 +276,13 @@ def build_profile_gap(db: Session, *, run_id: int | None = None) -> dict:
     }
     priorities = {
         "experiencia": (1, "Evidenciada em experiência profissional"),
-        "projeto": (2, "Evidenciada em projeto"),
-        "curso_concluido": (3, "Mencionada em curso concluído"),
-        "certificacao": (4, "Mencionada em certificação"),
-        "em_estudo": (5, "Em estudo (curso em andamento)"),
-        "declarada": (6, "Declarada no perfil"),
+        "praticada": (2, "Praticada em projeto concluído"),
+        "projeto": (3, "Evidenciada em projeto em desenvolvimento"),
+        "curso_concluido": (4, "Mencionada em curso concluído"),
+        "certificacao": (5, "Mencionada em certificação"),
+        "em_estudo": (6, "Em estudo ou prática em andamento"),
+        "formacao": (7, "Mencionada na formação acadêmica"),
+        "declarada": (8, "Declarada no perfil"),
     }
 
     items = []
