@@ -229,7 +229,7 @@ def build_profile_gap(db: Session, *, run_id: int | None = None) -> dict:
         "experiencia": " ".join(
             f"{item.role} {item.company} {item.description}"
             for item in profile.experiences
-        ),
+        ) + " " + (profile.experience or ""),
         "praticada": " ".join(
             f"{item.name} {item.description} {item.technologies}"
             for item in profile.portfolio_projects
@@ -303,7 +303,7 @@ def build_profile_gap(db: Session, *, run_id: int | None = None) -> dict:
             recommendation = "Entre as mais citadas neste recorte; avaliar prioridade"
         elif status == "nao_identificada":
             recommendation = "Acompanhar a demanda"
-        elif status in {"em_estudo", "curso_concluido", "certificacao"}:
+        elif status in {"em_estudo", "curso_concluido", "certificacao", "formacao", "projeto"}:
             recommendation = "Considerar prática em projeto"
         else:
             recommendation = "Fortalecer e demonstrar com evidências"
