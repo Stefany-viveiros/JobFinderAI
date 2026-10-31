@@ -206,3 +206,42 @@
 
 .market-status-pill.status-praticada{background:#e8f7f0;color:#25865f}
 .market-status-pill.status-formacao{background:#f0edff;color:#7165c4}
+
+
+/* Plano de desenvolvimento */
+.market-add-goal{display:inline-flex;align-items:center;justify-content:center;gap:5px;margin-top:7px;padding:6px 9px;border:1px solid #e5e2ff;border-radius:7px;background:#f7f6ff;color:#6e62d5;font-size:9px;font-weight:700;white-space:nowrap}
+.market-add-goal:hover:not(:disabled){background:#eeecff}
+.market-add-goal:disabled{opacity:.55;cursor:not-allowed}
+.market-development-panel{margin-top:16px}
+.market-plan-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:15px 0}
+.market-plan-summary>div{display:grid;gap:5px;padding:13px;background:#fafaff;border:1px solid #eeedf8;border-radius:9px}
+.market-plan-summary strong{font:800 20px Manrope,sans-serif;color:#39345f}
+.market-plan-summary span{font-size:9px;color:#858aa1}
+.market-plan-empty{display:grid;justify-items:center;text-align:center;gap:7px;padding:30px 14px;color:#8c87bd}
+.market-plan-empty strong{font:750 12px Manrope,sans-serif;color:#484466}
+.market-plan-empty span{font-size:10px;line-height:1.6;color:#999db0}
+.market-plan-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}
+.market-plan-item{min-width:0;padding:15px;border:1px solid #e9eaf3;border-radius:11px;background:#fff}
+.market-plan-item.is-completed{background:#fbfdfc;border-color:#dcefe5}
+.market-plan-item-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.market-plan-title{display:flex;align-items:center;gap:9px;min-width:0}
+.market-plan-title>div:last-child{display:grid;gap:4px;min-width:0}
+.market-plan-title strong{font:750 11px Manrope,sans-serif;color:#333852}
+.market-plan-title span{font-size:9px;color:#9297aa}
+.market-plan-icon{width:32px;height:32px;border-radius:9px;background:#f0edff;color:#7165ef;display:grid;place-items:center;flex-shrink:0}
+.market-plan-delete{width:29px;height:29px;border:0;border-radius:7px;background:transparent;color:#a1a5b4;display:grid;place-items:center;flex-shrink:0}
+.market-plan-delete:hover:not(:disabled){background:#fff0ee;color:#d15b53}
+.market-plan-item>p{font-size:10px;line-height:1.6;color:#7f849a;margin:12px 0}
+.market-plan-activity{display:grid;gap:5px;padding:10px 11px;background:#f8f8fd;border-radius:8px}
+.market-plan-activity strong{font-size:9px;color:#645b9e}
+.market-plan-activity span{font-size:9px;line-height:1.6;color:#81869d}
+.market-plan-controls{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:12px}
+.market-plan-controls label,.market-plan-notes{display:grid;gap:6px;min-width:0}
+.market-plan-controls label>span,.market-plan-notes>span{font-size:9px;color:#858aa1;font-weight:650}
+.market-plan-controls select,.market-plan-notes textarea{width:100%;min-width:0;border:1px solid #e7e8f1;background:#fff;color:#555b77;border-radius:7px;padding:8px;font-size:10px}
+.market-plan-progress{height:6px;grid-column:1/-1;background:#f0f1f7;border-radius:10px;overflow:hidden}
+.market-plan-progress i{height:100%;display:block;background:linear-gradient(90deg,#7165ef,#a69cff);border-radius:10px;transition:width .2s}
+.market-plan-item.is-completed .market-plan-progress i{background:#35ad80}
+.market-plan-notes{margin-top:11px}
+.market-plan-notes textarea{resize:vertical;min-height:58px;line-height:1.5}
+@media(max-width:720px){.market-plan-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.market-plan-list{grid-template-columns:1fr}}
