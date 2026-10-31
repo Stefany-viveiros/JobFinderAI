@@ -34,9 +34,9 @@ def sync_skill_catalog(db: Session) -> dict[str, Skill]:
     return result
 
 
-def index_job_skills(db: Session, job: Job, *, reprocess: bool = False) -> int:
+def index_job_skills(db: Session, job: Job, *, reprocess: bool = False, catalog=None) -> int:
     """Extrai e persiste evidências do título e descrição de uma vaga."""
-    catalog = sync_skill_catalog(db)
+    catalog = catalog or sync_skill_catalog(db)
     existing = db.scalars(select(JobSkill).where(JobSkill.job_id == job.id)).all()
     if existing and not reprocess:
         return len(existing)
@@ -79,10 +79,11 @@ def index_unprocessed_jobs(db: Session, *, limit: int = 500) -> dict:
         .limit(max(1, min(limit, 5000)))
     ).all()
     indexed = 0
+    catalog = sync_skill_catalog(db)
     for job in jobs:
         existing = db.scalar(select(JobSkill.id).where(JobSkill.job_id == job.id).limit(1))
         if existing is None:
-            indexed += index_job_skills(db, job)
+            indexed += index_job_skills(db, job, catalog=catalog)
     db.commit()
     return {"jobs_scanned": len(jobs), "jobs_indexed": indexed}
 
@@ -117,8 +118,9 @@ def create_market_snapshot(
     db.add(run)
     db.flush()
 
+    catalog = sync_skill_catalog(db)
     for job in jobs:
-        index_job_skills(db, job)
+        index_job_skills(db, job, catalog=catalog)
 
     if job_ids:
         rows = db.execute(
@@ -150,8 +152,11 @@ def create_market_snapshot(
 
     # Conta cada par uma única vez por vaga.
     pair_counts = Counter()
+    skills_by_job = {}
+    for skill_id, job_id in rows:
+        skills_by_job.setdefault(job_id, set()).add(skill_id)
     for job_id in job_ids:
-        ids = sorted({skill_id for skill_id, candidate_job in rows if candidate_job == job_id})
+        ids = sorted(skills_by_job.get(job_id, set()))
         for index, skill_a in enumerate(ids):
             for skill_b in ids[index + 1:]:
                 pair_counts[(skill_a, skill_b)] += 1
