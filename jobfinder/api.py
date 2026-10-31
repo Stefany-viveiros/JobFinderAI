@@ -499,7 +499,7 @@ class AgentSettingsUpdate(BaseModel):
     auto_apply_enabled: bool = False
     require_approval: bool = True
     daily_limit: int = Field(5, ge=0, le=50)
-    min_score: int = Field(60, ge=0, le=100)
+    min_score: int = Field(80, ge=0, le=100)
 
 
 def agent_settings_dict(db):
