@@ -112,7 +112,7 @@ def analyze_resume_with_gemini(resume_text: str) -> dict:
     try:
         response = requests.post(
             url,
-            params={"key": settings.gemini_api_key},
+            headers={"x-goog-api-key": settings.gemini_api_key},
             json={
                 "contents": [{"parts": [{"text": prompt}]}],
                 "generationConfig": {
@@ -160,7 +160,7 @@ def analyze_resume_with_gemini(resume_text: str) -> dict:
         if not isinstance(raw_items, list):
             continue
         items = []
-        for raw_item in raw_items:
+        for raw_item in raw_items[:100]:
             if not isinstance(raw_item, dict):
                 continue
             item = {}
