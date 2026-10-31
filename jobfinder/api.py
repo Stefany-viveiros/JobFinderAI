@@ -369,7 +369,20 @@ def _attempt_or_404(db, attempt_id):
 def approve_attempt(attempt_id: int, db: Session = Depends(get_db)):
     """Aprova e envia por e-mail. O status final reflete o resultado real do envio."""
     attempt = _attempt_or_404(db, attempt_id)
-    limit = get_agent_settings(db).daily_limit
+    agent_settings = get_agent_settings(db)
+    if attempt.job and (attempt.job.compatibility or 0) < agent_settings.min_score:
+        raise HTTPException(
+            409,
+            f"Compatibilidade atual ({round(attempt.job.compatibility or 0)}%) abaixo do mínimo configurado "
+            f"({agent_settings.min_score}%). Revise a vaga antes de aprovar."
+        )
+    if attempt.job and "Requisito(s) obrigatório(s) não identificado(s)" in (attempt.job.missing_reasons or ""):
+        raise HTTPException(
+            409,
+            "Há requisito(s) obrigatório(s) que ainda não foram identificados no seu perfil. "
+            "Revise a vaga e confirme sua compatibilidade antes de aprovar."
+        )
+    limit = agent_settings.daily_limit
     try:
         applying.send_attempt(db, attempt, limit)
     except applying.ApplyError as exc:
