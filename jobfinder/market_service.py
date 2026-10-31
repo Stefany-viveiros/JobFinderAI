@@ -280,8 +280,8 @@ def build_profile_gap(db: Session, *, run_id: int | None = None) -> dict:
             status_label = "Não identificada no perfil"
 
         demand_rate = round(metric.mention_rate * 100, 1)
-        if status == "nao_identificada" and metric.mention_rate >= 0.20:
-            recommendation = "Explorar como possível prioridade"
+        if status == "nao_identificada" and metric.rank <= 5:
+            recommendation = "Entre as mais citadas neste recorte; avaliar prioridade"
         elif status == "nao_identificada":
             recommendation = "Acompanhar a demanda"
         elif status in {"em_estudo", "curso_concluido", "certificacao"}:
