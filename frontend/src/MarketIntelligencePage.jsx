@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   Activity, BarChart3, CalendarDays, CheckCircle2, Clock3, Database,
   Layers3, LoaderCircle, RefreshCw, Sparkles, TrendingUp, TriangleAlert,
-  Target, BookOpen, Plus, Trash2,
+  Target, BookOpen, Plus, Trash2, ClipboardCheck, Code2, Send, ExternalLink,
 } from 'lucide-react'
 
 const API = 'http://127.0.0.1:8000/api'
@@ -28,6 +28,13 @@ export default function MarketIntelligencePage() {
   const [planLoading, setPlanLoading] = useState(true)
   const [addingSkill, setAddingSkill] = useState(null)
   const [updatingItem, setUpdatingItem] = useState(null)
+  const [assessments, setAssessments] = useState({ attempts: [], summary: {} })
+  const [selectedAssessment, setSelectedAssessment] = useState(null)
+  const [assessmentResponse, setAssessmentResponse] = useState('')
+  const [assessmentUrl, setAssessmentUrl] = useState('')
+  const [assessmentAnswers, setAssessmentAnswers] = useState({})
+  const [assessmentLoading, setAssessmentLoading] = useState(false)
+  const [submittingAssessment, setSubmittingAssessment] = useState(false)
   const [level, setLevel] = useState('both')
   const [days, setDays] = useState(30)
   const [loading, setLoading] = useState(true)
@@ -71,7 +78,16 @@ export default function MarketIntelligencePage() {
     }
   }, [])
 
-  useEffect(() => { loadAnalysis(); loadPlan() }, [loadAnalysis, loadPlan])
+  const loadAssessments = useCallback(async () => {
+    try {
+      const result = await request('/market/assessments')
+      setAssessments(result)
+    } catch (err) {
+      setError(err.message || 'Não foi possível carregar o histórico de avaliações.')
+    }
+  }, [])
+
+  useEffect(() => { loadAnalysis(); loadPlan(); loadAssessments() }, [loadAnalysis, loadPlan, loadAssessments])
 
   async function addToPlan(skill) {
     setAddingSkill(skill.skill_id)
@@ -121,6 +137,50 @@ export default function MarketIntelligencePage() {
       setError(err.message || 'Não foi possível remover a meta.')
     } finally {
       setUpdatingItem(null)
+    }
+  }
+
+  async function startAssessment(skill) {
+    setAssessmentLoading(true)
+    setError('')
+    setMessage('')
+    try {
+      const planItem = plan.items.find(item => item.skill_id === skill.skill_id && item.status !== 'completed')
+      const result = await request('/market/assessments', {
+        method: 'POST',
+        body: JSON.stringify({ skill_id: skill.skill_id, plan_item_id: planItem?.id || null }),
+      })
+      setSelectedAssessment(result.attempt)
+      setAssessmentResponse(result.attempt.response_text || '')
+      setAssessmentUrl(result.attempt.evidence_url || '')
+      setAssessmentAnswers(result.attempt.rubric_answers || {})
+    } catch (err) {
+      setError(err.message || 'Não foi possível iniciar o desafio.')
+    } finally {
+      setAssessmentLoading(false)
+    }
+  }
+
+  async function submitAssessment() {
+    if (!selectedAssessment) return
+    setSubmittingAssessment(true)
+    setError('')
+    try {
+      const result = await request(`/market/assessments/${selectedAssessment.id}/submit`, {
+        method: 'POST',
+        body: JSON.stringify({
+          response_text: assessmentResponse,
+          evidence_url: assessmentUrl,
+          rubric_answers: Object.fromEntries(selectedAssessment.criteria.map(item => [item.id, Boolean(assessmentAnswers[item.id])])),
+        }),
+      })
+      setSelectedAssessment(result.attempt)
+      await loadAssessments()
+      setMessage('Autoavaliação registrada. Consulte o feedback e os pontos para revisar.')
+    } catch (err) {
+      setError(err.message || 'Não foi possível registrar a autoavaliação.')
+    } finally {
+      setSubmittingAssessment(false)
     }
   }
 
@@ -261,6 +321,9 @@ export default function MarketIntelligencePage() {
                 <div className="market-gap-status">
                   <span className={`market-status-pill status-${item.status}`}>{item.status_label}</span>
                   <small>{item.recommendation}</small>
+                  <button className="market-challenge-button" onClick={() => startAssessment(item)} disabled={assessmentLoading}>
+                    {assessmentLoading ? <LoaderCircle size={13} className="spin"/> : <Code2 size={13}/>} Desafio prático
+                  </button>
                   <button className="market-add-goal" onClick={() => addToPlan(item)} disabled={addingSkill === item.skill_id || plan.items.some(goal => goal.skill_id === item.skill_id && goal.status !== 'completed')}>
                     {addingSkill === item.skill_id ? <LoaderCircle size={13} className="spin"/> : <Plus size={13}/>}
                     {plan.items.some(goal => goal.skill_id === item.skill_id && goal.status !== 'completed') ? 'Já no plano' : 'Adicionar ao plano'}
@@ -306,6 +369,41 @@ export default function MarketIntelligencePage() {
               </article>
             )}</div>
           }
+        </section>
+
+        <section className="panel market-panel market-assessment-panel">
+          <div className="panel-heading">
+            <div><h2>Desafios e validação prática</h2><p>Resolva desafios, registre sua entrega e faça uma autoavaliação baseada em critérios objetivos.</p></div>
+            <span className="market-count">{assessments.summary?.submitted || 0} avaliações registradas</span>
+          </div>
+          <div className="market-assessment-notice"><ClipboardCheck size={17}/><span>A pontuação é uma autoavaliação. Ela registra sua percepção e suas evidências, mas não certifica nem comprova domínio técnico de forma independente.</span></div>
+          {selectedAssessment && <div className="market-assessment-editor">
+            <div className="market-assessment-editor-head"><div><span className="market-assessment-kicker">DESAFIO PRÁTICO · {selectedAssessment.skill_name}</span><h3>{selectedAssessment.title}</h3></div>
+              {selectedAssessment.status === 'draft' && <span className="market-status-pill status-em-estudo">Em aberto</span>}
+            </div>
+            <p className="market-assessment-prompt">{selectedAssessment.prompt}</p>
+            {selectedAssessment.status === 'draft' ? <>
+              <label className="market-assessment-field"><span>Descreva como resolveu o desafio</span><textarea value={assessmentResponse} onChange={event => setAssessmentResponse(event.target.value)} rows={5} placeholder="Explique a solução, as decisões técnicas, o que funcionou e o que precisou ajustar..."/></label>
+              <label className="market-assessment-field"><span>Link da evidência (GitHub, demonstração ou documentação)</span><input value={assessmentUrl} onChange={event => setAssessmentUrl(event.target.value)} placeholder="https://github.com/seu-usuario/seu-projeto"/></label>
+              <div className="market-rubric"><strong>Autoavaliação dos critérios</strong><p>Marque somente o que você realmente conseguiu demonstrar.</p>
+                {selectedAssessment.criteria.map(criterion => <label key={criterion.id}><input type="checkbox" checked={Boolean(assessmentAnswers[criterion.id])} onChange={event => setAssessmentAnswers(current => ({...current, [criterion.id]: event.target.checked}))}/><span>{criterion.label}</span></label>)}
+              </div>
+              <div className="market-assessment-actions"><button className="btn btn-primary" onClick={submitAssessment} disabled={submittingAssessment}>{submittingAssessment ? <LoaderCircle size={15} className="spin"/> : <Send size={15}/>} Registrar autoavaliação</button><button className="market-secondary-button" onClick={() => setSelectedAssessment(null)}>Fechar</button></div>
+            </> : <>
+              <div className="market-assessment-result"><strong>{selectedAssessment.score}%</strong><span>Autoavaliação registrada</span></div>
+              <p className="market-assessment-feedback">{selectedAssessment.feedback}</p>
+              {selectedAssessment.evidence_url && <a href={selectedAssessment.evidence_url} target="_blank" rel="noreferrer">Abrir evidência <ExternalLink size={13}/></a>}
+              <button className="market-secondary-button" onClick={() => setSelectedAssessment(null)}>Fechar resultado</button>
+            </>}
+          </div>}
+          <div className="market-assessment-history-head"><strong>Histórico de tentativas</strong><span>{assessments.summary?.total || 0} registros</span></div>
+          {assessments.attempts?.length ? <div className="market-assessment-history">{assessments.attempts.slice(0, 8).map(attempt =>
+            <article key={attempt.id} className="market-assessment-history-item">
+              <div><strong>{attempt.title}</strong><span>{attempt.skill_name} · {date(attempt.created_at)}</span></div>
+              <div className="market-assessment-history-result">{attempt.status === 'self_reviewed' ? <><b>{attempt.score}%</b><small>Autoavaliação</small></> : <><b>Rascunho</b><small>Não enviado</small></>}</div>
+              <button className="market-secondary-button" onClick={() => {setSelectedAssessment(attempt);setAssessmentResponse(attempt.response_text || '');setAssessmentUrl(attempt.evidence_url || '');setAssessmentAnswers(attempt.rubric_answers || {})}}>{attempt.status === 'draft' ? 'Continuar' : 'Ver resultado'}</button>
+            </article>
+          )}</div> : <div className="market-inline-empty">Nenhum desafio iniciado. Escolha uma competência no Skill Gap para começar.</div>}
         </section>
 
         <section className="market-disclaimer"><Database size={16}/><p>Os indicadores refletem somente as vagas armazenadas no seu JobFinder AI, dentro do período selecionado. A data considerada é a primeira coleta local, não necessariamente a publicação original. Competência não identificada no texto não significa que a empresa não a exija.</p></section>
