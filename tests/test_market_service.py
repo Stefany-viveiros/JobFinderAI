@@ -238,7 +238,7 @@ def test_skill_assessment_generates_challenge_and_records_self_review(db):
     assert submitted["status"] == "self_reviewed"
     assert submitted["score"] == 100
     assert "autoavaliação" in submitted["result_kind"]
-    assert "não é uma certificação" in submitted["notice"]
+    assert "Não é uma certificação" in submitted["notice"]
 
     history = list_skill_assessments(db)
     assert history["summary"]["total"] == 1
