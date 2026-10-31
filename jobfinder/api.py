@@ -21,7 +21,7 @@ from .mailer import send_daily_reminder
 from .config import settings
 from .resume_parser import parse_resume, extract_resume_text
 from .resume_ai import analyze_resume_with_gemini, ResumeAIError
-from .market_service import create_market_snapshot, index_unprocessed_jobs
+from .market_service import create_market_snapshot, index_unprocessed_jobs, build_profile_gap
 
 app = FastAPI(title="JobFinder AI API", version="1.1.0", description="API local do JobFinder AI")
 app.add_middleware(
@@ -756,6 +756,12 @@ def latest_market_analysis(db: Session = Depends(get_db)):
             "mention_rate": round(metric.mention_rate * 100, 1), "rank": metric.rank,
         } for metric, skill in rows],
     }
+
+
+@app.get("/api/market/profile-gap")
+def market_profile_gap(run_id: int | None = None, db: Session = Depends(get_db)):
+    """Compara competências do snapshot com evidências registradas no perfil."""
+    return build_profile_gap(db, run_id=run_id)
 
 
 @app.get("/api/market/analysis/history")
