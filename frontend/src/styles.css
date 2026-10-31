@@ -245,3 +245,47 @@
 .market-plan-notes{margin-top:11px}
 .market-plan-notes textarea{resize:vertical;min-height:58px;line-height:1.5}
 @media(max-width:720px){.market-plan-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.market-plan-list{grid-template-columns:1fr}}
+
+
+/* Desafios práticos e autoavaliação */
+.market-challenge-button{display:inline-flex;align-items:center;justify-content:center;gap:5px;margin-top:7px;margin-right:5px;padding:6px 9px;border:1px solid #dce8f5;border-radius:7px;background:#f5f9ff;color:#426d9c;font-size:9px;font-weight:700;white-space:nowrap}
+.market-challenge-button:hover:not(:disabled){background:#eaf3ff}
+.market-challenge-button:disabled{opacity:.55;cursor:wait}
+.market-assessment-panel{margin-top:16px}
+.market-assessment-notice{display:flex;align-items:flex-start;gap:9px;padding:11px 12px;margin:13px 0;background:#f5f8ff;border:1px solid #e5ecf8;border-radius:9px;color:#667b9b;font-size:10px;line-height:1.6}
+.market-assessment-notice svg{flex-shrink:0;margin-top:1px}
+.market-assessment-editor{padding:16px;margin:14px 0;border:1px solid #dfe5f2;border-radius:11px;background:#fcfcff}
+.market-assessment-editor-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.market-assessment-kicker{font-size:8px;font-weight:800;letter-spacing:.09em;color:#8176ce}
+.market-assessment-editor h3{margin:5px 0 0;font:750 14px Manrope,sans-serif;color:#353953}
+.market-assessment-prompt{font-size:11px;line-height:1.75;color:#737b94;margin:13px 0}
+.market-assessment-field{display:grid;gap:7px;margin:12px 0}
+.market-assessment-field>span{font-size:10px;font-weight:700;color:#555c77}
+.market-assessment-field textarea,.market-assessment-field input{width:100%;border:1px solid #e1e4ee;border-radius:8px;background:#fff;padding:10px 11px;color:#454b65;font:11px/1.6 inherit;outline:none}
+.market-assessment-field textarea:focus,.market-assessment-field input:focus{border-color:#958be8;box-shadow:0 0 0 3px #958be81c}
+.market-assessment-field textarea{resize:vertical;min-height:110px}
+.market-rubric{display:grid;gap:9px;padding:13px;margin:14px 0;background:#f7f7fc;border-radius:9px}
+.market-rubric>strong{font:750 11px Manrope,sans-serif;color:#414661}
+.market-rubric>p{margin:-4px 0 2px;font-size:9px;color:#8b90a5}
+.market-rubric label{display:flex;align-items:flex-start;gap:9px;font-size:10px;line-height:1.5;color:#626984}
+.market-rubric input{width:15px;height:15px;flex-shrink:0;margin:0;accent-color:#7165d8}
+.market-assessment-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.market-secondary-button{display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:7px 10px;border:1px solid #e1e3ed;border-radius:7px;background:#fff;color:#717791;font-size:9px;font-weight:700}
+.market-secondary-button:hover{background:#f6f6fb}
+.market-assessment-result{display:flex;align-items:center;gap:11px;margin:14px 0;padding:13px;background:#f4f8ff;border-radius:9px}
+.market-assessment-result strong{font:800 25px Manrope,sans-serif;color:#5d69b9}
+.market-assessment-result span{font-size:10px;color:#737c9b}
+.market-assessment-feedback{font-size:10px;line-height:1.7;color:#68718b;padding:10px 12px;border-left:3px solid #9b91e8;background:#f8f7ff}
+.market-assessment-editor>a{display:inline-flex;align-items:center;gap:5px;margin:6px 0 12px;color:#5f6fb2;font-size:10px;font-weight:700;text-decoration:none}
+.market-assessment-history-head{display:flex;align-items:center;justify-content:space-between;margin:16px 0 9px}
+.market-assessment-history-head strong{font:750 11px Manrope,sans-serif;color:#414661}
+.market-assessment-history-head span{font-size:9px;color:#969bb0}
+.market-assessment-history{display:grid;gap:8px}
+.market-assessment-history-item{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:12px;padding:11px 12px;border:1px solid #ececf3;border-radius:9px}
+.market-assessment-history-item>div:first-child{display:grid;gap:4px;min-width:0}
+.market-assessment-history-item>div:first-child strong{font-size:10px;color:#444a64}
+.market-assessment-history-item>div:first-child span{font-size:9px;color:#969bb0}
+.market-assessment-history-result{display:grid;justify-items:end;gap:3px}
+.market-assessment-history-result b{font:800 12px Manrope,sans-serif;color:#5c63aa}
+.market-assessment-history-result small{font-size:8px;color:#969bb0}
+@media(max-width:620px){.market-assessment-history-item{grid-template-columns:minmax(0,1fr) auto}.market-assessment-history-item>.market-secondary-button{grid-column:1/-1;justify-self:start}.market-assessment-editor{padding:12px}}
