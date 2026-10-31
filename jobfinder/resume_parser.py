@@ -154,10 +154,28 @@ def parse_resume(content: bytes, filename: str) -> dict:
         result["experience"] = experience[:5000]
     if projects:
         result["projects"] = projects[:5000]
+        project_lines = _section_lines(text, ("projetos", "portfólio"))
+        if project_lines:
+            result["portfolio_projects"] = [
+                {"name": line[:220], "description": "", "technologies": "", "repository_url": "", "demo_url": "", "status": ""}
+                for line in project_lines
+            ]
     if skills:
         result["skills"] = skills[:3000]
     if certifications:
         result["certifications"] = certifications[:3000]
+        course_lines = _section_lines(text, ("cursos", "cursos complementares"))
+        if course_lines:
+            result["courses"] = [
+                {"name": line[:220], "provider": "", "workload": "", "completed_at": "", "status": "", "credential_url": ""}
+                for line in course_lines
+            ]
+        certification_lines = _section_lines(text, ("certificações", "certificados"))
+        if certification_lines:
+            result["certifications_items"] = [
+                {"name": line[:220], "issuer": "", "issued_at": "", "expires_at": "", "credential_id": "", "credential_url": ""}
+                for line in certification_lines
+            ]
     # O texto original nunca é gravado automaticamente: os campos extraídos
     # são sugestões que a pessoa revisa antes de salvar o perfil.
     return result
