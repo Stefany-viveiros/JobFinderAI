@@ -115,12 +115,7 @@ async def require_authenticated_session(request, call_next):
 @app.on_event("startup")
 def startup():
     init_db()
-    # Cria o perfil singleton antes de aceitar chamadas paralelas do frontend.
-    db = SessionLocal()
-    try:
-        get_profile(db)
-    finally:
-        db.close()
+    # Perfis individuais são criados sob demanda após autenticação.
 
 
 
@@ -840,13 +835,13 @@ def remove_task(task_id: int, db: Session = Depends(get_db)):
 
 
 @app.get("/api/profile")
-def read_profile(db: Session = Depends(get_db)):
-    return profile_dict(get_profile(db))
+def read_profile(request: Request, db: Session = Depends(get_db)):
+    return profile_dict(get_profile(db, request.state.user_id))
 
 
 @app.put("/api/profile")
-def update_profile(payload: ProfileUpdate, db: Session = Depends(get_db)):
-    p = get_profile(db)
+def update_profile(payload: ProfileUpdate, request: Request, db: Session = Depends(get_db)):
+    p = get_profile(db, request.state.user_id)
     data = payload.model_dump()
     collections = {
         "educations": (Education, ("course", "institution", "degree", "status", "start_date", "end_date", "description")),
