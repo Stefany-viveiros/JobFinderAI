@@ -224,3 +224,24 @@ Gráficos e cartões devem manter tipografia legível, percentuais acompanhados 
 - Nenhuma competência ausente é rotulada como desconhecida ou não dominada.
 - Nenhum dado ilustrativo aparece como dado real.
 - Testes do backend e build de produção do frontend passam antes do merge.
+
+
+## 13. Implementação inicial publicada na branch
+
+A primeira fatia do backend foi adicionada à branch `feature/market-intelligence`:
+
+- `jobfinder/market.py`: taxonomia inicial e extração determinística com evidência.
+- `jobfinder/market_service.py`: sincronização do catálogo, indexação idempotente por vaga e criação de snapshots com métricas e coocorrências.
+- `jobfinder/models.py`: tabelas `market_skills`, `job_market_skills`, `job_skill_extractions`, `market_analysis_runs`, `market_skill_metrics` e `market_skill_pairs`.
+- `jobfinder/api.py`: endpoints para executar análise, consultar última análise, histórico e combinações.
+- `tests/test_market.py` e `tests/test_market_service.py`: testes unitários e de persistência.
+
+Endpoints disponíveis nesta etapa:
+- `POST /api/market/analysis/run` com `level_scope` (`both`, `estagio`, `junior`) e `days`.
+- `GET /api/market/analysis/latest`.
+- `GET /api/market/analysis/history`.
+- `GET /api/market/combinations` (aceita `run_id` opcional).
+
+A janela temporal usa `jobs.created_at`, que representa quando a vaga foi observada pela primeira vez neste banco. Não equivale necessariamente à data original de publicação. A indexação registra também vagas processadas sem competências reconhecidas, evitando reprocessamento repetitivo.
+
+**Ainda não implementado nesta etapa:** interface React, análise de evolução entre snapshots, skill gap do perfil, plano de desenvolvimento e agendamento em nuvem. Os testes foram adicionados, mas precisam de execução no CI antes de considerar a etapa validada.
