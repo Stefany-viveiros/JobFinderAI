@@ -191,3 +191,81 @@ class ApplicationAttempt(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     job: Mapped[Job] = relationship(back_populates="attempts")
+
+
+class Skill(Base):
+    """Catálogo canônico de competências e seus aliases."""
+    __tablename__ = "market_skills"
+    __table_args__ = (UniqueConstraint("canonical_name", name="uq_market_skill_name"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    canonical_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    category: Mapped[str] = mapped_column(String(40), nullable=False)
+    aliases_json: Mapped[str] = mapped_column(Text, default="[]")
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    taxonomy_version: Mapped[str] = mapped_column(String(30), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class JobSkill(Base):
+    """Evidência rastreável de uma competência em uma vaga."""
+    __tablename__ = "job_market_skills"
+    __table_args__ = (
+        UniqueConstraint("job_id", "skill_id", name="uq_job_market_skill"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"), index=True)
+    skill_id: Mapped[int] = mapped_column(ForeignKey("market_skills.id"), index=True)
+    evidence_text: Mapped[str] = mapped_column(Text, default="")
+    evidence_field: Mapped[str] = mapped_column(String(30), default="description")
+    extraction_method: Mapped[str] = mapped_column(String(30), default="dictionary")
+    confidence: Mapped[float] = mapped_column(Float, default=1.0)
+    extractor_version: Mapped[str] = mapped_column(String(30), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class MarketAnalysisRun(Base):
+    """Snapshot imutável de uma execução de análise de mercado."""
+    __tablename__ = "market_analysis_runs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    period_start: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    period_end: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    level_scope: Mapped[str] = mapped_column(String(20), default="both")
+    area_scope: Mapped[str] = mapped_column(String(80), default="technology")
+    filters_json: Mapped[str] = mapped_column(Text, default="{}")
+    total_jobs: Mapped[int] = mapped_column(Integer, default=0)
+    valid_jobs: Mapped[int] = mapped_column(Integer, default=0)
+    jobs_with_description: Mapped[int] = mapped_column(Integer, default=0)
+    sources_json: Mapped[str] = mapped_column(Text, default="[]")
+    taxonomy_version: Mapped[str] = mapped_column(String(30), default="")
+    extractor_version: Mapped[str] = mapped_column(String(30), default="")
+    status: Mapped[str] = mapped_column(String(20), default="running")
+    quality_notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class MarketSkillMetric(Base):
+    """Métrica congelada de uma competência em um snapshot."""
+    __tablename__ = "market_skill_metrics"
+    __table_args__ = (UniqueConstraint("run_id", "skill_id", name="uq_run_market_skill"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("market_analysis_runs.id", ondelete="CASCADE"), index=True)
+    skill_id: Mapped[int] = mapped_column(ForeignKey("market_skills.id"), index=True)
+    jobs_count: Mapped[int] = mapped_column(Integer, default=0)
+    mention_rate: Mapped[float] = mapped_column(Float, default=0.0)
+    rank: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class MarketSkillPair(Base):
+    """Coocorrência congelada entre duas competências em um snapshot."""
+    __tablename__ = "market_skill_pairs"
+    __table_args__ = (
+        UniqueConstraint("run_id", "skill_a_id", "skill_b_id", name="uq_run_market_skill_pair"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("market_analysis_runs.id", ondelete="CASCADE"), index=True)
+    skill_a_id: Mapped[int] = mapped_column(ForeignKey("market_skills.id"))
+    skill_b_id: Mapped[int] = mapped_column(ForeignKey("market_skills.id"))
+    jobs_count: Mapped[int] = mapped_column(Integer, default=0)
+    pair_rate: Mapped[float] = mapped_column(Float, default=0.0)
