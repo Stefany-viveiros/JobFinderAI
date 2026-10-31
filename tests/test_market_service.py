@@ -110,3 +110,16 @@ def test_index_unprocessed_jobs_does_not_reindex_existing_evidence(db):
 
     assert first["jobs_indexed"] == 1
     assert second["jobs_indexed"] == 0
+
+
+def test_empty_extraction_is_recorded_and_not_repeated(db):
+    make_job(
+        db,
+        title="Estágio em tecnologia",
+        description="Boa comunicação, organização e vontade de aprender.",
+    )
+    first = index_unprocessed_jobs(db)
+    second = index_unprocessed_jobs(db)
+
+    assert first["jobs_indexed"] == 1
+    assert second["jobs_indexed"] == 0
