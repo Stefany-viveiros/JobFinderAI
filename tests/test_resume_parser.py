@@ -1,7 +1,7 @@
 from docx import Document
 from io import BytesIO
 
-from jobfinder.resume_parser import parse_resume
+from jobfinder.resume_parser import parse_resume, extract_resume_text
 
 
 def make_docx():
@@ -34,3 +34,11 @@ def test_rejects_unsupported_format():
         assert "PDF ou DOCX" in str(exc)
     else:
         raise AssertionError("Formato não suportado deveria ser rejeitado")
+
+
+
+def test_extract_resume_text_keeps_full_docx_content():
+    text = extract_resume_text(make_docx(), "curriculo.docx")
+    assert "Marina da Silva" in text
+    assert "FORMAÇÃO ACADÊMICA" in text
+    assert "Estágio de suporte técnico" in text
