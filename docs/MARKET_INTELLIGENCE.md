@@ -16,12 +16,18 @@ A aplicação já possui:
 - Vagas com título, empresa, descrição, fonte, tipo, nível classificado, data de publicação (texto da fonte) e `created_at` (primeiro registro local).
 - Perfil estruturado com formações, experiências, cursos, certificações e projetos.
 
+Já implementado na branch `feature/market-intelligence`:
+- Catálogo canônico inicial de competências com aliases/sinônimos.
+- Extração determinística e persistência de evidências por vaga.
+- Snapshots de análise, métricas de frequência e combinações de competências.
+- Endpoints de análise, histórico, combinações e Skill Gap.
+- Página React com filtros, indicadores, ranking, combinações e cruzamento com o perfil.
+
 Ainda não há:
-- Catálogo canônico de competências com sinônimos.
-- Extração persistida das competências mencionadas em cada vaga.
-- Histórico de execuções/observações da coleta para medir tendências de forma robusta.
-- Endpoints ou página de inteligência de mercado.
-- Evidência de proficiência validada por competência no perfil.
+- Histórico de observações de cada vaga em cada coleta; por isso, não há tendência temporal confiável.
+- Classificação consistente por subárea (frontend, backend, dados, IA, mobile etc.).
+- Avaliação prática ou validação de proficiência por competência.
+- Plano de desenvolvimento individual com acompanhamento de metas.
 
 Limitações de qualidade:
 - A descrição fornecida por algumas fontes pode ser resumida ou incompleta; a Nerdin, por exemplo, monta parte da descrição com resumo e hashtags.
