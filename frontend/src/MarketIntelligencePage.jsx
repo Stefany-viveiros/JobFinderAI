@@ -22,6 +22,7 @@ const date = (value) => value ? new Date(value).toLocaleDateString('pt-BR') : 'N
 export default function MarketIntelligencePage() {
   const [analysis, setAnalysis] = useState(null)
   const [combinations, setCombinations] = useState([])
+  const [gap, setGap] = useState(null)
   const [level, setLevel] = useState('both')
   const [days, setDays] = useState(30)
   const [loading, setLoading] = useState(true)
@@ -36,10 +37,15 @@ export default function MarketIntelligencePage() {
       const latest = await request('/market/analysis/latest')
       setAnalysis(latest.available ? latest : null)
       if (latest.available) {
-        const pairs = await request(`/market/combinations?run_id=${latest.run.id}&limit=8`)
+        const [pairs, profileGap] = await Promise.all([
+          request(`/market/combinations?run_id=${latest.run.id}&limit=8`),
+          request(`/market/profile-gap?run_id=${latest.run.id}`),
+        ])
         setCombinations(pairs.combinations || [])
+        setGap(profileGap.available ? profileGap : null)
       } else {
         setCombinations([])
+        setGap(null)
       }
     } catch (err) {
       setError(err.message || 'Não foi possível carregar a análise.')
@@ -59,12 +65,14 @@ export default function MarketIntelligencePage() {
         method: 'POST',
         body: JSON.stringify({ level_scope: level, days: Number(days) }),
       })
-      const [latest, pairs] = await Promise.all([
+      const [latest, pairs, profileGap] = await Promise.all([
         request('/market/analysis/latest'),
         request(`/market/combinations?run_id=${result.run_id}&limit=8`),
+        request(`/market/profile-gap?run_id=${result.run_id}`),
       ])
       setAnalysis(latest.available ? latest : null)
       setCombinations(pairs.combinations || [])
+      setGap(profileGap.available ? profileGap : null)
       setMessage(`Análise concluída: ${number(result.total_jobs)} vagas analisadas e ${number(result.skills_detected)} competências identificadas.`)
     } catch (err) {
       setError(err.message || 'Não foi possível executar a análise.')
@@ -163,6 +171,34 @@ export default function MarketIntelligencePage() {
             <div className="market-pair-tip"><Sparkles size={16}/><span>Essas combinações ajudam a entender quais tecnologias costumam ser exigidas em conjunto.</span></div>
           </section>
         </div>
+
+        <section className="panel market-panel market-gap-panel">
+          <div className="panel-heading">
+            <div><h2>Skill Gap: mercado × seu perfil</h2><p>O que as vagas pedem e quais evidências já aparecem no seu perfil profissional.</p></div>
+            <span className="market-count">{gap ? `${gap.total_skills} competências` : 'Perfil não analisado'}</span>
+          </div>
+          {!gap ? <div className="market-inline-empty">Cadastre ou complete seu perfil profissional para comparar as competências com o mercado.</div> : <>
+            <div className="market-gap-summary">
+              <div><strong>{gap.counts?.experiencia || 0}</strong><span>Experiência</span></div>
+              <div><strong>{gap.counts?.projeto || 0}</strong><span>Projetos</span></div>
+              <div><strong>{(gap.counts?.curso_concluido || 0) + (gap.counts?.certificacao || 0)}</strong><span>Cursos e certificações</span></div>
+              <div><strong>{gap.counts?.nao_identificada || 0}</strong><span>Não identificadas</span></div>
+            </div>
+            <div className="market-gap-list">{gap.items.slice(0, 20).map(item =>
+              <article className="market-gap-item" key={item.skill_id}>
+                <div className="market-gap-main">
+                  <div><strong>{item.name}</strong><span>{item.category}</span></div>
+                  <small>{item.jobs_count} vagas · {item.mention_rate.toLocaleString('pt-BR')}% de menção</small>
+                </div>
+                <div className="market-gap-status">
+                  <span className={`market-status-pill status-${item.status}`}>{item.status_label}</span>
+                  <small>{item.recommendation}</small>
+                </div>
+              </article>
+            )}</div>
+            <p className="market-footnote">{gap.notice}</p>
+          </>}
+        </section>
 
         <section className="market-disclaimer"><Database size={16}/><p>Os indicadores refletem somente as vagas armazenadas no seu JobFinder AI, dentro do período selecionado. A data considerada é a primeira coleta local, não necessariamente a publicação original. Competência não identificada no texto não significa que a empresa não a exija.</p></section>
       </>}
