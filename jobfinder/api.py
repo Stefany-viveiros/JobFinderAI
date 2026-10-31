@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Optional
 
-from fastapi import FastAPI, Depends, HTTPException, Query
+from fastapi import FastAPI, Depends, HTTPException, Query, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select, func, or_
@@ -15,6 +15,8 @@ from . import applying
 from .agent import get_agent_settings, run_agent, TARGET_LEVELS
 from .mailer import send_daily_reminder
 from .config import settings
+from .resume_parser import parse_resume, extract_resume_text
+from .resume_ai import analyze_resume_with_gemini, ResumeAIError
 
 app = FastAPI(title="JobFinder AI API", version="1.1.0", description="API local do JobFinder AI")
 app.add_middleware(
@@ -527,6 +529,41 @@ def update_profile(payload: ProfileUpdate, db: Session = Depends(get_db)):
     refresh_scores(db)
     db.refresh(p)
     return {"message": "Perfil salvo e compatibilidades recalculadas.", "profile": profile_dict(p)}
+
+
+@app.post("/api/profile/import")
+async def import_resume(file: UploadFile = File(...)):
+    """Extrai sugestões do currículo sem salvar nem sobrescrever o perfil."""
+    filename = file.filename or ""
+    suffix = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
+    if suffix not in {"pdf", "docx"}:
+        raise HTTPException(400, "Formato não suportado. Envie um arquivo PDF ou DOCX.")
+    content = await file.read(5 * 1024 * 1024 + 1)
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(413, "O currículo deve ter no máximo 5 MB.")
+    if not content:
+        raise HTTPException(400, "O arquivo enviado está vazio.")
+    try:
+        # A IA recebe o texto extraído integralmente; o arquivo original não é salvo.
+        resume_text = extract_resume_text(content, filename)
+        if settings.gemini_api_key:
+            extracted = analyze_resume_with_gemini(resume_text)
+            analysis_mode = "gemini"
+            message = "Currículo analisado com Gemini. Revise os campos preenchidos e clique em Salvar perfil."
+        else:
+            # Mantém compatibilidade para instalações ainda sem a variável de ambiente.
+            extracted = parse_resume(content, filename)
+            analysis_mode = "basic"
+            message = "Currículo lido pelo extrator básico. Configure GEMINI_API_KEY no servidor para ativar a análise inteligente. Revise antes de salvar."
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    except ResumeAIError as exc:
+        raise HTTPException(502, str(exc))
+    except Exception as exc:
+        raise HTTPException(422, "Não foi possível ler este arquivo. Verifique se o PDF/DOCX está íntegro e tente novamente.")
+    if not extracted:
+        raise HTTPException(422, "Não encontramos informações reconhecíveis. Confira se o PDF permite selecionar/copiar o texto.")
+    return {"message": message, "analysis_mode": analysis_mode, "extracted": extracted}
 
 
 @app.get("/api/notifications")
