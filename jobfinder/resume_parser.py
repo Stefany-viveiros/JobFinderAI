@@ -63,6 +63,12 @@ def _section(text: str, headings: tuple[str, ...]) -> str:
     return "\n".join(collected).strip()
 
 
+def extract_resume_text(content: bytes, filename: str) -> str:
+    """Extrai o texto integral do currículo para análise semântica por IA."""
+    text = extract_resume_text(content, filename)
+    return text
+
+
 def parse_resume(content: bytes, filename: str) -> dict[str, str]:
     suffix = Path(filename or "").suffix.lower()
     text = _read_text(content, suffix)
