@@ -269,3 +269,14 @@ class MarketSkillPair(Base):
     skill_b_id: Mapped[int] = mapped_column(ForeignKey("market_skills.id"))
     jobs_count: Mapped[int] = mapped_column(Integer, default=0)
     pair_rate: Mapped[float] = mapped_column(Float, default=0.0)
+
+
+class JobSkillExtraction(Base):
+    """Registra que uma vaga foi processada, inclusive quando nenhuma competência foi encontrada."""
+    __tablename__ = "job_skill_extractions"
+    __table_args__ = (UniqueConstraint("job_id", name="uq_job_skill_extraction"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"), index=True)
+    extractor_version: Mapped[str] = mapped_column(String(30), default="")
+    skills_found: Mapped[int] = mapped_column(Integer, default=0)
+    indexed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
