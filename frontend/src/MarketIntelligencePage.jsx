@@ -180,8 +180,8 @@ export default function MarketIntelligencePage() {
           {!gap ? <div className="market-inline-empty">Cadastre ou complete seu perfil profissional para comparar as competências com o mercado.</div> : <>
             <div className="market-gap-summary">
               <div><strong>{gap.counts?.experiencia || 0}</strong><span>Experiência</span></div>
-              <div><strong>{gap.counts?.projeto || 0}</strong><span>Projetos</span></div>
-              <div><strong>{(gap.counts?.curso_concluido || 0) + (gap.counts?.certificacao || 0)}</strong><span>Cursos e certificações</span></div>
+              <div><strong>{(gap.counts?.projeto || 0) + (gap.counts?.praticada || 0)}</strong><span>Projetos e prática</span></div>
+              <div><strong>{(gap.counts?.curso_concluido || 0) + (gap.counts?.certificacao || 0) + (gap.counts?.formacao || 0) + (gap.counts?.em_estudo || 0)}</strong><span>Formação e estudo</span></div>
               <div><strong>{gap.counts?.nao_identificada || 0}</strong><span>Não identificadas</span></div>
             </div>
             <div className="market-gap-list">{gap.items.slice(0, 20).map(item =>
