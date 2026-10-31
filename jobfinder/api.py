@@ -5,13 +5,13 @@ from fastapi import FastAPI, Depends, HTTPException, Query, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select, func, or_
-from sqlalchemy.orm import Session, joinedload, selectinload
+from sqlalchemy.orm import Session, joinedload, selectinload, aliased
 
 from .db import init_db, SessionLocal
 from .models import (
     Job, Application, Task, Profile, NotificationLog, ApplicationAttempt,
     Education, Experience, Course, Certification, PortfolioProject,
-    MarketAnalysisRun, MarketSkillMetric, Skill,
+    MarketAnalysisRun, MarketSkillMetric, MarketSkillPair, Skill,
 )
 from .service import get_profile, save_jobs, refresh_scores, create_task, complete_task, STATUSES, collect_and_save_ranked
 from .sources import SOURCES, SOURCE_INFO, LINK_ONLY_SOURCES, collect_selected, external_search_links
@@ -773,3 +773,43 @@ def market_analysis_history(limit: int = Query(20, ge=1, le=100), db: Session = 
         "level_scope": run.level_scope, "total_jobs": run.total_jobs,
         "valid_jobs": run.valid_jobs, "quality_notes": run.quality_notes,
     } for run in runs]
+
+
+
+@app.get("/api/market/combinations")
+def market_skill_combinations(
+    run_id: int | None = None,
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    """Retorna combinações de competências observadas no snapshot mais recente ou indicado."""
+    selected_run = db.get(MarketAnalysisRun, run_id) if run_id else db.scalar(
+        select(MarketAnalysisRun)
+        .where(MarketAnalysisRun.status == "completed")
+        .order_by(MarketAnalysisRun.created_at.desc(), MarketAnalysisRun.id.desc())
+        .limit(1)
+    )
+    if selected_run is None or selected_run.status != "completed":
+        return {"available": False, "combinations": []}
+
+    skill_a = aliased(Skill)
+    skill_b = aliased(Skill)
+    rows = db.execute(
+        select(MarketSkillPair, skill_a, skill_b)
+        .join(skill_a, skill_a.id == MarketSkillPair.skill_a_id)
+        .join(skill_b, skill_b.id == MarketSkillPair.skill_b_id)
+        .where(MarketSkillPair.run_id == selected_run.id)
+        .order_by(MarketSkillPair.jobs_count.desc())
+        .limit(limit)
+    ).all()
+    return {
+        "available": True,
+        "run_id": selected_run.id,
+        "total_jobs": selected_run.total_jobs,
+        "combinations": [{
+            "skill_a": first.canonical_name,
+            "skill_b": second.canonical_name,
+            "jobs_count": pair.jobs_count,
+            "mention_rate": round(pair.pair_rate * 100, 1),
+        } for pair, first, second in rows],
+    }
