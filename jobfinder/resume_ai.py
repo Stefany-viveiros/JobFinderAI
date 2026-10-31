@@ -76,7 +76,6 @@ RECORD_SCHEMA = {
 RESPONSE_SCHEMA = {
     "type": "OBJECT",
     "properties": {
-        key: {"type": "STRING", "description": description}
         **{key: {"type": "STRING", "description": description} for key, description in PROFILE_FIELDS.items()},
         **RECORD_SCHEMA,
     },
