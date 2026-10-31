@@ -175,8 +175,8 @@ export default function MarketIntelligencePage() {
         }),
       })
       setSelectedAssessment(result.attempt)
-      await loadAssessments()
-      setMessage('Autoavaliação registrada. Consulte o feedback e os pontos para revisar.')
+      await Promise.all([loadAssessments(), loadAnalysis()])
+      setMessage('Autoavaliação registrada. O Skill Gap foi atualizado com esse resultado, identificado como autoavaliação.')
     } catch (err) {
       setError(err.message || 'Não foi possível registrar a autoavaliação.')
     } finally {
@@ -321,6 +321,7 @@ export default function MarketIntelligencePage() {
                 <div className="market-gap-status">
                   <span className={`market-status-pill status-${item.status}`}>{item.status_label}</span>
                   <small>{item.recommendation}</small>
+                  {item.assessment && <small className="market-assessment-gap-note">Desafio: {item.assessment.score ?? 0}% autoavaliado · {item.assessment.attempts_count} tentativa(s)</small>}
                   <button className="market-challenge-button" onClick={() => startAssessment(item)} disabled={assessmentLoading}>
                     {assessmentLoading ? <LoaderCircle size={13} className="spin"/> : <Code2 size={13}/>} Desafio prático
                   </button>
