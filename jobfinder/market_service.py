@@ -7,7 +7,7 @@ from sqlalchemy import select, delete
 from sqlalchemy.orm import Session
 
 from .market import SKILL_CATALOG, extract_skills, taxonomy_version
-from .models import Job, Skill, JobSkill, MarketAnalysisRun, MarketSkillMetric, MarketSkillPair
+from .models import Job, Skill, JobSkill, JobSkillExtraction, MarketAnalysisRun, MarketSkillMetric, MarketSkillPair
 
 EXTRACTOR_VERSION = "dictionary-1"
 
@@ -37,9 +37,12 @@ def sync_skill_catalog(db: Session) -> dict[str, Skill]:
 def index_job_skills(db: Session, job: Job, *, reprocess: bool = False, catalog=None) -> int:
     """Extrai e persiste evidências do título e descrição de uma vaga."""
     catalog = catalog or sync_skill_catalog(db)
+    extraction = db.scalar(
+        select(JobSkillExtraction).where(JobSkillExtraction.job_id == job.id)
+    )
+    if extraction and extraction.extractor_version == EXTRACTOR_VERSION and not reprocess:
+        return extraction.skills_found
     existing = db.scalars(select(JobSkill).where(JobSkill.job_id == job.id)).all()
-    if existing and not reprocess:
-        return len(existing)
     if existing:
         for row in existing:
             db.delete(row)
@@ -66,6 +69,12 @@ def index_job_skills(db: Session, job: Job, *, reprocess: bool = False, catalog=
             confidence=evidence["confidence"],
             extractor_version=EXTRACTOR_VERSION,
         ))
+    if extraction is None:
+        extraction = JobSkillExtraction(job_id=job.id)
+        db.add(extraction)
+    extraction.extractor_version = EXTRACTOR_VERSION
+    extraction.skills_found = len(evidence_by_name)
+    extraction.indexed_at = datetime.utcnow()
     db.flush()
     return len(evidence_by_name)
 
@@ -81,9 +90,12 @@ def index_unprocessed_jobs(db: Session, *, limit: int = 500) -> dict:
     indexed = 0
     catalog = sync_skill_catalog(db)
     for job in jobs:
-        existing = db.scalar(select(JobSkill.id).where(JobSkill.job_id == job.id).limit(1))
-        if existing is None:
-            indexed += index_job_skills(db, job, catalog=catalog)
+        extraction = db.scalar(
+            select(JobSkillExtraction).where(JobSkillExtraction.job_id == job.id)
+        )
+        if extraction is None or extraction.extractor_version != EXTRACTOR_VERSION:
+            indexed += 1
+            index_job_skills(db, job, catalog=catalog)
     db.commit()
     return {"jobs_scanned": len(jobs), "jobs_indexed": indexed}
 
