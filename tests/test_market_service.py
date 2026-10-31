@@ -1,0 +1,95 @@
+from datetime import datetime, timedelta
+
+from sqlalchemy import select
+
+from jobfinder.market_service import (
+    create_market_snapshot,
+    index_job_skills,
+    index_unprocessed_jobs,
+)
+from jobfinder.models import JobSkill, MarketSkillMetric, MarketSkillPair, Skill
+from conftest import make_job
+
+
+def test_index_job_skills_persists_one_row_per_canonical_skill(db):
+    job = make_job(
+        db,
+        title="Estágio JavaScript",
+        description="JS e JavaScript são usados no frontend. Também usamos React.",
+    )
+
+    count = index_job_skills(db, job)
+    rows = db.scalars(select(JobSkill).where(JobSkill.job_id == job.id)).all()
+    names = {
+        db.get(Skill, row.skill_id).canonical_name
+        for row in rows
+    }
+
+    assert count == 2
+    assert names == {"JavaScript", "React"}
+    assert len(rows) == 2
+
+
+def test_index_job_skills_is_idempotent(db):
+    job = make_job(db, title="Estágio Python", description="Python, FastAPI e SQL.")
+    first = index_job_skills(db, job)
+    second = index_job_skills(db, job)
+    rows = db.scalars(select(JobSkill).where(JobSkill.job_id == job.id)).all()
+
+    assert first == second == 3
+    assert len(rows) == 3
+
+
+def test_market_snapshot_counts_distinct_jobs_and_pairs(db):
+    make_job(db, title="Estágio Python", description="Python, FastAPI e SQL.")
+    make_job(
+        db,
+        title="Pessoa Desenvolvedora Júnior",
+        job_type="Júnior",
+        level="junior",
+        description="Python e FastAPI são desejáveis.",
+    )
+    # Fora do público-alvo: não entra no snapshot.
+    make_job(db, title="Desenvolvedor Pleno Python", level="outro")
+
+    result = create_market_snapshot(db, level_scope="both", days=30, min_jobs=2)
+
+    assert result["total_jobs"] == 2
+    assert result["sample_sufficient"] is True
+    metrics = db.scalars(
+        select(MarketSkillMetric).where(MarketSkillMetric.run_id == result["run_id"])
+    ).all()
+    pairs = db.scalars(
+        select(MarketSkillPair).where(MarketSkillPair.run_id == result["run_id"])
+    ).all()
+
+    python = next(
+        row for row in metrics
+        if db.get(Skill, row.skill_id).canonical_name == "Python"
+    )
+    assert python.jobs_count == 2
+    assert python.mention_rate == 1.0
+    assert any(
+        {db.get(Skill, row.skill_a_id).canonical_name,
+         db.get(Skill, row.skill_b_id).canonical_name} == {"Python", "FastAPI"}
+        for row in pairs
+    )
+
+
+def test_market_snapshot_marks_small_sample_as_insufficient(db):
+    make_job(db, title="Estágio Python", description="Python para backend.")
+
+    result = create_market_snapshot(db, level_scope="estagio", days=30, min_jobs=30)
+
+    assert result["total_jobs"] == 1
+    assert result["sample_sufficient"] is False
+    assert "Amostra insuficiente" in result["quality_notes"]
+
+
+def test_index_unprocessed_jobs_does_not_reindex_existing_evidence(db):
+    make_job(db, title="Estágio React", description="React e JavaScript.")
+    first = index_unprocessed_jobs(db)
+    second = index_unprocessed_jobs(db)
+
+    assert first["jobs_indexed"] == 1
+    assert second["jobs_indexed"] == 0
