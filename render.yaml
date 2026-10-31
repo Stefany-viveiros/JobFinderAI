@@ -14,7 +14,7 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: CORS_ORIGINS
-        value: https://jobfinder-ai-web.onrender.com
+        value: https://jobfinder-ai-web-imux.onrender.com
       - key: DEMO_READ_ONLY
         value: "true"
       - key: PYTHON_VERSION
@@ -29,4 +29,4 @@ services:
     autoDeploy: false
     envVars:
       - key: VITE_API_URL
-        value: https://jobfinder-ai-api.onrender.com/api
+        value: https://jobfinder-ai-api-imux.onrender.com/api
