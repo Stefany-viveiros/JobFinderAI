@@ -15,11 +15,11 @@ TECHNOLOGY_TERMS = (
     "HTML", "CSS", "SQL", "MySQL", "SQLite", "MongoDB", "GitHub", "Git",
     "Docker", "AWS", "Azure", "Excel", "Linux", "Kotlin", "Swift",
     "Flutter", "Android", "iOS", "Spring", "Laravel", "Pandas", "NumPy",
-    "Selenium", "Cypress", "Jest", "Figma", "PHP", "Ruby", "Go",
+    "Selenium", "Cypress", "Jest", "Figma", "Ruby", "Golang",
 )
 MANDATORY_MARKERS = re.compile(
     r"\b(obrigat\w*|necessar\w*|imprescind\w*|must[ -]have|required|"
-    r"mandatory|essential|minimum qualifications|requisitos mínimos?|"
+    r"mandatory|essential|minimum qualifications|requisitos minimos?|"
     r"requisito mínimo)\b"
 )
 DESIRABLE_MARKERS = re.compile(
@@ -66,13 +66,13 @@ def profile_technology_terms(profile):
 
     A presença no perfil é evidência textual, não uma afirmação de nível de domínio.
     """
-    explicit = []
-    for field in ("technologies", "skills", "keywords"):
-        explicit.extend(split_values(getattr(profile, field, "")))
-
+    explicit = split_values(getattr(profile, "technologies", ""))
     context = " ".join(
         getattr(profile, field, "") or ""
-        for field in ("projects", "experience", "certifications", "course")
+        for field in (
+            "technologies", "skills", "keywords", "projects",
+            "experience", "certifications", "course",
+        )
     )
     contextual = [
         normalize(item) for item in TECHNOLOGY_TERMS
