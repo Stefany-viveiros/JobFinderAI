@@ -21,7 +21,8 @@ from .mailer import send_daily_reminder
 from .config import settings
 from .resume_parser import parse_resume, extract_resume_text
 from .resume_ai import analyze_resume_with_gemini, ResumeAIError
-from .market_service import (create_market_snapshot, index_unprocessed_jobs, build_profile_gap,\n    list_development_plan, create_development_item, update_development_item, DEVELOPMENT_STATUSES)
+from .market_service import (create_market_snapshot, index_unprocessed_jobs, build_profile_gap,
+    list_development_plan, create_development_item, update_development_item, DEVELOPMENT_STATUSES)
 
 app = FastAPI(title="JobFinder AI API", version="1.1.0", description="API local do JobFinder AI")
 app.add_middleware(
