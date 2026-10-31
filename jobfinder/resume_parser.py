@@ -167,8 +167,13 @@ def parse_resume(content: bytes, filename: str) -> dict:
         course_lines = _section_lines(text, ("cursos", "cursos complementares"))
         if course_lines:
             result["courses"] = [
-                {"name": line[:220], "provider": "", "workload": "", "completed_at": "", "status": "", "credential_url": ""}
+                {
+                    "name": (parts[0] if parts else line)[:220],
+                    "provider": (parts[1] if len(parts) > 1 else "")[:180],
+                    "workload": "", "completed_at": "", "status": "", "credential_url": "",
+                }
                 for line in course_lines
+                for parts in [re.split(r"\\s*[|–—]\\s*", line, maxsplit=1)]
             ]
         certification_lines = _section_lines(text, ("certificações", "certificados"))
         if certification_lines:
