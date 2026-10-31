@@ -180,3 +180,26 @@
 @media(max-width:1050px){.market-metric-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.market-content-grid{grid-template-columns:1fr}}
 @media(max-width:720px){.market-heading{align-items:flex-start;flex-direction:column}.market-heading .heading-actions{width:100%}.market-control-panel{align-items:stretch;flex-direction:column}.market-filters{display:grid;grid-template-columns:1fr 1fr}.market-filter{min-width:0}.market-snapshot-meta{display:grid;gap:8px}.market-metric-grid{gap:9px}.market-metric{padding:13px}.market-metric>strong{font-size:22px}.market-panel{padding:15px}.market-panel .panel-heading{flex-wrap:wrap}.market-skill-top>div:first-child{flex-wrap:wrap}.market-empty{padding:24px 17px}}
 @media(max-width:420px){.market-filters{grid-template-columns:1fr}.market-metric-grid{grid-template-columns:1fr 1fr}.market-metric>span{font-size:9px}.market-metric>small{font-size:8px}}
+
+
+/* Skill Gap */
+.market-gap-panel{margin-top:16px}
+.market-gap-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:15px 0 8px}
+.market-gap-summary>div{display:grid;gap:5px;padding:13px;background:#fafaff;border:1px solid #eeedf8;border-radius:9px}
+.market-gap-summary strong{font:800 20px Manrope,sans-serif;color:#39345f}
+.market-gap-summary span{font-size:9px;color:#858aa1}
+.market-gap-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:22px}
+.market-gap-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 0;border-bottom:1px solid #f0f1f6;min-width:0}
+.market-gap-main{display:grid;gap:5px;min-width:0}
+.market-gap-main>div{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.market-gap-main strong{font-size:11px;color:#353a55}
+.market-gap-main>div span{font-size:8px;text-transform:uppercase;letter-spacing:.3px;color:#9b9fb0;background:#f5f6fa;padding:4px 6px;border-radius:4px}
+.market-gap-main small,.market-gap-status small{font-size:9px;color:#969bad;line-height:1.5}
+.market-gap-status{display:grid;justify-items:end;gap:5px;text-align:right;flex-shrink:0;max-width:48%}
+.market-status-pill{font-size:9px;line-height:1.35;padding:5px 8px;border-radius:6px;background:#f1efff;color:#6e62d5}
+.market-status-pill.status-nao_identificada{background:#fff4e6;color:#a87525}
+.market-status-pill.status-experiencia{background:#e8f7f0;color:#25865f}
+.market-status-pill.status-projeto{background:#eaf2ff;color:#4776bd}
+.market-status-pill.status-curso_concluido,.market-status-pill.status-certificacao{background:#f0edff;color:#7165c4}
+.market-status-pill.status-em_estudo{background:#fff6e8;color:#a77b2d}
+@media(max-width:720px){.market-gap-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.market-gap-list{grid-template-columns:1fr}.market-gap-item{align-items:flex-start}.market-gap-status{max-width:52%}}
