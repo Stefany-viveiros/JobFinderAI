@@ -65,7 +65,15 @@ def _section(text: str, headings: tuple[str, ...]) -> str:
 
 def extract_resume_text(content: bytes, filename: str) -> str:
     """Extrai o texto integral do currículo para análise semântica por IA."""
-    text = extract_resume_text(content, filename)
+    suffix = Path(filename or "").suffix.lower()
+    text = _read_text(content, suffix)
+    text = re.sub(r"[ \t]+", " ", text)
+    text = text[:MAX_TEXT_CHARS]
+    if len(text.strip()) < 20:
+        raise ValueError(
+            "Não foi possível extrair texto. O arquivo pode ser uma digitalização; "
+            "tente um PDF pesquisável ou DOCX."
+        )
     return text
 
 
