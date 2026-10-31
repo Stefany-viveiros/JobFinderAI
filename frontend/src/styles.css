@@ -77,3 +77,32 @@
 .resume-import-copy p{font-size:14px!important;line-height:1.6}
 .profile-save-bar>span{font-size:13px}
 @media(max-width:720px){.record-fields{grid-template-columns:1fr}.record-section{padding:16px}.record-section-heading{align-items:flex-start}.record-section-heading .btn{white-space:nowrap}}
+
+
+/* Application-wide type scale: improve legibility without changing the visual identity */
+.brand-sub{font-size:11px;letter-spacing:1.5px}
+.workspace-label{font-size:12px}
+.nav-item{font-size:14px}
+.nav-item small{font-size:12px}
+.upgrade-card strong{font-size:14px}
+.upgrade-card p{font-size:13px}
+.upgrade-card button{font-size:13px}
+.user-info strong{font-size:14px}
+.user-info span{font-size:12px}
+.breadcrumb{font-size:14px}
+.today-label{font-size:13px}
+.content-wrap{line-height:1.55}
+.eyebrow{font-size:11px;letter-spacing:1.3px}
+.section-heading p{font-size:15px;line-height:1.6}
+.btn{font-size:14px}
+.btn-sm{font-size:12px}
+.metric-title{font-size:13px}
+.metric-foot{font-size:12px}
+.panel-heading h2{font-size:16px}
+.panel-heading p{font-size:13px}
+.text-action{font-size:13px}
+.welcome-copy strong{font-size:15px}
+.welcome-copy span{font-size:13px}
+.welcome-side span{font-size:11px}
+.recent-job-copy strong{font-size:13px}
+.recent-job-copy span{font-size:12px}
