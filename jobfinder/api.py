@@ -84,6 +84,13 @@ async def require_authenticated_session(request, call_next):
     }
     if not path.startswith("/api/") or path in public_paths or path == "/api/auth/me":
         return await call_next(request)
+    # Fail closed: endpoints legados ainda estão sendo convertidos para consultas
+    # com escopo por usuário. Não exponha dados globais a contas autenticadas.
+    if os.getenv("MULTITENANT_READY", "false").lower() != "true":
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "A área da aplicação está em implantação. O acesso será liberado após a conclusão do isolamento entre contas."},
+        )
     raw = request.cookies.get(SESSION_COOKIE)
     if not raw:
         return JSONResponse(status_code=401, content={"detail": "Faça login para continuar."})
