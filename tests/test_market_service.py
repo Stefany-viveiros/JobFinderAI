@@ -1,4 +1,5 @@
-from datetime import datetime, timedelta
+from datetime import datetime
+import uuid
 
 from sqlalchemy import select
 
@@ -8,7 +9,23 @@ from jobfinder.market_service import (
     index_unprocessed_jobs,
 )
 from jobfinder.models import JobSkill, MarketSkillMetric, MarketSkillPair, Skill
-from conftest import make_job
+from jobfinder.models import Job
+
+
+def make_job(db, **overrides):
+    data = {
+        "source": "Teste", "title": "Estágio Backend Python",
+        "company": "Empresa teste", "description": "Python e FastAPI são utilizados no backend.",
+        "location": "Brasil", "modality": "Remoto", "job_type": "Estágio",
+        "url": f"https://test.local/{uuid.uuid4()}", "level": "estagio",
+        "created_at": datetime.utcnow(),
+    }
+    data.update(overrides)
+    job = Job(**data)
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    return job
 
 
 def test_index_job_skills_persists_one_row_per_canonical_skill(db):
