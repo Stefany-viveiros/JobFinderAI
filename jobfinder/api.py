@@ -15,7 +15,8 @@ from . import applying
 from .agent import get_agent_settings, run_agent, TARGET_LEVELS
 from .mailer import send_daily_reminder
 from .config import settings
-from .resume_parser import parse_resume
+from .resume_parser import parse_resume, extract_resume_text
+from .resume_ai import analyze_resume_with_gemini, ResumeAIError
 
 app = FastAPI(title="JobFinder AI API", version="1.1.0", description="API local do JobFinder AI")
 app.add_middleware(
@@ -543,14 +544,26 @@ async def import_resume(file: UploadFile = File(...)):
     if not content:
         raise HTTPException(400, "O arquivo enviado está vazio.")
     try:
-        extracted = parse_resume(content, filename)
+        # A IA recebe o texto extraído integralmente; o arquivo original não é salvo.
+        resume_text = extract_resume_text(content, filename)
+        if settings.gemini_api_key:
+            extracted = analyze_resume_with_gemini(resume_text)
+            analysis_mode = "gemini"
+            message = "Currículo analisado com Gemini. Revise os campos preenchidos e clique em Salvar perfil."
+        else:
+            # Mantém compatibilidade para instalações ainda sem a variável de ambiente.
+            extracted = parse_resume(content, filename)
+            analysis_mode = "basic"
+            message = "Currículo lido pelo extrator básico. Configure GEMINI_API_KEY no servidor para ativar a análise inteligente. Revise antes de salvar."
     except ValueError as exc:
         raise HTTPException(422, str(exc))
+    except ResumeAIError as exc:
+        raise HTTPException(502, str(exc))
     except Exception as exc:
         raise HTTPException(422, "Não foi possível ler este arquivo. Verifique se o PDF/DOCX está íntegro e tente novamente.")
     if not extracted:
         raise HTTPException(422, "Não encontramos informações reconhecíveis. Confira se o PDF permite selecionar/copiar o texto.")
-    return {"message": "Currículo analisado. Revise os campos antes de salvar.", "extracted": extracted}
+    return {"message": message, "analysis_mode": analysis_mode, "extracted": extracted}
 
 
 @app.get("/api/notifications")
