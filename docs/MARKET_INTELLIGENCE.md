@@ -290,3 +290,18 @@ Estados persistidos: `planned`, `in_progress`, `paused` e `completed`. Marcar co
 A atividade inicial é um roteiro genérico e determinístico por categoria da taxonomia, não uma trilha didática completa nem uma recomendação de curso verificada. Links de recursos externos não são inventados ou preenchidos automaticamente nesta fase. As horas são estimativas editáveis, não previsões de tempo de aprendizagem.
 
 **Validação pendente:** os testes de serviço foram adicionados, mas ainda precisam ser executados no ambiente do projeto; também falta confirmar o build de produção do frontend e a criação da tabela em uma instalação com banco existente. O fluxo atual usa `Base.metadata.create_all` na inicialização; uma estratégia formal de migrações continua recomendada para o deployment.
+
+
+## 16. Desafios práticos e autoavaliação — primeira versão
+
+A branch inclui uma primeira camada de avaliação prática com registro histórico:
+
+- Modelo `SkillAssessmentAttempt`, vinculado à competência e opcionalmente à meta do plano de desenvolvimento.
+- `POST /api/market/assessments`: inicia um desafio para uma competência do catálogo; se já existir rascunho aberto para ela, retorna o rascunho existente.
+- `GET /api/market/assessments`: lista histórico e resumo de tentativas; aceita filtro por `skill_id).
+- `POST /api/market/assessments/{attempt_id}/submit`: registra descrição da solução, link opcional de evidência e respostas aos critérios.
+- A interface permite iniciar desafio a partir do Skill Gap, descrever a solução, informar repositório/demo, marcar critérios, registrar resultado e consultar tentativas anteriores.
+
+Os desafios iniciais são gerados por regras determinísticas conforme a categoria da competência (linguagem/framework/biblioteca/web, banco de dados, ferramenta/cloud ou outras práticas). A rubrica fica salva como snapshot na tentativa para preservar o histórico mesmo se o modelo do desafio mudar.
+
+A pontuação é calculada somente pelas caixas que a própria pessoa marcou como atendidas. O feedback aponta critérios pendentes e próximos passos; não analisa automaticamente código, repositório, link ou qualidade técnica da resposta. O resultado é explicitamente identificado como **autoavaliação**, não como certificação, validação independente ou prova de proficiência. Para validação externa, será necessária uma etapa futura com execução de testes/código em ambiente isolado ou revisão por avaliador.
