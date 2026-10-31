@@ -52,6 +52,81 @@ class Profile(Base):
     weight_location: Mapped[int] = mapped_column(Integer, default=10)
     weight_level: Mapped[int] = mapped_column(Integer, default=10)
 
+    educations: Mapped[list["Education"]] = relationship(back_populates="profile", cascade="all, delete-orphan", order_by="Education.id")
+    experiences: Mapped[list["Experience"]] = relationship(back_populates="profile", cascade="all, delete-orphan", order_by="Experience.id")
+    courses: Mapped[list["Course"]] = relationship(back_populates="profile", cascade="all, delete-orphan", order_by="Course.id")
+    certifications_items: Mapped[list["Certification"]] = relationship(back_populates="profile", cascade="all, delete-orphan", order_by="Certification.id")
+    portfolio_projects: Mapped[list["PortfolioProject"]] = relationship(back_populates="profile", cascade="all, delete-orphan", order_by="PortfolioProject.id")
+
+
+class Education(Base):
+    __tablename__ = "profile_educations"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    profile_id: Mapped[int] = mapped_column(ForeignKey("profile.id", ondelete="CASCADE"), index=True)
+    course: Mapped[str] = mapped_column(String(200), default="")
+    institution: Mapped[str] = mapped_column(String(200), default="")
+    degree: Mapped[str] = mapped_column(String(80), default="")
+    status: Mapped[str] = mapped_column(String(40), default="Em andamento")
+    start_date: Mapped[str] = mapped_column(String(30), default="")
+    end_date: Mapped[str] = mapped_column(String(30), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    profile: Mapped[Profile] = relationship(back_populates="educations")
+
+
+class Experience(Base):
+    __tablename__ = "profile_experiences"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    profile_id: Mapped[int] = mapped_column(ForeignKey("profile.id", ondelete="CASCADE"), index=True)
+    company: Mapped[str] = mapped_column(String(200), default="")
+    role: Mapped[str] = mapped_column(String(160), default="")
+    employment_type: Mapped[str] = mapped_column(String(60), default="")
+    location: Mapped[str] = mapped_column(String(160), default="")
+    start_date: Mapped[str] = mapped_column(String(30), default="")
+    end_date: Mapped[str] = mapped_column(String(30), default="")
+    is_current: Mapped[bool] = mapped_column(Boolean, default=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    profile: Mapped[Profile] = relationship(back_populates="experiences")
+
+
+class Course(Base):
+    __tablename__ = "profile_courses"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    profile_id: Mapped[int] = mapped_column(ForeignKey("profile.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(220), default="")
+    provider: Mapped[str] = mapped_column(String(180), default="")
+    workload: Mapped[str] = mapped_column(String(40), default="")
+    completed_at: Mapped[str] = mapped_column(String(30), default="")
+    status: Mapped[str] = mapped_column(String(40), default="Concluído")
+    credential_url: Mapped[str] = mapped_column(Text, default="")
+    profile: Mapped[Profile] = relationship(back_populates="courses")
+
+
+class Certification(Base):
+    __tablename__ = "profile_certifications"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    profile_id: Mapped[int] = mapped_column(ForeignKey("profile.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(220), default="")
+    issuer: Mapped[str] = mapped_column(String(180), default="")
+    issued_at: Mapped[str] = mapped_column(String(30), default="")
+    expires_at: Mapped[str] = mapped_column(String(30), default="")
+    credential_id: Mapped[str] = mapped_column(String(160), default="")
+    credential_url: Mapped[str] = mapped_column(Text, default="")
+    profile: Mapped[Profile] = relationship(back_populates="certifications_items")
+
+
+class PortfolioProject(Base):
+    __tablename__ = "profile_projects"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    profile_id: Mapped[int] = mapped_column(ForeignKey("profile.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(220), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    technologies: Mapped[str] = mapped_column(Text, default="")
+    repository_url: Mapped[str] = mapped_column(Text, default="")
+    demo_url: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(40), default="Em desenvolvimento")
+    profile: Mapped[Profile] = relationship(back_populates="portfolio_projects")
+
+
 class Application(Base):
     __tablename__ = "applications"
     id: Mapped[int] = mapped_column(primary_key=True)
