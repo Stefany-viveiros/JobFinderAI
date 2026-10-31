@@ -135,6 +135,13 @@ def test_profile_supports_multiple_structured_records_and_updates(client):
     assert updated.status_code == 200
     assert len(client.get("/api/profile").json()["educations"]) == 1
 
+    # Uma atualização parcial não deve apagar as coleções omitidas.
+    partial = client.put("/api/profile", json={"technologies": "Python, React"})
+    assert partial.status_code == 200
+    after_partial = client.get("/api/profile").json()
+    assert len(after_partial["educations"]) == 1
+    assert after_partial["courses"][0]["name"] == "Desenvolvimento Web"
+
 
 def test_profile_update_recomputes_scores(client, db):
     job = make_job(db, title="Estágio Python", description="Python", compatibility=0)
