@@ -20,7 +20,7 @@ TECHNOLOGY_TERMS = (
 MANDATORY_MARKERS = re.compile(
     r"\b(obrigat\w*|necessar\w*|imprescind\w*|must[ -]have|required|"
     r"mandatory|essential|minimum qualifications|requisitos minimos?|"
-    r"requisito mínimo)\b"
+    r"requisito minimo)\b"
 )
 DESIRABLE_MARKERS = re.compile(
     r"\b(desej[aá]vel|diferencial|nice[ -]to[ -]have|preferred|plus)\b"
@@ -82,18 +82,31 @@ def profile_technology_terms(profile):
 
 
 def _mandatory_technologies(description):
-    """Identifica tecnologias citadas em frases com marcadores explícitos de obrigatoriedade."""
+    """Identifica tecnologias próximas a marcadores explícitos de obrigatoriedade."""
     required = set()
-    for sentence in re.split(r"[.!?;\n]+", normalize(description)):
-        if DESIRABLE_MARKERS.search(sentence):
+    for sentence in re.split(r"[.!?;\\n]+", normalize(description)):
+        mandatory = list(MANDATORY_MARKERS.finditer(sentence))
+        if not mandatory:
             continue
-        if not MANDATORY_MARKERS.search(sentence):
-            continue
+        desirable = list(DESIRABLE_MARKERS.finditer(sentence))
         for technology in TECHNOLOGY_TERMS:
-            if _contains_phrase(sentence, technology):
-                required.add(normalize(technology))
-    return sorted(required)
+            pattern = r"(?<![a-z0-9])" + re.escape(normalize(technology)) + r"(?![a-z0-9])"
+            for match in re.finditer(pattern, sentence):
+                def distance(marker):
+                    if marker.end() < match.start():
+                        return match.start() - marker.end()
+                    if marker.start() > match.end():
+                        return marker.start() - match.end()
+                    return 0
 
+                required_distance = min(distance(marker) for marker in mandatory)
+                desirable_distance = min(
+                    (distance(marker) for marker in desirable),
+                    default=float("inf"),
+                )
+                if required_distance <= desirable_distance:
+                    required.add(normalize(technology))
+    return sorted(required)
 
 def score_job(job, profile):
     title = normalize(job.get("title"))
