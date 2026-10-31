@@ -18,3 +18,14 @@ def test_excluded_term_blocks_job():
     score,matched,missing=score_job(dict(title="Python Backend Crypto",description="",location="Remote",modality="Remoto"),profile(exclude_terms="crypto"))
     assert score==0
     assert any("excluídos" in x for x in missing)
+
+
+def test_matching_includes_technologies_from_structured_projects_and_education():
+    project = SimpleNamespace(technologies="React, PostgreSQL")
+    education = SimpleNamespace(course="Engenharia da Computação")
+    score, matched, missing = score_job(
+        {"title": "Estágio React Developer", "description": "React and PostgreSQL", "location": "Remote", "modality": "Remoto"},
+        profile(technologies="", skills="", keywords="", portfolio_projects=[project], educations=[education]),
+    )
+    assert score > 0
+    assert any("react" in item or "postgresql" in item for item in matched)
