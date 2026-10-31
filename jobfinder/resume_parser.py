@@ -173,7 +173,7 @@ def parse_resume(content: bytes, filename: str) -> dict:
                     "workload": "", "completed_at": "", "status": "", "credential_url": "",
                 }
                 for line in course_lines
-                for parts in [re.split(r"\\s*[|–—]\\s*", line, maxsplit=1)]
+                for parts in [re.split(r"\s*[|–—]\s*", line, maxsplit=1)]
             ]
         certification_lines = _section_lines(text, ("certificações", "certificados"))
         if certification_lines:
