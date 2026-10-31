@@ -58,7 +58,7 @@ function App() {
   const [sourceFilter, setSourceFilter] = useState('Todas')
   const [attemptFilter, setAttemptFilter] = useState('todas')
   const [attempts, setAttempts] = useState([])
-  const [agentSettings, setAgentSettings] = useState({ auto_apply_enabled: false, require_approval: true, daily_limit: 5, min_score: 60, profile_ready: true })
+  const [agentSettings, setAgentSettings] = useState({ auto_apply_enabled: false, require_approval: true, daily_limit: 5, min_score: 80, profile_ready: true })
   const [agentRun, setAgentRun] = useState(null)
   const [sourcesInfo, setSourcesInfo] = useState(null)
 
