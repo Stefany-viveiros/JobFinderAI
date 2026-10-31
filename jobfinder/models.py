@@ -67,8 +67,24 @@ class Job(Base):
     application: Mapped["Application | None"] = relationship(back_populates="job", uselist=False, cascade="all, delete-orphan")
     tasks: Mapped[list["Task"]] = relationship(back_populates="job", cascade="all, delete-orphan")
 
+class JobMatch(Base):
+    """Compatibilidade, favoritos e arquivamento de uma vaga por usuário."""
+    __tablename__ = "job_matches"
+    __table_args__ = (UniqueConstraint("user_id", "job_id", name="uq_user_job_match"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False, index=True)
+    compatibility: Mapped[float] = mapped_column(Float, default=0)
+    match_reasons: Mapped[str] = mapped_column(Text, default="")
+    missing_reasons: Mapped[str] = mapped_column(Text, default="")
+    is_favorite: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class Profile(Base):
     __tablename__ = "profile"
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, unique=True, index=True)
     id: Mapped[int] = mapped_column(primary_key=True, default=1)
     name: Mapped[str] = mapped_column(String(150), default="")
     course: Mapped[str] = mapped_column(String(200), default="")
@@ -168,8 +184,10 @@ class PortfolioProject(Base):
 
 class Application(Base):
     __tablename__ = "applications"
+    __table_args__ = (UniqueConstraint("user_id", "job_id", name="uq_user_application_job"),)
     id: Mapped[int] = mapped_column(primary_key=True)
-    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"), unique=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"))
     status: Mapped[str] = mapped_column(String(80), default="Candidatura enviada")
     applied_at: Mapped[date | None] = mapped_column(Date, nullable=True)
     deadline: Mapped[date | None] = mapped_column(Date, nullable=True)
@@ -181,6 +199,7 @@ class Application(Base):
 class Task(Base):
     __tablename__ = "tasks"
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id"), nullable=True)
     title: Mapped[str] = mapped_column(String(300))
     description: Mapped[str] = mapped_column(Text, default="")
@@ -194,8 +213,9 @@ class Task(Base):
 
 class NotificationLog(Base):
     __tablename__ = "notification_log"
-    __table_args__ = (UniqueConstraint("task_id", "recipient", "send_date", name="uq_task_recipient_day"),)
+    __table_args__ = (UniqueConstraint("user_id", "task_id", "recipient", "send_date", name="uq_user_task_recipient_day"),)
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     task_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     recipient: Mapped[str] = mapped_column(String(300))
     send_date: Mapped[str] = mapped_column(String(20))
@@ -205,8 +225,9 @@ class NotificationLog(Base):
 
 
 class AgentSettings(Base):
-    """Configuração singleton (id=1) do agente de candidaturas."""
+    """Configuração individual do agente por usuário."""
     __tablename__ = "agent_settings"
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, unique=True, index=True)
     id: Mapped[int] = mapped_column(primary_key=True, default=1)
     auto_apply_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     require_approval: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -325,6 +346,7 @@ class DevelopmentPlanItem(Base):
     """Meta individual de desenvolvimento ligada a uma competência do catálogo."""
     __tablename__ = "development_plan_items"
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     skill_id: Mapped[int] = mapped_column(ForeignKey("market_skills.id"), index=True)
     source_run_id: Mapped[int | None] = mapped_column(
         ForeignKey("market_analysis_runs.id", ondelete="SET NULL"), nullable=True
