@@ -8,7 +8,10 @@ from sqlalchemy import select, func, or_
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from .db import init_db, SessionLocal
-from .models import (Job, Application, Task, Profile, NotificationLog, ApplicationAttempt,\n                     Education, Experience, Course, Certification, PortfolioProject)
+from .models import (
+    Job, Application, Task, Profile, NotificationLog, ApplicationAttempt,
+    Education, Experience, Course, Certification, PortfolioProject,
+)
 from .service import get_profile, save_jobs, refresh_scores, create_task, complete_task, STATUSES, collect_and_save_ranked
 from .sources import SOURCES, SOURCE_INFO, LINK_ONLY_SOURCES, collect_selected, external_search_links
 from . import applying
