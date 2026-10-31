@@ -1,8 +1,16 @@
 from datetime import date, datetime
+from email.message import EmailMessage
+import hashlib
+import secrets
+import smtplib
+from datetime import timedelta
+from pwdlib import PasswordHash
+from .models import User, UserSession, PasswordResetToken
+from .auth import SESSION_COOKIE, COOKIE_SECURE, create_session, clear_session_cookie
 import os
 from typing import Optional
 
-from fastapi import FastAPI, Depends, HTTPException, Query, UploadFile, File
+from fastapi import FastAPI, Depends, HTTPException, Query, UploadFile, File, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
@@ -64,6 +72,37 @@ def get_db():
         db.close()
 
 
+
+@app.middleware("http")
+async def require_authenticated_session(request, call_next):
+    """Protege a API inteira; somente health e endpoints de autenticação são públicos."""
+    path = request.url.path
+    public_paths = {
+        "/api/health", "/api/auth/register", "/api/auth/login",
+        "/api/auth/logout", "/api/auth/forgot-password", "/api/auth/reset-password",
+    }
+    if not path.startswith("/api/") or path in public_paths or path == "/api/auth/me":
+        return await call_next(request)
+    raw = request.cookies.get(SESSION_COOKIE)
+    if not raw:
+        return JSONResponse(status_code=401, content={"detail": "Faça login para continuar."})
+    db = SessionLocal()
+    try:
+        session = db.scalar(select(UserSession).where(
+            UserSession.token_hash == _token_hash(raw),
+            UserSession.expires_at > datetime.utcnow(),
+        ))
+        if not session or not session.user.is_active:
+            return JSONResponse(status_code=401, content={"detail": "Sessão inválida ou expirada."})
+        if request.method not in {"GET", "HEAD", "OPTIONS"}:
+            supplied = request.headers.get("X-CSRF-Token", "")
+            if not supplied or not secrets.compare_digest(supplied, session.csrf_token):
+                return JSONResponse(status_code=403, content={"detail": "Validação CSRF inválida."})
+    finally:
+        db.close()
+    return await call_next(request)
+
+
 @app.on_event("startup")
 def startup():
     init_db()
@@ -73,6 +112,152 @@ def startup():
         get_profile(db)
     finally:
         db.close()
+
+
+
+class RegisterInput(BaseModel):
+    email: str = Field(min_length=5, max_length=320)
+    full_name: str = Field(min_length=2, max_length=150)
+    password: str = Field(min_length=12, max_length=128)
+
+
+class LoginInput(BaseModel):
+    email: str = Field(min_length=5, max_length=320)
+    password: str = Field(min_length=1, max_length=128)
+
+
+class ForgotPasswordInput(BaseModel):
+    email: str = Field(min_length=5, max_length=320)
+
+
+class ResetPasswordInput(BaseModel):
+    token: str = Field(min_length=20, max_length=200)
+    password: str = Field(min_length=12, max_length=128)
+
+
+password_hasher = PasswordHash.recommended()
+
+
+def _token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _public_user(user: User) -> dict:
+    return {"id": user.id, "email": user.email, "full_name": user.full_name, "role": user.role}
+
+
+@app.post("/api/auth/register")
+def register(payload: RegisterInput, response: Response, db: Session = Depends(get_db)):
+    email = payload.email.strip()
+    normalized = email.casefold()
+    if db.scalar(select(User).where(User.email_normalized == normalized)):
+        raise HTTPException(409, "Já existe uma conta com esse e-mail.")
+    user = User(
+        email=email, email_normalized=normalized, full_name=payload.full_name.strip(),
+        password_hash=password_hasher.hash(payload.password), role="user", is_active=True,
+    )
+    db.add(user)
+    try:
+        db.commit()
+        db.refresh(user)
+    except Exception:
+        db.rollback()
+        raise HTTPException(409, "Não foi possível criar a conta. Verifique se o e-mail já está cadastrado.")
+    create_session(response, db, user)
+    return {"user": _public_user(user)}
+
+
+@app.post("/api/auth/login")
+def login(payload: LoginInput, response: Response, db: Session = Depends(get_db)):
+    user = db.scalar(select(User).where(User.email_normalized == payload.email.strip().casefold()))
+    if not user or not user.is_active or not password_hasher.verify(payload.password, user.password_hash):
+        raise HTTPException(401, "E-mail ou senha inválidos.")
+    create_session(response, db, user)
+    return {"user": _public_user(user)}
+
+
+@app.post("/api/auth/logout")
+def logout(request: Request, response: Response, db: Session = Depends(get_db)):
+    raw = request.cookies.get(SESSION_COOKIE)
+    if raw:
+        session = db.scalar(select(UserSession).where(UserSession.token_hash == _token_hash(raw)))
+        if session:
+            db.delete(session)
+            db.commit()
+    clear_session_cookie(response)
+    return {"ok": True}
+
+
+@app.get("/api/auth/me")
+def auth_me(request: Request, db: Session = Depends(get_db)):
+    raw = request.cookies.get(SESSION_COOKIE)
+    if not raw:
+        raise HTTPException(401, "Faça login para continuar.")
+    session = db.scalar(select(UserSession).where(
+        UserSession.token_hash == _token_hash(raw), UserSession.expires_at > datetime.utcnow()
+    ))
+    if not session or not session.user.is_active:
+        raise HTTPException(401, "Sessão inválida ou expirada.")
+    response = JSONResponse({"user": _public_user(session.user), "csrf_token": session.csrf_token})
+    return response
+
+
+@app.post("/api/auth/forgot-password")
+def forgot_password(payload: ForgotPasswordInput, db: Session = Depends(get_db)):
+    # Resposta idêntica exista ou não a conta, para não revelar cadastros.
+    user = db.scalar(select(User).where(User.email_normalized == payload.email.strip().casefold()))
+    if user:
+        raw_token = secrets.token_urlsafe(40)
+        reset = PasswordResetToken(
+            user_id=user.id, token_hash=_token_hash(raw_token),
+            expires_at=datetime.utcnow() + timedelta(minutes=30),
+        )
+        db.add(reset)
+        db.commit()
+        base_url = os.getenv("APP_BASE_URL", "").rstrip("/")
+        if settings.smtp_host and settings.smtp_from and settings.smtp_username and settings.smtp_password and base_url:
+            message = EmailMessage()
+            message["Subject"] = "Redefinição de senha — JobFinder AI"
+            message["From"] = settings.smtp_from
+            message["To"] = user.email
+            message.set_content(
+                "Recebemos uma solicitação para redefinir sua senha. "
+                "Use o link abaixo em até 30 minutos:\n\n"
+                + base_url + "/redefinir-senha?token=" + raw_token
+                + "\n\nSe não foi você, ignore este e-mail."
+            )
+            try:
+                with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=20) as server:
+                    server.ehlo()
+                    if settings.smtp_use_tls:
+                        server.starttls()
+                        server.ehlo()
+                    server.login(settings.smtp_username, settings.smtp_password)
+                    server.send_message(message)
+            except Exception:
+                # Não expõe token nem detalhes SMTP ao cliente.
+                db.rollback()
+    return {"message": "Se o e-mail estiver cadastrado, você receberá instruções para redefinir a senha."}
+
+
+@app.post("/api/auth/reset-password")
+def reset_password(payload: ResetPasswordInput, db: Session = Depends(get_db)):
+    reset = db.scalar(select(PasswordResetToken).where(
+        PasswordResetToken.token_hash == _token_hash(payload.token),
+        PasswordResetToken.used_at.is_(None),
+        PasswordResetToken.expires_at > datetime.utcnow(),
+    ))
+    if not reset:
+        raise HTTPException(400, "Link inválido ou expirado. Solicite uma nova redefinição.")
+    user = db.get(User, reset.user_id)
+    if not user or not user.is_active:
+        raise HTTPException(400, "Não foi possível redefinir a senha.")
+    user.password_hash = password_hasher.hash(payload.password)
+    reset.used_at = datetime.utcnow()
+    # Invalida todas as sessões existentes após a troca da senha.
+    db.query(UserSession).filter(UserSession.user_id == user.id).delete()
+    db.commit()
+    return {"message": "Senha redefinida. Faça login novamente."}
 
 
 class JobCreate(BaseModel):
