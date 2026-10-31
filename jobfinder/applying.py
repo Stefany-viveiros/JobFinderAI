@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import func, select
 
 from .config import settings
-from .matching import normalize
+from .matching import normalize, profile_technology_terms
 from .models import Application, ApplicationAttempt, Job
 
 OPEN_STATUSES = ("prepared", "awaiting_approval", "manual_required")
@@ -34,8 +34,8 @@ def profile_gaps(profile) -> list[str]:
     gaps = []
     if not (profile.name or "").strip():
         gaps.append("nome")
-    if not ((profile.technologies or "").strip() or (profile.skills or "").strip()):
-        gaps.append("tecnologias ou habilidades")
+    if not profile_technology_terms(profile):
+        gaps.append("tecnologias ou habilidades identificáveis no perfil, projetos ou experiência")
     if not any((getattr(profile, f, "") or "").strip() for f in ("course", "experience", "projects")):
         gaps.append("curso, experiência ou projetos")
     return gaps
