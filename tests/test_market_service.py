@@ -123,3 +123,43 @@ def test_empty_extraction_is_recorded_and_not_repeated(db):
 
     assert first["jobs_indexed"] == 1
     assert second["jobs_indexed"] == 0
+
+
+def test_profile_gap_distinguishes_project_course_declaration_and_missing(db):
+    from jobfinder.market_service import build_profile_gap
+    from jobfinder.models import Profile, PortfolioProject, Course
+
+    profile = Profile(
+        id=1,
+        technologies="JavaScript",
+        skills="",
+        keywords="",
+        portfolio_projects=[
+            PortfolioProject(
+                name="Projeto de portfólio",
+                description="Aplicação web com React.",
+                technologies="React",
+                status="Concluído",
+            )
+        ],
+        courses=[
+            Course(name="Python básico", provider="Curso teste", status="Concluído")
+        ],
+    )
+    db.add(profile)
+    db.commit()
+
+    make_job(
+        db,
+        title="Estágio Frontend Python",
+        description="Python, React e JavaScript são competências desejáveis para esta vaga.",
+    )
+    snapshot = create_market_snapshot(db, level_scope="estagio", days=30, min_jobs=1)
+    gap = build_profile_gap(db, run_id=snapshot["run_id"])
+    by_name = {item["name"]: item for item in gap["items"]}
+
+    assert by_name["React"]["status"] == "projeto"
+    assert by_name["Python"]["status"] == "curso_concluido"
+    assert by_name["JavaScript"]["status"] == "declarada"
+    assert gap["available"] is True
+    assert "não significa falta de conhecimento" in gap["notice"]
