@@ -203,3 +203,6 @@
 .market-status-pill.status-curso_concluido,.market-status-pill.status-certificacao{background:#f0edff;color:#7165c4}
 .market-status-pill.status-em_estudo{background:#fff6e8;color:#a77b2d}
 @media(max-width:720px){.market-gap-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.market-gap-list{grid-template-columns:1fr}.market-gap-item{align-items:flex-start}.market-gap-status{max-width:52%}}
+
+.market-status-pill.status-praticada{background:#e8f7f0;color:#25865f}
+.market-status-pill.status-formacao{background:#f0edff;color:#7165c4}
