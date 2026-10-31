@@ -18,12 +18,12 @@ TECHNOLOGY_TERMS = (
     "Selenium", "Cypress", "Jest", "Figma", "PHP", "Ruby", "Go",
 )
 MANDATORY_MARKERS = re.compile(
-    r"\\b(obrigat\\w*|necessar\\w*|imprescind\\w*|must[ -]have|required|"
+    r"\b(obrigat\w*|necessar\w*|imprescind\w*|must[ -]have|required|"
     r"mandatory|essential|minimum qualifications|requisitos mínimos?|"
-    r"requisito mínimo)\\b"
+    r"requisito mínimo)\b"
 )
 DESIRABLE_MARKERS = re.compile(
-    r"\\b(desej[aá]vel|diferencial|nice[ -]to[ -]have|preferred|plus)\\b"
+    r"\b(desej[aá]vel|diferencial|nice[ -]to[ -]have|preferred|plus)\b"
 )
 
 
@@ -47,7 +47,7 @@ def split_values(value):
     """Aceita listas separadas por vírgula, ponto e vírgula, barra ou quebra de linha."""
     return [
         normalize(part.strip())
-        for part in re.split(r"[,;|\\n]+", str(value or ""))
+        for part in re.split(r"[,;|\n]+", str(value or ""))
         if part.strip()
     ]
 
@@ -84,7 +84,7 @@ def profile_technology_terms(profile):
 def _mandatory_technologies(description):
     """Identifica tecnologias citadas em frases com marcadores explícitos de obrigatoriedade."""
     required = set()
-    for sentence in re.split(r"[.!?;\\n]+", normalize(description)):
+    for sentence in re.split(r"[.!?;\n]+", normalize(description)):
         if DESIRABLE_MARKERS.search(sentence):
             continue
         if not MANDATORY_MARKERS.search(sentence):
