@@ -115,7 +115,28 @@ def score_job(job, profile):
     modality = normalize(job.get("modality"))
     job_type = normalize(job.get("job_type"))
 
-    tech = profile_technology_terms(profile)
+    # Informações reais do perfil que podem ser comparadas com a vaga.
+    project_technologies = " ".join(
+        str(getattr(item, "technologies", "") or "")
+        for item in (getattr(profile, "portfolio_projects", []) or [])
+    )
+    course_names = " ".join(
+        str(getattr(item, "name", "") or "")
+        for item in (getattr(profile, "courses", []) or [])
+    )
+    education_names = " ".join(
+        str(getattr(item, "course", "") or "")
+        for item in (getattr(profile, "educations", []) or [])
+    )
+    tech_text = " ".join([
+        getattr(profile, "technologies", "") or "",
+        getattr(profile, "skills", "") or "",
+        getattr(profile, "keywords", "") or "",
+        project_technologies,
+        course_names,
+        education_names,
+    ])
+    tech = terms(tech_text)
     haystack = f"{title} {description}"
     found = sorted(term for term in tech if _contains_phrase(haystack, term))
 

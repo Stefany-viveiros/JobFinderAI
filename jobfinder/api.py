@@ -5,10 +5,14 @@ from fastapi import FastAPI, Depends, HTTPException, Query, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select, func, or_
-from sqlalchemy.orm import Session, joinedload, selectinload
+from sqlalchemy.orm import Session, joinedload, selectinload, aliased
 
 from .db import init_db, SessionLocal
-from .models import Job, Application, Task, Profile, NotificationLog, ApplicationAttempt
+from .models import (
+    Job, Application, Task, Profile, NotificationLog, ApplicationAttempt,
+    Education, Experience, Course, Certification, PortfolioProject,
+    MarketAnalysisRun, MarketSkillMetric, MarketSkillPair, Skill, DevelopmentPlanItem,
+)
 from .service import get_profile, save_jobs, refresh_scores, create_task, complete_task, STATUSES, collect_and_save_ranked
 from .sources import SOURCES, SOURCE_INFO, LINK_ONLY_SOURCES, collect_selected, external_search_links
 from . import applying
@@ -17,6 +21,9 @@ from .mailer import send_daily_reminder
 from .config import settings
 from .resume_parser import parse_resume, extract_resume_text
 from .resume_ai import analyze_resume_with_gemini, ResumeAIError
+from .market_service import (create_market_snapshot, index_unprocessed_jobs, build_profile_gap,
+    list_development_plan, create_development_item, update_development_item, DEVELOPMENT_STATUSES,
+    create_skill_assessment, submit_skill_assessment, list_skill_assessments)
 
 app = FastAPI(title="JobFinder AI API", version="1.1.0", description="API local do JobFinder AI")
 app.add_middleware(
@@ -84,6 +91,59 @@ class TaskUpdate(BaseModel):
     notify: bool = True
 
 
+class EducationInput(BaseModel):
+    id: Optional[int] = None
+    course: str = Field("", max_length=200)
+    institution: str = Field("", max_length=200)
+    degree: str = Field("", max_length=80)
+    status: str = Field("Em andamento", max_length=40)
+    start_date: str = Field("", max_length=30)
+    end_date: str = Field("", max_length=30)
+    description: str = ""
+
+
+class ExperienceInput(BaseModel):
+    id: Optional[int] = None
+    company: str = Field("", max_length=200)
+    role: str = Field("", max_length=160)
+    employment_type: str = Field("", max_length=60)
+    location: str = Field("", max_length=160)
+    start_date: str = Field("", max_length=30)
+    end_date: str = Field("", max_length=30)
+    is_current: bool = False
+    description: str = ""
+
+
+class CourseInput(BaseModel):
+    id: Optional[int] = None
+    name: str = Field("", max_length=220)
+    provider: str = Field("", max_length=180)
+    workload: str = Field("", max_length=40)
+    completed_at: str = Field("", max_length=30)
+    status: str = Field("Concluído", max_length=40)
+    credential_url: str = ""
+
+
+class CertificationInput(BaseModel):
+    id: Optional[int] = None
+    name: str = Field("", max_length=220)
+    issuer: str = Field("", max_length=180)
+    issued_at: str = Field("", max_length=30)
+    expires_at: str = Field("", max_length=30)
+    credential_id: str = Field("", max_length=160)
+    credential_url: str = ""
+
+
+class PortfolioProjectInput(BaseModel):
+    id: Optional[int] = None
+    name: str = Field("", max_length=220)
+    description: str = ""
+    technologies: str = ""
+    repository_url: str = ""
+    demo_url: str = ""
+    status: str = Field("Em desenvolvimento", max_length=40)
+
+
 class ProfileUpdate(BaseModel):
     name: str = ""
     course: str = ""
@@ -105,6 +165,11 @@ class ProfileUpdate(BaseModel):
     weight_modality: int = 15
     weight_location: int = 10
     weight_level: int = 10
+    educations: Optional[list[EducationInput]] = None
+    experiences: Optional[list[ExperienceInput]] = None
+    courses: Optional[list[CourseInput]] = None
+    certifications_items: Optional[list[CertificationInput]] = None
+    portfolio_projects: Optional[list[PortfolioProjectInput]] = None
 
 
 def job_dict(j: Job, with_application=True):
@@ -156,12 +221,44 @@ def task_dict(t: Task):
 
 
 def profile_dict(p: Profile):
+    def records(items, fields):
+        return [{key: getattr(item, key) for key in ("id", *fields)} for item in items]
+
     return {k: getattr(p, k) for k in [
         "id", "name", "course", "institution", "academic_stage", "technologies", "skills",
         "experience", "projects", "certifications", "keywords", "interests", "location",
         "modality", "job_types", "exclude_terms", "weight_keywords", "weight_area",
         "weight_modality", "weight_location", "weight_level"
-    ]}
+    ]} | {
+        "educations": records(p.educations, ("course", "institution", "degree", "status", "start_date", "end_date", "description")),
+        "experiences": records(p.experiences, ("company", "role", "employment_type", "location", "start_date", "end_date", "is_current", "description")),
+        "courses": records(p.courses, ("name", "provider", "workload", "completed_at", "status", "credential_url")),
+        "certifications_items": records(p.certifications_items, ("name", "issuer", "issued_at", "expires_at", "credential_id", "credential_url")),
+        "portfolio_projects": records(p.portfolio_projects, ("name", "description", "technologies", "repository_url", "demo_url", "status")),
+    }
+
+
+def _sync_profile_records(existing, incoming, model, fields):
+    current = {item.id: item for item in existing}
+    retained = []
+    for payload in incoming:
+        if isinstance(payload, BaseModel):
+            item_id = payload.id
+            data = payload.model_dump(exclude={"id"})
+        else:
+            item_id = payload.get("id")
+            data = {key: value for key, value in payload.items() if key != "id"}
+        data = {key: (value.strip() if isinstance(value, str) else value) for key, value in data.items()}
+        if not any(value for value in data.values()):
+            continue
+        item = current.pop(item_id, None) if item_id is not None else None
+        if item is None:
+            item = model(**data)
+        else:
+            for key, value in data.items():
+                setattr(item, key, value)
+        retained.append(item)
+    existing[:] = retained
 
 
 @app.get("/api/health")
@@ -535,7 +632,19 @@ def read_profile(db: Session = Depends(get_db)):
 @app.put("/api/profile")
 def update_profile(payload: ProfileUpdate, db: Session = Depends(get_db)):
     p = get_profile(db)
-    for key, value in payload.model_dump().items():
+    data = payload.model_dump()
+    collections = {
+        "educations": (Education, ("course", "institution", "degree", "status", "start_date", "end_date", "description")),
+        "experiences": (Experience, ("company", "role", "employment_type", "location", "start_date", "end_date", "is_current", "description")),
+        "courses": (Course, ("name", "provider", "workload", "completed_at", "status", "credential_url")),
+        "certifications_items": (Certification, ("name", "issuer", "issued_at", "expires_at", "credential_id", "credential_url")),
+        "portfolio_projects": (PortfolioProject, ("name", "description", "technologies", "repository_url", "demo_url", "status")),
+    }
+    for key, (model, fields) in collections.items():
+        records = data.pop(key)
+        if records is not None:
+            _sync_profile_records(getattr(p, key), records, model, fields)
+    for key, value in data.items():
         if key.startswith("weight_"):
             value = max(0, min(100, value))
         setattr(p, key, value)
@@ -593,3 +702,216 @@ def send_notifications(db: Session = Depends(get_db)):
         raise HTTPException(400, "Configure as variáveis SMTP no arquivo .env antes de enviar lembretes.")
     result = send_daily_reminder(db)
     return {"result": result}
+
+
+
+class MarketRunRequest(BaseModel):
+    level_scope: str = Field("both", pattern="^(both|estagio|junior)$")
+    days: int = Field(30, ge=1, le=365)
+
+
+@app.post("/api/market/analysis/run")
+def run_market_analysis(payload: MarketRunRequest, db: Session = Depends(get_db)):
+    """Indexa vagas alvo e cria um snapshot auditável de inteligência de mercado."""
+    try:
+        indexed = index_unprocessed_jobs(db)
+        result = create_market_snapshot(
+            db, level_scope=payload.level_scope, days=payload.days
+        )
+        result["indexing"] = indexed
+        return result
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.get("/api/market/analysis/latest")
+def latest_market_analysis(db: Session = Depends(get_db)):
+    run = db.scalar(
+        select(MarketAnalysisRun)
+        .where(MarketAnalysisRun.status == "completed")
+        .order_by(MarketAnalysisRun.created_at.desc(), MarketAnalysisRun.id.desc())
+        .limit(1)
+    )
+    if run is None:
+        return {"available": False, "message": "Ainda não existe uma análise de mercado."}
+
+    rows = db.execute(
+        select(MarketSkillMetric, Skill)
+        .join(Skill, Skill.id == MarketSkillMetric.skill_id)
+        .where(MarketSkillMetric.run_id == run.id)
+        .order_by(MarketSkillMetric.rank)
+    ).all()
+    return {
+        "available": True,
+        "run": {
+            "id": run.id, "created_at": run.created_at.isoformat() if run.created_at else None,
+            "period_start": run.period_start.isoformat() if run.period_start else None,
+            "period_end": run.period_end.isoformat() if run.period_end else None,
+            "level_scope": run.level_scope, "total_jobs": run.total_jobs,
+            "valid_jobs": run.valid_jobs, "jobs_with_description": run.jobs_with_description,
+            "sources": __import__("json").loads(run.sources_json or "[]"),
+            "taxonomy_version": run.taxonomy_version, "quality_notes": run.quality_notes,
+        },
+        "skills": [{
+            "id": metric.id, "skill_id": skill.id, "name": skill.canonical_name,
+            "category": skill.category, "jobs_count": metric.jobs_count,
+            "mention_rate": round(metric.mention_rate * 100, 1), "rank": metric.rank,
+        } for metric, skill in rows],
+    }
+
+
+@app.get("/api/market/profile-gap")
+def market_profile_gap(run_id: int | None = None, db: Session = Depends(get_db)):
+    """Compara competências do snapshot com evidências registradas no perfil."""
+    return build_profile_gap(db, run_id=run_id)
+
+
+
+
+class DevelopmentItemCreate(BaseModel):
+    skill_id: int = Field(gt=0)
+    run_id: Optional[int] = Field(None, gt=0)
+    title: str = Field("", max_length=220)
+    objective: str = Field("", max_length=2000)
+    activity: str = Field("", max_length=4000)
+    resource_url: str = Field("", max_length=2000)
+    estimated_hours: int = Field(4, ge=1, le=500)
+    due_date: Optional[date] = None
+
+
+class DevelopmentItemUpdate(BaseModel):
+    status: Optional[str] = None
+    progress_percent: Optional[int] = Field(None, ge=0, le=100)
+    due_date: Optional[date] = None
+    notes: Optional[str] = Field(None, max_length=4000)
+    title: Optional[str] = Field(None, min_length=1, max_length=220)
+    objective: Optional[str] = Field(None, max_length=2000)
+    activity: Optional[str] = Field(None, max_length=4000)
+    estimated_hours: Optional[int] = Field(None, ge=1, le=500)
+    resource_url: Optional[str] = Field(None, max_length=2000)
+
+
+@app.get("/api/market/development-plan")
+def get_market_development_plan(db: Session = Depends(get_db)):
+    return list_development_plan(db)
+
+
+@app.post("/api/market/development-plan")
+def add_market_development_item(payload: DevelopmentItemCreate, db: Session = Depends(get_db)):
+    try:
+        item = create_development_item(db, **payload.model_dump())
+        return {"message": "Meta adicionada ao plano.", "item": item, "plan": list_development_plan(db)}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.patch("/api/market/development-plan/{item_id}")
+def edit_market_development_item(item_id: int, payload: DevelopmentItemUpdate, db: Session = Depends(get_db)):
+    data = payload.model_dump(exclude_unset=True)
+    if "status" in data and data["status"] not in DEVELOPMENT_STATUSES:
+        raise HTTPException(400, "Status de desenvolvimento inválido.")
+    try:
+        item = update_development_item(db, item_id, data)
+        return {"message": "Progresso atualizado.", "item": item}
+    except ValueError as exc:
+        raise HTTPException(404 if "não encontrada" in str(exc) else 400, str(exc))
+
+
+@app.delete("/api/market/development-plan/{item_id}")
+def delete_market_development_item(item_id: int, db: Session = Depends(get_db)):
+    item = db.get(DevelopmentPlanItem, item_id)
+    if item is None:
+        raise HTTPException(404, "Meta de desenvolvimento não encontrada.")
+    db.delete(item)
+    db.commit()
+    return {"message": "Meta removida do plano."}
+
+class SkillAssessmentCreate(BaseModel):
+    skill_id: int = Field(gt=0)
+    plan_item_id: Optional[int] = Field(None, gt=0)
+
+
+class SkillAssessmentSubmit(BaseModel):
+    response_text: str = Field("", max_length=12000)
+    evidence_url: str = Field("", max_length=2000)
+    rubric_answers: dict[str, bool]
+
+
+@app.get("/api/market/assessments")
+def get_market_assessments(skill_id: Optional[int] = Query(None, gt=0), db: Session = Depends(get_db)):
+    return list_skill_assessments(db, skill_id=skill_id)
+
+
+@app.post("/api/market/assessments")
+def start_market_assessment(payload: SkillAssessmentCreate, db: Session = Depends(get_db)):
+    try:
+        return {"attempt": create_skill_assessment(db, **payload.model_dump())}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.post("/api/market/assessments/{attempt_id}/submit")
+def submit_market_assessment(attempt_id: int, payload: SkillAssessmentSubmit, db: Session = Depends(get_db)):
+    try:
+        attempt = submit_skill_assessment(db, attempt_id, **payload.model_dump())
+        return {"message": "Autoavaliação registrada.", "attempt": attempt}
+    except ValueError as exc:
+        raise HTTPException(404 if "não encontrado" in str(exc) else 400, str(exc))
+
+
+
+@app.get("/api/market/analysis/history")
+def market_analysis_history(limit: int = Query(20, ge=1, le=100), db: Session = Depends(get_db)):
+    runs = db.scalars(
+        select(MarketAnalysisRun)
+        .where(MarketAnalysisRun.status == "completed")
+        .order_by(MarketAnalysisRun.created_at.desc(), MarketAnalysisRun.id.desc())
+        .limit(limit)
+    ).all()
+    return [{
+        "id": run.id, "created_at": run.created_at.isoformat() if run.created_at else None,
+        "period_start": run.period_start.isoformat() if run.period_start else None,
+        "period_end": run.period_end.isoformat() if run.period_end else None,
+        "level_scope": run.level_scope, "total_jobs": run.total_jobs,
+        "valid_jobs": run.valid_jobs, "quality_notes": run.quality_notes,
+    } for run in runs]
+
+
+
+@app.get("/api/market/combinations")
+def market_skill_combinations(
+    run_id: int | None = None,
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    """Retorna combinações de competências observadas no snapshot mais recente ou indicado."""
+    selected_run = db.get(MarketAnalysisRun, run_id) if run_id else db.scalar(
+        select(MarketAnalysisRun)
+        .where(MarketAnalysisRun.status == "completed")
+        .order_by(MarketAnalysisRun.created_at.desc(), MarketAnalysisRun.id.desc())
+        .limit(1)
+    )
+    if selected_run is None or selected_run.status != "completed":
+        return {"available": False, "combinations": []}
+
+    skill_a = aliased(Skill)
+    skill_b = aliased(Skill)
+    rows = db.execute(
+        select(MarketSkillPair, skill_a, skill_b)
+        .join(skill_a, skill_a.id == MarketSkillPair.skill_a_id)
+        .join(skill_b, skill_b.id == MarketSkillPair.skill_b_id)
+        .where(MarketSkillPair.run_id == selected_run.id)
+        .order_by(MarketSkillPair.jobs_count.desc())
+        .limit(limit)
+    ).all()
+    return {
+        "available": True,
+        "run_id": selected_run.id,
+        "total_jobs": selected_run.total_jobs,
+        "combinations": [{
+            "skill_a": first.canonical_name,
+            "skill_b": second.canonical_name,
+            "jobs_count": pair.jobs_count,
+            "mention_rate": round(pair.pair_rate * 100, 1),
+        } for pair, first, second in rows],
+    }

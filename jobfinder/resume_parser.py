@@ -64,7 +64,7 @@ def _section(text: str, headings: tuple[str, ...]) -> str:
 
 
 def extract_resume_text(content: bytes, filename: str) -> str:
-    """Extrai o texto do PDF/DOCX para análise semântica, sem recursão."""
+    """Extrai o texto integral do currículo para análise semântica por IA."""
     suffix = Path(filename or "").suffix.lower()
     text = _read_text(content, suffix)
     text = re.sub(r"[ \t]+", " ", text)
@@ -77,7 +77,32 @@ def extract_resume_text(content: bytes, filename: str) -> str:
     return text
 
 
-def parse_resume(content: bytes, filename: str) -> dict[str, str]:
+def _section_lines(text: str, headings: tuple[str, ...]) -> list[str]:
+    lines = text.splitlines()
+    stop_words = (
+        "formação", "educação", "experiência", "histórico profissional",
+        "projetos", "habilidades", "competências", "certificações", "cursos",
+        "idiomas", "contato", "objetivo",
+    )
+    start = None
+    for index, line in enumerate(lines):
+        normalized = re.sub(r"[^a-zá-ú ]", "", line.lower()).strip()
+        if any(h in normalized for h in headings):
+            start = index + 1
+            break
+    if start is None:
+        return []
+    result = []
+    for line in lines[start:]:
+        normalized = re.sub(r"[^a-zá-ú ]", "", line.lower()).strip()
+        if normalized and any(w in normalized for w in stop_words):
+            break
+        if line.strip():
+            result.append(line.strip(" •-\t"))
+    return result
+
+
+def parse_resume(content: bytes, filename: str) -> dict:
     suffix = Path(filename or "").suffix.lower()
     text = _read_text(content, suffix)
     text = re.sub(r"[ \t]+", " ", text)
@@ -109,14 +134,53 @@ def parse_resume(content: bytes, filename: str) -> dict[str, str]:
     certifications = _section(text, ("certificações", "cursos"))
     if education:
         result["course"] = education[:200]
+        education_lines = _section_lines(text, ("formação acadêmica", "formação", "educação"))
+        records = []
+        for line in education_lines:
+            parts = [part.strip() for part in re.split(r"\s+[|–—-]\s+", line) if part.strip()]
+            if parts:
+                records.append({
+                    "course": parts[0][:200],
+                    "institution": parts[1][:200] if len(parts) > 1 else "",
+                    "degree": "",
+                    "status": "",
+                    "start_date": "",
+                    "end_date": "",
+                    "description": "",
+                })
+        if records:
+            result["educations"] = records
     if experience:
         result["experience"] = experience[:5000]
     if projects:
         result["projects"] = projects[:5000]
+        project_lines = _section_lines(text, ("projetos", "portfólio"))
+        if project_lines:
+            result["portfolio_projects"] = [
+                {"name": line[:220], "description": "", "technologies": "", "repository_url": "", "demo_url": "", "status": ""}
+                for line in project_lines
+            ]
     if skills:
         result["skills"] = skills[:3000]
     if certifications:
         result["certifications"] = certifications[:3000]
+        course_lines = _section_lines(text, ("cursos", "cursos complementares"))
+        if course_lines:
+            result["courses"] = [
+                {
+                    "name": (parts[0] if parts else line)[:220],
+                    "provider": (parts[1] if len(parts) > 1 else "")[:180],
+                    "workload": "", "completed_at": "", "status": "", "credential_url": "",
+                }
+                for line in course_lines
+                for parts in [re.split(r"\s*[|–—]\s*", line, maxsplit=1)]
+            ]
+        certification_lines = _section_lines(text, ("certificações", "certificados"))
+        if certification_lines:
+            result["certifications_items"] = [
+                {"name": line[:220], "issuer": "", "issued_at": "", "expires_at": "", "credential_id": "", "credential_url": ""}
+                for line in certification_lines
+            ]
     # O texto original nunca é gravado automaticamente: os campos extraídos
     # são sugestões que a pessoa revisa antes de salvar o perfil.
     return result

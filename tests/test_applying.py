@@ -1,4 +1,5 @@
 import pytest
+from types import SimpleNamespace
 from sqlalchemy import select
 
 from jobfinder import applying
@@ -88,10 +89,25 @@ def test_cancel_sent_attempt_is_refused(db, ready_profile, smtp_on):
         applying.cancel_attempt(db, attempt)
 
 
-def test_profile_projects_can_supply_technical_evidence(db, ready_profile):
-    ready_profile.technologies = ""
-    ready_profile.skills = ""
-    ready_profile.projects = "BS Construtora: projeto Full Stack com React, FastAPI e Python."
-    db.commit()
-    gaps = applying.profile_gaps(ready_profile)
-    assert not any("tecnologias" in gap for gap in gaps)
+def test_cover_letter_uses_multiple_structured_degrees_and_experience(db):
+    from jobfinder.models import Profile, Education, Experience, PortfolioProject
+    job = make_job(db, title="Estágio Backend Python", company="ACME")
+    profile = Profile(
+        id=1,
+        name="Ana Teste",
+        technologies="Python",
+        educations=[
+            Education(course="Engenharia da Computação", institution="FAM", status="Em andamento"),
+            Education(course="ADS", institution="Cruzeiro do Sul", status="Em andamento"),
+        ],
+        experiences=[
+            Experience(company="Empresa A", role="Analista", description="Análise de processos"),
+        ],
+        portfolio_projects=[
+            PortfolioProject(name="Sistema Web", technologies="Python, React", description="Aplicação acadêmica"),
+        ],
+    )
+    _, body = applying.build_cover_letter(job, profile)
+    assert "Engenharia da Computação" in body and "ADS" in body
+    assert "Empresa A" in body and "Analista" in body
+    assert "Sistema Web" in body and "Python, React" in body

@@ -52,6 +52,81 @@ class Profile(Base):
     weight_location: Mapped[int] = mapped_column(Integer, default=10)
     weight_level: Mapped[int] = mapped_column(Integer, default=10)
 
+    educations: Mapped[list["Education"]] = relationship(back_populates="profile", cascade="all, delete-orphan", order_by="Education.id")
+    experiences: Mapped[list["Experience"]] = relationship(back_populates="profile", cascade="all, delete-orphan", order_by="Experience.id")
+    courses: Mapped[list["Course"]] = relationship(back_populates="profile", cascade="all, delete-orphan", order_by="Course.id")
+    certifications_items: Mapped[list["Certification"]] = relationship(back_populates="profile", cascade="all, delete-orphan", order_by="Certification.id")
+    portfolio_projects: Mapped[list["PortfolioProject"]] = relationship(back_populates="profile", cascade="all, delete-orphan", order_by="PortfolioProject.id")
+
+
+class Education(Base):
+    __tablename__ = "profile_educations"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    profile_id: Mapped[int] = mapped_column(ForeignKey("profile.id", ondelete="CASCADE"), index=True)
+    course: Mapped[str] = mapped_column(String(200), default="")
+    institution: Mapped[str] = mapped_column(String(200), default="")
+    degree: Mapped[str] = mapped_column(String(80), default="")
+    status: Mapped[str] = mapped_column(String(40), default="Em andamento")
+    start_date: Mapped[str] = mapped_column(String(30), default="")
+    end_date: Mapped[str] = mapped_column(String(30), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    profile: Mapped[Profile] = relationship(back_populates="educations")
+
+
+class Experience(Base):
+    __tablename__ = "profile_experiences"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    profile_id: Mapped[int] = mapped_column(ForeignKey("profile.id", ondelete="CASCADE"), index=True)
+    company: Mapped[str] = mapped_column(String(200), default="")
+    role: Mapped[str] = mapped_column(String(160), default="")
+    employment_type: Mapped[str] = mapped_column(String(60), default="")
+    location: Mapped[str] = mapped_column(String(160), default="")
+    start_date: Mapped[str] = mapped_column(String(30), default="")
+    end_date: Mapped[str] = mapped_column(String(30), default="")
+    is_current: Mapped[bool] = mapped_column(Boolean, default=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    profile: Mapped[Profile] = relationship(back_populates="experiences")
+
+
+class Course(Base):
+    __tablename__ = "profile_courses"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    profile_id: Mapped[int] = mapped_column(ForeignKey("profile.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(220), default="")
+    provider: Mapped[str] = mapped_column(String(180), default="")
+    workload: Mapped[str] = mapped_column(String(40), default="")
+    completed_at: Mapped[str] = mapped_column(String(30), default="")
+    status: Mapped[str] = mapped_column(String(40), default="Concluído")
+    credential_url: Mapped[str] = mapped_column(Text, default="")
+    profile: Mapped[Profile] = relationship(back_populates="courses")
+
+
+class Certification(Base):
+    __tablename__ = "profile_certifications"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    profile_id: Mapped[int] = mapped_column(ForeignKey("profile.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(220), default="")
+    issuer: Mapped[str] = mapped_column(String(180), default="")
+    issued_at: Mapped[str] = mapped_column(String(30), default="")
+    expires_at: Mapped[str] = mapped_column(String(30), default="")
+    credential_id: Mapped[str] = mapped_column(String(160), default="")
+    credential_url: Mapped[str] = mapped_column(Text, default="")
+    profile: Mapped[Profile] = relationship(back_populates="certifications_items")
+
+
+class PortfolioProject(Base):
+    __tablename__ = "profile_projects"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    profile_id: Mapped[int] = mapped_column(ForeignKey("profile.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(220), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    technologies: Mapped[str] = mapped_column(Text, default="")
+    repository_url: Mapped[str] = mapped_column(Text, default="")
+    demo_url: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(40), default="Em desenvolvimento")
+    profile: Mapped[Profile] = relationship(back_populates="portfolio_projects")
+
+
 class Application(Base):
     __tablename__ = "applications"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -116,3 +191,135 @@ class ApplicationAttempt(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     job: Mapped[Job] = relationship(back_populates="attempts")
+
+
+class Skill(Base):
+    """Catálogo canônico de competências e seus aliases."""
+    __tablename__ = "market_skills"
+    __table_args__ = (UniqueConstraint("canonical_name", name="uq_market_skill_name"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    canonical_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    category: Mapped[str] = mapped_column(String(40), nullable=False)
+    aliases_json: Mapped[str] = mapped_column(Text, default="[]")
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    taxonomy_version: Mapped[str] = mapped_column(String(30), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class JobSkill(Base):
+    """Evidência rastreável de uma competência em uma vaga."""
+    __tablename__ = "job_market_skills"
+    __table_args__ = (
+        UniqueConstraint("job_id", "skill_id", name="uq_job_market_skill"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"), index=True)
+    skill_id: Mapped[int] = mapped_column(ForeignKey("market_skills.id"), index=True)
+    evidence_text: Mapped[str] = mapped_column(Text, default="")
+    evidence_field: Mapped[str] = mapped_column(String(30), default="description")
+    extraction_method: Mapped[str] = mapped_column(String(30), default="dictionary")
+    confidence: Mapped[float] = mapped_column(Float, default=1.0)
+    extractor_version: Mapped[str] = mapped_column(String(30), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class MarketAnalysisRun(Base):
+    """Snapshot imutável de uma execução de análise de mercado."""
+    __tablename__ = "market_analysis_runs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    period_start: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    period_end: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    level_scope: Mapped[str] = mapped_column(String(20), default="both")
+    area_scope: Mapped[str] = mapped_column(String(80), default="technology")
+    filters_json: Mapped[str] = mapped_column(Text, default="{}")
+    total_jobs: Mapped[int] = mapped_column(Integer, default=0)
+    valid_jobs: Mapped[int] = mapped_column(Integer, default=0)
+    jobs_with_description: Mapped[int] = mapped_column(Integer, default=0)
+    sources_json: Mapped[str] = mapped_column(Text, default="[]")
+    taxonomy_version: Mapped[str] = mapped_column(String(30), default="")
+    extractor_version: Mapped[str] = mapped_column(String(30), default="")
+    status: Mapped[str] = mapped_column(String(20), default="running")
+    quality_notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class MarketSkillMetric(Base):
+    """Métrica congelada de uma competência em um snapshot."""
+    __tablename__ = "market_skill_metrics"
+    __table_args__ = (UniqueConstraint("run_id", "skill_id", name="uq_run_market_skill"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("market_analysis_runs.id", ondelete="CASCADE"), index=True)
+    skill_id: Mapped[int] = mapped_column(ForeignKey("market_skills.id"), index=True)
+    jobs_count: Mapped[int] = mapped_column(Integer, default=0)
+    mention_rate: Mapped[float] = mapped_column(Float, default=0.0)
+    rank: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class MarketSkillPair(Base):
+    """Coocorrência congelada entre duas competências em um snapshot."""
+    __tablename__ = "market_skill_pairs"
+    __table_args__ = (
+        UniqueConstraint("run_id", "skill_a_id", "skill_b_id", name="uq_run_market_skill_pair"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("market_analysis_runs.id", ondelete="CASCADE"), index=True)
+    skill_a_id: Mapped[int] = mapped_column(ForeignKey("market_skills.id"))
+    skill_b_id: Mapped[int] = mapped_column(ForeignKey("market_skills.id"))
+    jobs_count: Mapped[int] = mapped_column(Integer, default=0)
+    pair_rate: Mapped[float] = mapped_column(Float, default=0.0)
+
+
+class JobSkillExtraction(Base):
+    """Registra que uma vaga foi processada, inclusive quando nenhuma competência foi encontrada."""
+    __tablename__ = "job_skill_extractions"
+    __table_args__ = (UniqueConstraint("job_id", name="uq_job_skill_extraction"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"), index=True)
+    extractor_version: Mapped[str] = mapped_column(String(30), default="")
+    skills_found: Mapped[int] = mapped_column(Integer, default=0)
+    indexed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class DevelopmentPlanItem(Base):
+    """Meta individual de desenvolvimento ligada a uma competência do catálogo."""
+    __tablename__ = "development_plan_items"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    skill_id: Mapped[int] = mapped_column(ForeignKey("market_skills.id"), index=True)
+    source_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("market_analysis_runs.id", ondelete="SET NULL"), nullable=True
+    )
+    title: Mapped[str] = mapped_column(String(220), nullable=False)
+    objective: Mapped[str] = mapped_column(Text, default="")
+    activity: Mapped[str] = mapped_column(Text, default="")
+    resource_url: Mapped[str] = mapped_column(Text, default="")
+    estimated_hours: Mapped[int] = mapped_column(Integer, default=4)
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="planned")
+    progress_percent: Mapped[int] = mapped_column(Integer, default=0)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class SkillAssessmentAttempt(Base):
+    """Registro de desafio prático e autoavaliação de uma competência."""
+    __tablename__ = "skill_assessment_attempts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    skill_id: Mapped[int] = mapped_column(ForeignKey("market_skills.id"), index=True)
+    plan_item_id: Mapped[int | None] = mapped_column(
+        ForeignKey("development_plan_items.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    challenge_title: Mapped[str] = mapped_column(String(220), nullable=False)
+    challenge_prompt: Mapped[str] = mapped_column(Text, default="")
+    rubric_json: Mapped[str] = mapped_column(Text, default="[]")
+    response_text: Mapped[str] = mapped_column(Text, default="")
+    evidence_url: Mapped[str] = mapped_column(Text, default="")
+    rubric_answers_json: Mapped[str] = mapped_column(Text, default="{}")
+    score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    feedback: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(24), default="draft")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

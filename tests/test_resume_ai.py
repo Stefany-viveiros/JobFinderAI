@@ -63,3 +63,33 @@ def test_gemini_requires_api_key(monkeypatch):
         assert "GEMINI_API_KEY" in str(exc)
     else:
         raise AssertionError("A ausência da chave deveria gerar erro")
+
+
+def test_gemini_preserves_multiple_education_and_experience_records(monkeypatch):
+    monkeypatch.setattr(
+        resume_ai,
+        "settings",
+        SimpleNamespace(gemini_api_key="test-key", gemini_model="gemini-test"),
+    )
+
+    class StructuredResponse(FakeResponse):
+        def json(self):
+            return {"candidates": [{"content": {"parts": [{"text": json.dumps({
+                "educations": [
+                    {"course": "Engenharia da Computação", "institution": "FAM"},
+                    {"course": "ADS", "institution": "Cruzeiro do Sul"},
+                ],
+                "experiences": [
+                    {"company": "Empresa A", "role": "Analista", "is_current": False},
+                    {"company": "Empresa B", "role": "Estagiária", "is_current": True},
+                ],
+                "courses": [{"name": "Python", "provider": "SENAI"}],
+            })}]}}]}
+
+    monkeypatch.setattr(resume_ai.requests, "post", lambda *args, **kwargs: StructuredResponse())
+    result = resume_ai.analyze_resume_with_gemini("Currículo com duas formações e duas experiências")
+    assert len(result["educations"]) == 2
+    assert result["educations"][1]["course"] == "ADS"
+    assert len(result["experiences"]) == 2
+    assert result["experiences"][1]["is_current"] is True
+    assert result["courses"][0]["name"] == "Python"

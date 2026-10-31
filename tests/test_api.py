@@ -99,6 +99,50 @@ def test_sources_endpoint_flags_link_only_platforms(client):
     assert data["external_links"]
 
 
+def test_profile_supports_multiple_structured_records_and_updates(client):
+    payload = {
+        "educations": [
+            {"course": "Engenharia da Computação", "institution": "FAM", "degree": "Bacharelado", "status": "Em andamento"},
+            {"course": "Análise e Desenvolvimento de Sistemas", "institution": "Cruzeiro do Sul", "degree": "Tecnólogo", "status": "Em andamento"},
+        ],
+        "experiences": [
+            {"company": "Empresa A", "role": "Cronoanalista", "start_date": "2018", "end_date": "2019", "description": "Análise de processos"}
+        ],
+        "courses": [{"name": "Desenvolvimento Web", "provider": "SENAI", "workload": "160 horas"}],
+        "certifications_items": [{"name": "Cloud Fundamentals", "issuer": "Google"}],
+        "portfolio_projects": [{"name": "JobFinder AI", "technologies": "Python, React"}],
+    }
+    saved = client.put("/api/profile", json=payload)
+    assert saved.status_code == 200
+    profile = client.get("/api/profile").json()
+    assert len(profile["educations"]) == 2
+    assert {item["course"] for item in profile["educations"]} == {
+        "Engenharia da Computação", "Análise e Desenvolvimento de Sistemas"
+    }
+    assert profile["experiences"][0]["role"] == "Cronoanalista"
+    assert profile["courses"][0]["workload"] == "160 horas"
+    assert profile["certifications_items"][0]["issuer"] == "Google"
+    assert profile["portfolio_projects"][0]["name"] == "JobFinder AI"
+
+    first_education_id = profile["educations"][0]["id"]
+    updated = client.put("/api/profile", json={
+        "educations": [{"id": first_education_id, "course": "Engenharia da Computação", "institution": "FAM", "degree": "Bacharelado", "status": "Em andamento"}],
+        "experiences": profile["experiences"],
+        "courses": profile["courses"],
+        "certifications_items": profile["certifications_items"],
+        "portfolio_projects": profile["portfolio_projects"],
+    })
+    assert updated.status_code == 200
+    assert len(client.get("/api/profile").json()["educations"]) == 1
+
+    # Uma atualização parcial não deve apagar as coleções omitidas.
+    partial = client.put("/api/profile", json={"technologies": "Python, React"})
+    assert partial.status_code == 200
+    after_partial = client.get("/api/profile").json()
+    assert len(after_partial["educations"]) == 1
+    assert after_partial["courses"][0]["name"] == "Desenvolvimento Web"
+
+
 def test_profile_update_recomputes_scores(client, db):
     job = make_job(db, title="Estágio Python", description="Python", compatibility=0)
     client.put("/api/profile", json={"technologies": "Python", "interests": "Estágio"})

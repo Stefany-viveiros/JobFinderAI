@@ -9,9 +9,13 @@ def make_docx():
     doc.add_paragraph("Marina da Silva")
     doc.add_paragraph("marina@example.com | (11) 91234-5678")
     doc.add_paragraph("FORMAÇÃO ACADÊMICA")
-    doc.add_paragraph("Análise e Desenvolvimento de Sistemas")
+    doc.add_paragraph("Análise e Desenvolvimento de Sistemas | Cruzeiro do Sul")
+    doc.add_paragraph("Engenharia da Computação | FAM")
     doc.add_paragraph("HABILIDADES TÉCNICAS")
     doc.add_paragraph("Python, JavaScript, React e SQL")
+    doc.add_paragraph("CURSOS COMPLEMENTARES")
+    doc.add_paragraph("Python Básico | SENAI")
+    doc.add_paragraph("Git e GitHub | Google")
     doc.add_paragraph("EXPERIÊNCIA PROFISSIONAL")
     doc.add_paragraph("Estágio de suporte técnico - Empresa Exemplo")
     output = BytesIO()
@@ -25,6 +29,22 @@ def test_parse_docx_extracts_profile_suggestions():
     assert "Python" in parsed["technologies"]
     assert "Análise e Desenvolvimento" in parsed["course"]
     assert "Estágio de suporte" in parsed["experience"]
+
+
+def test_basic_parser_keeps_multiple_education_records_separate():
+    parsed = parse_resume(make_docx(), "curriculo.docx")
+    assert len(parsed["educations"]) == 2
+    assert parsed["educations"][0]["course"] == "Análise e Desenvolvimento de Sistemas"
+    assert parsed["educations"][0]["institution"] == "Cruzeiro do Sul"
+    assert parsed["educations"][1]["course"] == "Engenharia da Computação"
+    assert parsed["educations"][1]["institution"] == "FAM"
+
+
+def test_basic_parser_keeps_courses_as_separate_records():
+    parsed = parse_resume(make_docx(), "curriculo.docx")
+    assert len(parsed["courses"]) == 2
+    assert parsed["courses"][0]["name"] == "Python Básico"
+    assert parsed["courses"][0]["provider"] == "SENAI"
 
 
 def test_rejects_unsupported_format():
