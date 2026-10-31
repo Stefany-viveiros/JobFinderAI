@@ -96,3 +96,9 @@ def test_agent_does_not_prepare_job_with_unconfirmed_mandatory_technology(db, re
     assert result["saved"] == 1
     assert result["candidates"] == 0
     assert db.scalars(select(ApplicationAttempt)).all() == []
+
+
+
+def test_default_agent_threshold_is_80(db):
+    cfg = get_agent_settings(db)
+    assert cfg.min_score == 80
