@@ -302,7 +302,7 @@ function ProfilePage({ profile, setProfile, onSave, busy }) {
       const body = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(body.detail || `Erro ${response.status}`)
       setProfile(current => ({ ...current, ...body.extracted }))
-      setImportMessage('Informações extraídas. Revise os campos preenchidos e clique em “Salvar perfil”.')
+      setImportMessage(body.message || 'Informações extraídas. Revise os campos preenchidos e clique em “Salvar perfil”.')
     } catch (error) { setImportError(error.message || 'Não foi possível importar o currículo.') }
     finally { setImporting(false) }
   }
