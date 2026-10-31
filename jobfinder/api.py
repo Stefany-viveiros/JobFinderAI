@@ -236,6 +236,9 @@ def _sync_profile_records(existing, incoming, model, fields):
     retained = []
     for payload in incoming:
         data = payload.model_dump(exclude={"id"})
+        data = {key: (value.strip() if isinstance(value, str) else value) for key, value in data.items()}
+        if not any(value for value in data.values()):
+            continue
         item_id = payload.id
         item = current.pop(item_id, None) if item_id is not None else None
         if item is None:
