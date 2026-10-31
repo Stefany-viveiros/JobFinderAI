@@ -1,0 +1,33 @@
+# JobFinder AI — ambiente de demonstração no Render.
+# Configure DATABASE_URL com a connection string do Neon no primeiro deploy.
+# O modo somente leitura protege o banco de demonstração contra alterações públicas.
+services:
+  - type: web
+    name: jobfinder-ai-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn jobfinder.api:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    autoDeploy: false
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: CORS_ORIGINS
+        value: https://jobfinder-ai-web.onrender.com
+      - key: DEMO_READ_ONLY
+        value: "true"
+      - key: PYTHON_VERSION
+        value: 3.12.8
+
+  - type: web
+    name: jobfinder-ai-web
+    runtime: static
+    plan: free
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    autoDeploy: false
+    envVars:
+      - key: VITE_API_URL
+        value: https://jobfinder-ai-api.onrender.com/api
