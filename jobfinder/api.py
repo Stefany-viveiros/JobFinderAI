@@ -354,7 +354,8 @@ def list_attempts(status: str = "todas", limit: int = Query(200, ge=1, le=500), 
         stmt = stmt.where(ApplicationAttempt.status == status)
     return [{**attempt_dict(a, with_message=True), "job": {
         "id": a.job.id, "title": a.job.title, "company": a.job.company, "url": a.job.url,
-        "compatibility": round(a.job.compatibility or 0), "source": a.job.source}}
+        "compatibility": round(a.job.compatibility or 0), "source": a.job.source,
+        "missing_reasons": a.job.missing_reasons or ""}}
         for a in db.scalars(stmt).unique().all()]
 
 
