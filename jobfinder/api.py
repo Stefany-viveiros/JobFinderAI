@@ -158,11 +158,11 @@ class ProfileUpdate(BaseModel):
     weight_modality: int = 15
     weight_location: int = 10
     weight_level: int = 10
-    educations: list[EducationInput] = Field(default_factory=list)
-    experiences: list[ExperienceInput] = Field(default_factory=list)
-    courses: list[CourseInput] = Field(default_factory=list)
-    certifications_items: list[CertificationInput] = Field(default_factory=list)
-    portfolio_projects: list[PortfolioProjectInput] = Field(default_factory=list)
+    educations: Optional[list[EducationInput]] = None
+    experiences: Optional[list[ExperienceInput]] = None
+    courses: Optional[list[CourseInput]] = None
+    certifications_items: Optional[list[CertificationInput]] = None
+    portfolio_projects: Optional[list[PortfolioProjectInput]] = None
 
 
 def job_dict(j: Job, with_application=True):
@@ -613,7 +613,9 @@ def update_profile(payload: ProfileUpdate, db: Session = Depends(get_db)):
         "portfolio_projects": (PortfolioProject, ("name", "description", "technologies", "repository_url", "demo_url", "status")),
     }
     for key, (model, fields) in collections.items():
-        _sync_profile_records(getattr(p, key), data.pop(key), model, fields)
+        records = data.pop(key)
+        if records is not None:
+            _sync_profile_records(getattr(p, key), records, model, fields)
     for key, value in data.items():
         if key.startswith("weight_"):
             value = max(0, min(100, value))
