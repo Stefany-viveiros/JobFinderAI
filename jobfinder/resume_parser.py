@@ -77,6 +77,31 @@ def extract_resume_text(content: bytes, filename: str) -> str:
     return text
 
 
+def _section_lines(text: str, headings: tuple[str, ...]) -> list[str]:
+    lines = text.splitlines()
+    stop_words = (
+        "formação", "educação", "experiência", "histórico profissional",
+        "projetos", "habilidades", "competências", "certificações", "cursos",
+        "idiomas", "contato", "objetivo",
+    )
+    start = None
+    for index, line in enumerate(lines):
+        normalized = re.sub(r"[^a-zá-ú ]", "", line.lower()).strip()
+        if any(h in normalized for h in headings):
+            start = index + 1
+            break
+    if start is None:
+        return []
+    result = []
+    for line in lines[start:]:
+        normalized = re.sub(r"[^a-zá-ú ]", "", line.lower()).strip()
+        if normalized and any(w in normalized for w in stop_words):
+            break
+        if line.strip():
+            result.append(line.strip(" •-\t"))
+    return result
+
+
 def parse_resume(content: bytes, filename: str) -> dict[str, str]:
     suffix = Path(filename or "").suffix.lower()
     text = _read_text(content, suffix)
@@ -109,6 +134,22 @@ def parse_resume(content: bytes, filename: str) -> dict[str, str]:
     certifications = _section(text, ("certificações", "cursos"))
     if education:
         result["course"] = education[:200]
+        education_lines = _section_lines(text, ("formação acadêmica", "formação", "educação"))
+        records = []
+        for line in education_lines:
+            parts = [part.strip() for part in re.split(r"\\s+[|–—-]\\s+", line) if part.strip()]
+            if parts:
+                records.append({
+                    "course": parts[0][:200],
+                    "institution": parts[1][:200] if len(parts) > 1 else "",
+                    "degree": "",
+                    "status": "",
+                    "start_date": "",
+                    "end_date": "",
+                    "description": "",
+                })
+        if records:
+            result["educations"] = records
     if experience:
         result["experience"] = experience[:5000]
     if projects:
