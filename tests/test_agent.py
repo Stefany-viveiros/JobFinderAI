@@ -7,7 +7,7 @@ from sqlalchemy import select
 def feed(*extra):
     items = [
         {"source": "Remotive", "title": "Estágio Backend Python", "company": "ACME", "url": "https://a.test/1",
-         "description": "Python FastAPI. Envie para vagas@acme.com", "location": "Brasil", "modality": "Remoto", "job_type": "Estágio"},
+         "description": "Python FastAPI Git APIs REST. Envie para vagas@acme.com", "location": "Brasil", "modality": "Remoto", "job_type": "Estágio"},
         {"source": "OkEmprego", "title": "Estagio  Backend Python", "company": "ACME Ltda", "url": "https://b.test/9",
          "description": "mesma vaga em outra fonte", "location": "Brasil", "modality": "Remoto", "job_type": "Estágio"},
         {"source": "Remotive", "title": "Senior Python Developer", "company": "Big", "url": "https://a.test/2",
@@ -38,7 +38,7 @@ def test_auto_send_respects_toggle_and_daily_limit(db, ready_profile, smtp_on):
     cfg.require_approval, cfg.auto_apply_enabled, cfg.daily_limit = False, False, 1
     db.commit()
     extra = {"source": "Remotive", "title": "Estágio Dados Python", "company": "Gama", "url": "https://a.test/4",
-             "description": "Python. rh@gama.com", "location": "Brasil", "modality": "Remoto", "job_type": "Estágio"}
+             "description": "Python FastAPI Git APIs REST. rh@gama.com", "location": "Brasil", "modality": "Remoto", "job_type": "Estágio"}
     r = run_agent(db, collector=feed(extra))
     assert r["sent"] == 0 and smtp_on == []                       # envio automático desativado
     assert r["prepared"] == 2
