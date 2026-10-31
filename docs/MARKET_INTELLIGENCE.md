@@ -27,7 +27,7 @@ Ainda não há:
 - Histórico de observações de cada vaga em cada coleta; por isso, não há tendência temporal confiável.
 - Classificação consistente por subárea (frontend, backend, dados, IA, mobile etc.).
 - Avaliação prática ou validação de proficiência por competência.
-- Plano de desenvolvimento individual com acompanhamento de metas.
+- Trilhas didáticas completas, curadoria de recursos externos e acompanhamento de proficiência validada.
 
 Limitações de qualidade:
 - A descrição fornecida por algumas fontes pode ser resumida ou incompleta; a Nerdin, por exemplo, monta parte da descrição com resumo e hashtags.
@@ -216,7 +216,7 @@ Gráficos e cartões devem manter tipografia legível, percentuais acompanhados 
 3. Implementar execução e snapshots de análise com métricas e coocorrências.
 4. Criar endpoints e testes de API/cálculo.
 5. Criar a página React e integrar filtros.
-6. Implementar cruzamento com perfil e plano de desenvolvimento.
+6. Implementar cruzamento com perfil e plano de desenvolvimento (primeira versão publicada na branch).
 7. Adicionar histórico comparável e agendamento após infraestrutura de execução contínua estar definida.
 
 ## 12. Critérios de aceite da primeira versão
