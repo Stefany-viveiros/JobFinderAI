@@ -11,7 +11,7 @@ from .db import init_db, SessionLocal
 from .models import (
     Job, Application, Task, Profile, NotificationLog, ApplicationAttempt,
     Education, Experience, Course, Certification, PortfolioProject,
-    MarketAnalysisRun, MarketSkillMetric, MarketSkillPair, Skill,
+    MarketAnalysisRun, MarketSkillMetric, MarketSkillPair, Skill, DevelopmentPlanItem,
 )
 from .service import get_profile, save_jobs, refresh_scores, create_task, complete_task, STATUSES, collect_and_save_ranked
 from .sources import SOURCES, SOURCE_INFO, LINK_ONLY_SOURCES, collect_selected, external_search_links
@@ -21,7 +21,7 @@ from .mailer import send_daily_reminder
 from .config import settings
 from .resume_parser import parse_resume, extract_resume_text
 from .resume_ai import analyze_resume_with_gemini, ResumeAIError
-from .market_service import create_market_snapshot, index_unprocessed_jobs, build_profile_gap
+from .market_service import (create_market_snapshot, index_unprocessed_jobs, build_profile_gap,\n    list_development_plan, create_development_item, update_development_item, DEVELOPMENT_STATUSES)
 
 app = FastAPI(title="JobFinder AI API", version="1.1.0", description="API local do JobFinder AI")
 app.add_middleware(
@@ -762,6 +762,67 @@ def latest_market_analysis(db: Session = Depends(get_db)):
 def market_profile_gap(run_id: int | None = None, db: Session = Depends(get_db)):
     """Compara competências do snapshot com evidências registradas no perfil."""
     return build_profile_gap(db, run_id=run_id)
+
+
+
+
+class DevelopmentItemCreate(BaseModel):
+    skill_id: int = Field(gt=0)
+    run_id: Optional[int] = Field(None, gt=0)
+    title: str = Field("", max_length=220)
+    objective: str = Field("", max_length=2000)
+    activity: str = Field("", max_length=4000)
+    resource_url: str = Field("", max_length=2000)
+    estimated_hours: int = Field(4, ge=1, le=500)
+    due_date: Optional[date] = None
+
+
+class DevelopmentItemUpdate(BaseModel):
+    status: Optional[str] = None
+    progress_percent: Optional[int] = Field(None, ge=0, le=100)
+    due_date: Optional[date] = None
+    notes: Optional[str] = Field(None, max_length=4000)
+    title: Optional[str] = Field(None, min_length=1, max_length=220)
+    objective: Optional[str] = Field(None, max_length=2000)
+    activity: Optional[str] = Field(None, max_length=4000)
+    estimated_hours: Optional[int] = Field(None, ge=1, le=500)
+    resource_url: Optional[str] = Field(None, max_length=2000)
+
+
+@app.get("/api/market/development-plan")
+def get_market_development_plan(db: Session = Depends(get_db)):
+    return list_development_plan(db)
+
+
+@app.post("/api/market/development-plan")
+def add_market_development_item(payload: DevelopmentItemCreate, db: Session = Depends(get_db)):
+    try:
+        item = create_development_item(db, **payload.model_dump())
+        return {"message": "Meta adicionada ao plano.", "item": item, "plan": list_development_plan(db)}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.patch("/api/market/development-plan/{item_id}")
+def edit_market_development_item(item_id: int, payload: DevelopmentItemUpdate, db: Session = Depends(get_db)):
+    data = payload.model_dump(exclude_unset=True)
+    if "status" in data and data["status"] not in DEVELOPMENT_STATUSES:
+        raise HTTPException(400, "Status de desenvolvimento inválido.")
+    try:
+        item = update_development_item(db, item_id, data)
+        return {"message": "Progresso atualizado.", "item": item}
+    except ValueError as exc:
+        raise HTTPException(404 if "não encontrada" in str(exc) else 400, str(exc))
+
+
+@app.delete("/api/market/development-plan/{item_id}")
+def delete_market_development_item(item_id: int, db: Session = Depends(get_db)):
+    item = db.get(DevelopmentPlanItem, item_id)
+    if item is None:
+        raise HTTPException(404, "Meta de desenvolvimento não encontrada.")
+    db.delete(item)
+    db.commit()
+    return {"message": "Meta removida do plano."}
 
 
 @app.get("/api/market/analysis/history")
