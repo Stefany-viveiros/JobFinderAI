@@ -164,3 +164,49 @@ def test_profile_gap_distinguishes_project_course_declaration_and_missing(db):
     assert by_name["Docker"]["status"] == "nao_identificada"
     assert gap["available"] is True
     assert "não significa falta de conhecimento" in gap["notice"]
+
+
+def test_development_plan_creates_tracks_and_summarizes_goal(db):
+    from jobfinder.market_service import (
+        create_development_item, list_development_plan, update_development_item,
+    )
+    skill = Skill(canonical_name="Docker", category="Infraestrutura", aliases_json="[]", active=True)
+    db.add(skill)
+    db.commit()
+    db.refresh(skill)
+
+    item = create_development_item(db, skill_id=skill.id, estimated_hours=6)
+    assert item["status"] == "planned"
+    assert item["progress_percent"] == 0
+    assert item["estimated_hours"] == 6
+    assert "Docker" in item["activity"]
+
+    updated = update_development_item(db, item["id"], {
+        "status": "in_progress", "progress_percent": 50, "notes": "Estudei imagens e containers."
+    })
+    assert updated["status"] == "in_progress"
+    assert updated["progress_percent"] == 50
+
+    completed = update_development_item(db, item["id"], {"status": "completed"})
+    assert completed["progress_percent"] == 100
+    assert completed["completed_at"] is not None
+
+    plan = list_development_plan(db)
+    assert plan["summary"]["total"] == 1
+    assert plan["summary"]["completed"] == 1
+    assert plan["summary"]["completion_rate"] == 100.0
+
+
+def test_development_plan_prevents_duplicate_active_goal_for_same_skill(db):
+    from jobfinder.market_service import create_development_item
+    skill = Skill(canonical_name="FastAPI", category="Framework", aliases_json="[]", active=True)
+    db.add(skill)
+    db.commit()
+    db.refresh(skill)
+
+    create_development_item(db, skill_id=skill.id)
+    try:
+        create_development_item(db, skill_id=skill.id)
+        assert False, "Era esperado impedir uma meta ativa duplicada."
+    except ValueError as exc:
+        assert "Já existe uma meta ativa" in str(exc)
