@@ -26,7 +26,7 @@ Já implementado na branch `feature/market-intelligence`:
 Ainda não há:
 - Histórico de observações de cada vaga em cada coleta; por isso, não há tendência temporal confiável.
 - Classificação consistente por subárea (frontend, backend, dados, IA, mobile etc.).
-- Avaliação prática ou validação de proficiência por competência.
+- Validação independente de proficiência por avaliador ou execução automatizada de testes (a primeira versão de desafios com autoavaliação já existe; ela não certifica domínio).
 - Trilhas didáticas completas, curadoria de recursos externos e acompanhamento de proficiência validada.
 
 Limitações de qualidade:
