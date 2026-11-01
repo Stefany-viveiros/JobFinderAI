@@ -563,20 +563,17 @@ def list_jobs(
 
 
 @app.post("/api/jobs")
-def create_job(payload: JobCreate, db: Session = Depends(get_db)):
+def create_job(payload: JobCreate, request: Request, db: Session = Depends(get_db)):
     url = payload.url.strip()
     if not url:
         raise HTTPException(400, "Informe o link original da vaga.")
     item = payload.model_dump()
     item.update({"source": "Manual", "source_id": None, "published_at": payload.published_at})
-    count = save_jobs([item])
+    collect_for_user(db, [item], user_id=request.state.user_id, limit=1, only_target=False)
     existing = db.scalar(select(Job).where(Job.url == url))
     if not existing:
         raise HTTPException(400, "Não foi possível salvar a vaga.")
-    if count == 0:
-        return {"message": "Link já cadastrado.", "job": job_dict(existing)}
-    db.refresh(existing)
-    return {"message": "Vaga salva com sucesso.", "job": job_dict(existing)}
+    return {"message": "Vaga salva ou atualizada no seu painel.", "job": job_dict(existing, db=db, user_id=request.state.user_id)}
 
 
 @app.post("/api/jobs/collect")
