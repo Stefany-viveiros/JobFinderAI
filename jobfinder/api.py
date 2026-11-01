@@ -608,7 +608,7 @@ def collect_jobs(payload: dict, db: Session = Depends(get_db)):
 
 
 @app.patch("/api/jobs/{job_id}/favorite")
-def toggle_favorite(job_id: int, db: Session = Depends(get_db)):
+def toggle_favorite(job_id: int, request: Request, db: Session = Depends(get_db)):
     job = db.get(Job, job_id)
     if not job:
         raise HTTPException(404, "Vaga não encontrada.")
@@ -623,7 +623,7 @@ class ConfirmSent(BaseModel):
 
 
 @app.post("/api/jobs/{job_id}/apply")
-def apply_to_job(job_id: int, payload: ConfirmSent, db: Session = Depends(get_db)):
+def apply_to_job(job_id: int, payload: ConfirmSent, request: Request, db: Session = Depends(get_db)):
     """Registra candidatura feita MANUALMENTE pelo usuário. Exige confirmed=true: abrir a vaga ou
     preparar o texto não conta como envio."""
     job = db.get(Job, job_id)
@@ -632,22 +632,22 @@ def apply_to_job(job_id: int, payload: ConfirmSent, db: Session = Depends(get_db
     if not payload.confirmed:
         raise HTTPException(400, "Confirme que você já enviou a candidatura no site da vaga.")
     try:
-        attempt = applying.confirm_manual_send(db, job, payload.note)
+        attempt = applying.confirm_manual_send(db, job, payload.note, user_id=request.state.user_id)
     except applying.ApplyError as exc:
         raise HTTPException(409, str(exc))
-    app_row = db.scalar(select(Application).where(Application.job_id == job.id))
+    app_row = db.scalar(select(Application).where(Application.job_id == job.id, Application.user_id == request.state.user_id))
     return {"message": "Candidatura registrada como enviada (confirmação manual).",
             "application_id": app_row.id if app_row else None, "attempt": attempt_dict(attempt)}
 
 
 @app.post("/api/jobs/{job_id}/prepare")
-def prepare_job_application(job_id: int, db: Session = Depends(get_db)):
+def prepare_job_application(job_id: int, request: Request, db: Session = Depends(get_db)):
     """Prepara o texto e define o canal. Não envia e não marca como enviada."""
     job = db.get(Job, job_id)
     if not job:
         raise HTTPException(404, "Vaga não encontrada.")
     try:
-        attempt = applying.prepare_attempt(db, job, get_profile(db))
+        attempt = applying.prepare_attempt(db, job, get_profile(db, request.state.user_id), user_id=request.state.user_id)
     except applying.ApplyError as exc:
         raise HTTPException(400, str(exc))
     msg = ("Candidatura preparada. Revise e aprove o envio." if attempt.channel == "email"
@@ -667,18 +667,18 @@ def list_attempts(request: Request, status: str = "todas", limit: int = Query(20
         for a in db.scalars(stmt).unique().all()]
 
 
-def _attempt_or_404(db, attempt_id):
-    attempt = db.get(ApplicationAttempt, attempt_id)
+def _attempt_or_404(db, attempt_id, user_id):
+    attempt = db.scalar(select(ApplicationAttempt).where(ApplicationAttempt.id == attempt_id, ApplicationAttempt.user_id == user_id))
     if not attempt:
         raise HTTPException(404, "Tentativa de candidatura não encontrada.")
     return attempt
 
 
 @app.post("/api/attempts/{attempt_id}/approve")
-def approve_attempt(attempt_id: int, db: Session = Depends(get_db)):
+def approve_attempt(attempt_id: int, request: Request, db: Session = Depends(get_db)):
     """Aprova e envia por e-mail. O status final reflete o resultado real do envio."""
-    attempt = _attempt_or_404(db, attempt_id)
-    agent_settings = get_agent_settings(db)
+    attempt = _attempt_or_404(db, attempt_id, request.state.user_id)
+    agent_settings = get_agent_settings(db, user_id=request.state.user_id)
     if attempt.job and (attempt.job.compatibility or 0) < agent_settings.min_score:
         raise HTTPException(
             409,
@@ -693,7 +693,7 @@ def approve_attempt(attempt_id: int, db: Session = Depends(get_db)):
         )
     limit = agent_settings.daily_limit
     try:
-        applying.send_attempt(db, attempt, limit)
+        applying.send_attempt(db, attempt, limit, user_id=request.state.user_id)
     except applying.ApplyError as exc:
         raise HTTPException(400, str(exc))
     message = "Candidatura enviada." if attempt.status == "sent" else f"O envio falhou: {attempt.detail}"
@@ -701,7 +701,7 @@ def approve_attempt(attempt_id: int, db: Session = Depends(get_db)):
 
 
 @app.post("/api/attempts/{attempt_id}/cancel")
-def cancel_attempt(attempt_id: int, db: Session = Depends(get_db)):
+def cancel_attempt(attempt_id: int, request: Request, db: Session = Depends(get_db)):
     attempt = _attempt_or_404(db, attempt_id)
     try:
         applying.cancel_attempt(db, attempt)
