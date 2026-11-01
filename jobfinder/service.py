@@ -48,8 +48,8 @@ def refresh_scores(db):
         j.compatibility=s; j.match_reasons="\n".join(r); j.missing_reasons="\n".join(m)
     db.commit()
 
-def create_task(db, title, description="", due_date=None, priority="Média", job_id=None, notify=True):
-    t=Task(title=title.strip(),description=description,due_date=due_date,priority=priority,job_id=job_id,notify=notify)
+def create_task(db, title, description="", due_date=None, priority="Média", job_id=None, notify=True, user_id=None):
+    t=Task(user_id=user_id,title=title.strip(),description=description,due_date=due_date,priority=priority,job_id=job_id,notify=notify)
     db.add(t); db.commit(); db.refresh(t); return t
 
 def complete_task(db, task):
