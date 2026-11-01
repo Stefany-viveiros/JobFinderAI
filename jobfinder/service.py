@@ -2,7 +2,7 @@ from datetime import date, datetime
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from .db import SessionLocal
-from .models import Job, Profile, Task, Application
+from .models import Job, JobMatch, Profile, Task, Application
 from .matching import score_job
 from .filters import normalize_url, dedupe_key, classify_level
 
@@ -132,3 +132,70 @@ def collect_and_save_ranked(items, limit=80, only_target=True):
                 "highest_compatibility": highest}
     finally:
         db.close()
+
+
+def collect_for_user(db, items, user_id, limit=80, only_target=True):
+    """Salva vagas no catálogo compartilhado e calcula compatibilidade privada do usuário."""
+    from .filters import is_target_job
+    if user_id is None:
+        raise ValueError("Coleta SaaS exige usuário autenticado.")
+    profile = get_profile(db, user_id=user_id)
+    received_ids, duplicates, filtered_out = [], 0, 0
+    for item in items:
+        url = str(item.get("url") or "").strip()
+        if not url:
+            continue
+        title_key = dedupe_key(item.get("title"), item.get("company"))
+        if only_target and not is_target_job(item):
+            filtered_out += 1
+            continue
+        job = db.scalar(select(Job).where(Job.url == url))
+        if job is None and title_key:
+            job = db.scalar(select(Job).where(Job.dedupe_key == title_key))
+        if job is None:
+            job = Job(**{k: item.get(k) for k in _JOB_FIELDS},
+                      level=classify_level(item.get("title"), item.get("description"), item.get("job_type")) or "outro",
+                      dedupe_key=title_key)
+            db.add(job)
+            try:
+                db.flush()
+            except IntegrityError:
+                db.rollback()
+                job = db.scalar(select(Job).where(Job.url == url))
+                if job is None:
+                    duplicates += 1
+                    continue
+        else:
+            duplicates += 1
+        received_ids.append(job.id)
+    ranked = []
+    for job_id in dict.fromkeys(received_ids):
+        job = db.get(Job, job_id)
+        if job is None:
+            continue
+        score, reasons, missing = score_job({
+            "title": job.title, "description": job.description,
+            "location": job.location, "modality": job.modality,
+            "job_type": job.job_type,
+        }, profile)
+        ranked.append((score, job_id, reasons, missing))
+    ranked.sort(key=lambda row: row[0], reverse=True)
+    saved_matches = 0
+    for score, job_id, reasons, missing in ranked[:max(1, min(80, int(limit)))]:
+        match = db.scalar(select(JobMatch).where(
+            JobMatch.user_id == user_id, JobMatch.job_id == job_id
+        ))
+        if match is None:
+            match = JobMatch(user_id=user_id, job_id=job_id)
+            db.add(match)
+        match.compatibility = score
+        match.match_reasons = "\n".join(reasons)
+        match.missing_reasons = "\n".join(missing)
+        saved_matches += 1
+    db.commit()
+    return {
+        "saved": saved_matches, "duplicates": duplicates,
+        "eligible": len(ranked), "filtered_out": filtered_out,
+        "limit": max(1, min(80, int(limit))),
+        "highest_compatibility": ranked[0][0] if ranked else None,
+    }
