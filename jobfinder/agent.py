@@ -3,7 +3,7 @@ from sqlalchemy import select
 
 from . import applying
 from .models import AgentSettings, ApplicationAttempt, Application, Job, JobMatch
-from .service import collect_and_save_ranked, get_profile
+from .service import collect_for_user, get_profile
 from .sources import SOURCES, collect_selected
 
 MAX_PREPARE_PER_RUN = 20
@@ -57,7 +57,9 @@ def run_agent(db, sources=None, limit=80, collect=True, collector=collect_select
     if collect:
         names = sources or list(SOURCES.keys())
         items, errors = collector(names)
-        saved = collect_and_save_ranked(items, limit)
+        if user_id is None:
+            raise ValueError("Execução SaaS exige usuário autenticado.")
+        saved = collect_for_user(db, items, user_id=user_id, limit=limit, only_target=True)
         result.update(received=len(items), saved=saved["saved"], duplicates=saved["duplicates"],
                       filtered_out=saved["filtered_out"], errors=errors)
 
