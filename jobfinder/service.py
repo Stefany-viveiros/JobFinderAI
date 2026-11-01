@@ -199,3 +199,29 @@ def collect_for_user(db, items, user_id, limit=80, only_target=True):
         "limit": max(1, min(80, int(limit))),
         "highest_compatibility": ranked[0][0] if ranked else None,
     }
+
+
+
+def refresh_user_scores(db, user_id):
+    """Recalcula exclusivamente os JobMatch do usuário autenticado."""
+    if user_id is None:
+        raise ValueError("Recalcular compatibilidade exige usuário autenticado.")
+    profile = get_profile(db, user_id=user_id)
+    jobs = db.scalars(select(Job)).all()
+    for job in jobs:
+        score, reasons, missing = score_job({
+            "title": job.title, "description": job.description,
+            "location": job.location, "modality": job.modality,
+            "job_type": job.job_type,
+        }, profile)
+        match = db.scalar(select(JobMatch).where(
+            JobMatch.user_id == user_id, JobMatch.job_id == job.id
+        ))
+        if match is None:
+            match = JobMatch(user_id=user_id, job_id=job.id)
+            db.add(match)
+        match.compatibility = score
+        match.match_reasons = "\\n".join(reasons)
+        match.missing_reasons = "\\n".join(missing)
+    db.commit()
+    return len(jobs)
