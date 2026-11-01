@@ -482,25 +482,26 @@ def count_attempts_channel(db, channel):
 
 
 @app.get("/api/dashboard")
-def dashboard(db: Session = Depends(get_db)):
+def dashboard(request: Request, db: Session = Depends(get_db)):
+    user_id = request.state.user_id
     total = db.scalar(select(func.count(Job.id)).where(Job.is_archived.is_(False))) or 0
     new = db.scalar(select(func.count(Job.id)).where(Job.is_archived.is_(False), ~Job.application.has())) or 0
     saved = db.scalar(select(func.count(Job.id)).where(Job.is_favorite.is_(True), Job.is_archived.is_(False))) or 0
-    apps = db.scalar(select(func.count(Application.id))) or 0
-    interviews = db.scalar(select(func.count(Application.id)).where(Application.status == "Entrevista")) or 0
-    pending = db.scalar(select(func.count(Task.id)).where(Task.status != "Concluída")) or 0
-    overdue = db.scalar(select(func.count(Task.id)).where(Task.status != "Concluída", Task.due_date < date.today())) or 0
+    apps = db.scalar(select(func.count(Application.id)).where(Application.user_id == user_id)) or 0
+    interviews = db.scalar(select(func.count(Application.id)).where(Application.user_id == user_id, Application.status == "Entrevista")) or 0
+    pending = db.scalar(select(func.count(Task.id)).where(Task.user_id == user_id, Task.status != "Concluída")) or 0
+    overdue = db.scalar(select(func.count(Task.id)).where(Task.user_id == user_id, Task.status != "Concluída", Task.due_date < date.today())) or 0
     avg_score = db.scalar(select(func.avg(Job.compatibility)).where(Job.is_archived.is_(False))) or 0
     upcoming = db.scalars(select(Task).options(joinedload(Task.job)).where(
-        Task.status != "Concluída", Task.due_date.is_not(None)
+        Task.user_id == user_id, Task.status != "Concluída", Task.due_date.is_not(None)
     ).order_by(Task.due_date).limit(6)).all()
     recent_jobs = db.scalars(select(Job).options(joinedload(Job.application), selectinload(Job.attempts)).where(
         Job.is_archived.is_(False)
     ).order_by(Job.created_at.desc()).limit(5)).unique().all()
-    p = get_profile(db)
-    agent = get_agent_settings(db)
+    p = get_profile(db, user_id)
+    agent = get_agent_settings(db, user_id=user_id)
     count_attempts = lambda *statuses: db.scalar(select(func.count(func.distinct(ApplicationAttempt.job_id))).where(
-        ApplicationAttempt.status.in_(statuses))) or 0
+        ApplicationAttempt.user_id == user_id, ApplicationAttempt.status.in_(statuses))) or 0
     compatible = db.scalar(select(func.count(Job.id)).where(
         Job.is_archived.is_(False), Job.level.in_(TARGET_LEVELS), Job.compatibility >= agent.min_score)) or 0
     target_jobs = db.scalar(select(func.count(Job.id)).where(
@@ -655,8 +656,8 @@ def prepare_job_application(job_id: int, db: Session = Depends(get_db)):
 
 
 @app.get("/api/attempts")
-def list_attempts(status: str = "todas", limit: int = Query(200, ge=1, le=500), db: Session = Depends(get_db)):
-    stmt = select(ApplicationAttempt).options(joinedload(ApplicationAttempt.job)).order_by(ApplicationAttempt.id.desc()).limit(limit)
+def list_attempts(request: Request, status: str = "todas", limit: int = Query(200, ge=1, le=500), db: Session = Depends(get_db)):
+    stmt = select(ApplicationAttempt).options(joinedload(ApplicationAttempt.job)).where(ApplicationAttempt.user_id == request.state.user_id).order_by(ApplicationAttempt.id.desc()).limit(limit)
     if status != "todas":
         stmt = stmt.where(ApplicationAttempt.status == status)
     return [{**attempt_dict(a, with_message=True), "job": {
@@ -764,8 +765,8 @@ def list_sources(request: Request, db: Session = Depends(get_db)):
 
 
 @app.get("/api/applications")
-def list_applications(db: Session = Depends(get_db)):
-    apps = db.scalars(select(Application).options(joinedload(Application.job)).order_by(Application.updated_at.desc())).unique().all()
+def list_applications(request: Request, db: Session = Depends(get_db)):
+    apps = db.scalars(select(Application).options(joinedload(Application.job)).where(Application.user_id == request.state.user_id).order_by(Application.updated_at.desc())).unique().all()
     return [{
         "id": a.id, "job_id": a.job_id, "status": a.status,
         "applied_at": a.applied_at.isoformat() if a.applied_at else None,
@@ -777,8 +778,8 @@ def list_applications(db: Session = Depends(get_db)):
 
 
 @app.put("/api/applications/{application_id}")
-def update_application(application_id: int, payload: ApplicationUpdate, db: Session = Depends(get_db)):
-    application = db.get(Application, application_id)
+def update_application(application_id: int, payload: ApplicationUpdate, request: Request, db: Session = Depends(get_db)):
+    application = db.scalar(select(Application).where(Application.id == application_id, Application.user_id == request.state.user_id))
     if not application:
         raise HTTPException(404, "Candidatura não encontrada.")
     if payload.status not in STATUSES:
@@ -790,8 +791,8 @@ def update_application(application_id: int, payload: ApplicationUpdate, db: Sess
 
 
 @app.get("/api/tasks")
-def list_tasks(view: str = "Pendentes", db: Session = Depends(get_db)):
-    stmt = select(Task).options(joinedload(Task.job)).order_by(Task.due_date, Task.id.desc())
+def list_tasks(request: Request, view: str = "Pendentes", db: Session = Depends(get_db)):
+    stmt = select(Task).options(joinedload(Task.job)).where(Task.user_id == request.state.user_id).order_by(Task.due_date, Task.id.desc())
     if view == "Pendentes": stmt = stmt.where(Task.status != "Concluída")
     elif view == "Concluídas": stmt = stmt.where(Task.status == "Concluída")
     elif view == "Vencidas": stmt = stmt.where(Task.status != "Concluída", Task.due_date < date.today())
@@ -799,16 +800,16 @@ def list_tasks(view: str = "Pendentes", db: Session = Depends(get_db)):
 
 
 @app.post("/api/tasks")
-def new_task(payload: TaskCreate, db: Session = Depends(get_db)):
+def new_task(payload: TaskCreate, request: Request, db: Session = Depends(get_db)):
     if payload.job_id is not None and not db.get(Job, payload.job_id):
         raise HTTPException(404, "Vaga associada não encontrada.")
-    task = create_task(db, payload.title, payload.description, payload.due_date, payload.priority, payload.job_id, payload.notify)
+    task = create_task(db, payload.title, payload.description, payload.due_date, payload.priority, payload.job_id, payload.notify, user_id=request.state.user_id)
     return {"message": "Tarefa criada.", "task": task_dict(task)}
 
 
 @app.put("/api/tasks/{task_id}")
-def edit_task(task_id: int, payload: TaskUpdate, db: Session = Depends(get_db)):
-    task = db.scalar(select(Task).options(joinedload(Task.job)).where(Task.id == task_id))
+def edit_task(task_id: int, payload: TaskUpdate, request: Request, db: Session = Depends(get_db)):
+    task = db.scalar(select(Task).options(joinedload(Task.job)).where(Task.id == task_id, Task.user_id == request.state.user_id))
     if not task: raise HTTPException(404, "Tarefa não encontrada.")
     task.title = payload.title; task.description = payload.description
     task.due_date = payload.due_date; task.priority = payload.priority
@@ -819,16 +820,16 @@ def edit_task(task_id: int, payload: TaskUpdate, db: Session = Depends(get_db)):
 
 
 @app.patch("/api/tasks/{task_id}/complete")
-def finish_task(task_id: int, db: Session = Depends(get_db)):
-    task = db.get(Task, task_id)
+def finish_task(task_id: int, request: Request, db: Session = Depends(get_db)):
+    task = db.scalar(select(Task).where(Task.id == task_id, Task.user_id == request.state.user_id))
     if not task: raise HTTPException(404, "Tarefa não encontrada.")
     complete_task(db, task)
     return {"message": "Tarefa concluída."}
 
 
 @app.delete("/api/tasks/{task_id}")
-def remove_task(task_id: int, db: Session = Depends(get_db)):
-    task = db.get(Task, task_id)
+def remove_task(task_id: int, request: Request, db: Session = Depends(get_db)):
+    task = db.scalar(select(Task).where(Task.id == task_id, Task.user_id == request.state.user_id))
     if not task: raise HTTPException(404, "Tarefa não encontrada.")
     db.delete(task); db.commit()
     return {"message": "Tarefa excluída."}
@@ -900,8 +901,8 @@ async def import_resume(file: UploadFile = File(...)):
 
 
 @app.get("/api/notifications")
-def notification_history(db: Session = Depends(get_db)):
-    logs = db.scalars(select(NotificationLog).order_by(NotificationLog.created_at.desc()).limit(20)).all()
+def notification_history(request: Request, db: Session = Depends(get_db)):
+    logs = db.scalars(select(NotificationLog).where(NotificationLog.user_id == request.state.user_id).order_by(NotificationLog.created_at.desc()).limit(20)).all()
     return [{"id": x.id, "created_at": x.created_at.isoformat() if x.created_at else None,
              "status": x.status, "detail": x.detail} for x in logs]
 
