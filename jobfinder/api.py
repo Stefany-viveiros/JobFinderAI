@@ -23,7 +23,7 @@ from .models import (
     Education, Experience, Course, Certification, PortfolioProject,
     MarketAnalysisRun, MarketSkillMetric, MarketSkillPair, Skill, DevelopmentPlanItem,
 )
-from .service import get_profile, save_jobs, refresh_scores, create_task, complete_task, STATUSES, collect_and_save_ranked
+from .service import get_profile, save_jobs, refresh_scores, create_task, complete_task, STATUSES, collect_and_save_ranked, collect_for_user, refresh_user_scores
 from .sources import SOURCES, SOURCE_INFO, LINK_ONLY_SOURCES, collect_selected, external_search_links
 from . import applying
 from .agent import get_agent_settings, run_agent, TARGET_LEVELS
@@ -580,7 +580,7 @@ def create_job(payload: JobCreate, db: Session = Depends(get_db)):
 
 
 @app.post("/api/jobs/collect")
-def collect_jobs(payload: dict, db: Session = Depends(get_db)):
+def collect_jobs(payload: dict, request: Request, db: Session = Depends(get_db)):
     names = payload.get("sources") or list(SOURCES.keys())
     link_only = [n for n in names if n in LINK_ONLY_SOURCES]
     if link_only:
@@ -598,7 +598,7 @@ def collect_jobs(payload: dict, db: Session = Depends(get_db)):
         raise HTTPException(400, "O limite deve ser um número entre 1 e 80.")
 
     items, errors = collect_selected(names)
-    result = collect_and_save_ranked(items, limit, only_target=bool(payload.get("only_target", True)))
+    result = collect_for_user(db, items, user_id=request.state.user_id, limit=limit, only_target=bool(payload.get("only_target", True)))
 
     return {
         "received": len(items),
@@ -870,7 +870,7 @@ def update_profile(payload: ProfileUpdate, request: Request, db: Session = Depen
             value = max(0, min(100, value))
         setattr(p, key, value)
     db.commit()
-    refresh_scores(db)
+    refresh_user_scores(db, request.state.user_id)
     db.refresh(p)
     return {"message": "Perfil salvo e compatibilidades recalculadas.", "profile": profile_dict(p)}
 
