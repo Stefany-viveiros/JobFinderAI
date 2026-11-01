@@ -475,9 +475,12 @@ def health():
     return {"status": "ok", "service": "JobFinder AI"}
 
 
-def count_attempts_channel(db, channel):
-    return db.scalar(select(func.count(func.distinct(ApplicationAttempt.job_id))).where(
-        ApplicationAttempt.status == "sent", ApplicationAttempt.channel == channel)) or 0
+def count_attempts_channel(db, channel, user_id=None):
+    stmt = select(func.count(func.distinct(ApplicationAttempt.job_id))).where(
+        ApplicationAttempt.status == "sent", ApplicationAttempt.channel == channel)
+    if user_id is not None:
+        stmt = stmt.where(ApplicationAttempt.user_id == user_id)
+    return db.scalar(stmt) or 0
 
 
 @app.get("/api/dashboard")
@@ -513,8 +516,8 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
                     "target_jobs": target_jobs, "compatible_jobs": compatible,
                     "min_score": agent.min_score,
                     "sent_applications": count_attempts("sent"),
-                    "sent_automatically": count_attempts_channel(db, "email"),
-                    "sent_manually_confirmed": count_attempts_channel(db, "manual_confirmed"),
+                    "sent_automatically": count_attempts_channel(db, "email", user_id),
+                    "sent_manually_confirmed": count_attempts_channel(db, "manual_confirmed", user_id),
                     "pending_applications": count_attempts("prepared", "awaiting_approval", "manual_required"),
                     "awaiting_approval": count_attempts("awaiting_approval"),
                     "failed_applications": count_attempts("failed")},
@@ -527,10 +530,11 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
 
 @app.get("/api/jobs")
 def list_jobs(
+    request: Request,
     q: str = "", min_score: int = Query(0, ge=0, le=100), favorite: bool = False,
     modality: str = "Todas", sort: str = "Compatibilidade", only_new: bool = False,
     level: str = "todas", source: str = "Todas", attempt_status: str = "todas",
-    limit: int = Query(100, ge=1, le=500), request: Request = None, db: Session = Depends(get_db)
+    limit: int = Query(100, ge=1, le=500), db: Session = Depends(get_db)
 ):
     user_id = request.state.user_id
     stmt = select(Job).join(JobMatch, JobMatch.job_id == Job.id).where(
