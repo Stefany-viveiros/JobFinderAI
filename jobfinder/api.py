@@ -716,9 +716,9 @@ class AgentSettingsUpdate(BaseModel):
     min_score: int = Field(80, ge=0, le=100)
 
 
-def agent_settings_dict(db):
-    s = get_agent_settings(db)
-    p = get_profile(db)
+def agent_settings_dict(db, user_id=None):
+    s = get_agent_settings(db, user_id=user_id)
+    p = get_profile(db, user_id=user_id)
     return {"auto_apply_enabled": s.auto_apply_enabled, "require_approval": s.require_approval,
             "daily_limit": s.daily_limit, "min_score": s.min_score,
             "sent_today": applying.sent_today_count(db),
@@ -727,17 +727,17 @@ def agent_settings_dict(db):
 
 
 @app.get("/api/agent/settings")
-def read_agent_settings(db: Session = Depends(get_db)):
-    return agent_settings_dict(db)
+def read_agent_settings(request: Request, db: Session = Depends(get_db)):
+    return agent_settings_dict(db, request.state.user_id)
 
 
 @app.put("/api/agent/settings")
-def update_agent_settings(payload: AgentSettingsUpdate, db: Session = Depends(get_db)):
-    s = get_agent_settings(db)
+def update_agent_settings(payload: AgentSettingsUpdate, request: Request, db: Session = Depends(get_db)):
+    s = get_agent_settings(db, user_id=request.state.user_id)
     for key, value in payload.model_dump().items():
         setattr(s, key, value)
     db.commit()
-    return {"message": "Configurações do agente salvas.", "settings": agent_settings_dict(db)}
+    return {"message": "Configurações do agente salvas.", "settings": agent_settings_dict(db, request.state.user_id)}
 
 
 class AgentRun(BaseModel):
@@ -747,17 +747,17 @@ class AgentRun(BaseModel):
 
 
 @app.post("/api/agent/run")
-def agent_run(payload: AgentRun, db: Session = Depends(get_db)):
+def agent_run(payload: AgentRun, request: Request, db: Session = Depends(get_db)):
     names = payload.sources or list(SOURCES.keys())
     invalid = [n for n in names if n not in SOURCES]
     if invalid:
         raise HTTPException(400, f"Fontes sem coleta automática ou desconhecidas: {', '.join(invalid)}")
-    return run_agent(db, sources=names, limit=payload.limit, collect=payload.collect)
+    return run_agent(db, sources=names, limit=payload.limit, collect=payload.collect, user_id=request.state.user_id)
 
 
 @app.get("/api/sources")
-def list_sources(db: Session = Depends(get_db)):
-    p = get_profile(db)
+def list_sources(request: Request, db: Session = Depends(get_db)):
+    p = get_profile(db, request.state.user_id)
     terms = [t.strip() for t in (p.interests or "").split(",") if t.strip()][:3] or None
     return {"sources": [{"name": n, **info} for n, info in SOURCE_INFO.items()],
             "external_links": external_search_links(terms)}
