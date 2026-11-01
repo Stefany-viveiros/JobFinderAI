@@ -530,10 +530,11 @@ def list_jobs(
     q: str = "", min_score: int = Query(0, ge=0, le=100), favorite: bool = False,
     modality: str = "Todas", sort: str = "Compatibilidade", only_new: bool = False,
     level: str = "todas", source: str = "Todas", attempt_status: str = "todas",
-    limit: int = Query(100, ge=1, le=500), db: Session = Depends(get_db)
+    limit: int = Query(100, ge=1, le=500), request: Request = None, db: Session = Depends(get_db)
 ):
-    stmt = select(Job).options(joinedload(Job.application), selectinload(Job.attempts)).where(
-        Job.is_archived.is_(False), Job.compatibility >= min_score)
+    user_id = request.state.user_id
+    stmt = select(Job).join(JobMatch, JobMatch.job_id == Job.id).where(
+        JobMatch.user_id == user_id, JobMatch.is_archived.is_(False), JobMatch.compatibility >= min_score)
     if level == "alvo":
         stmt = stmt.where(Job.level.in_(TARGET_LEVELS))
     elif level in ("estagio", "junior", "outro"):
@@ -541,20 +542,20 @@ def list_jobs(
     if source != "Todas":
         stmt = stmt.where(Job.source == source)
     if attempt_status == "sem_tentativa":
-        stmt = stmt.where(~Job.attempts.any())
+        stmt = stmt.where(~Job.id.in_(select(ApplicationAttempt.job_id).where(ApplicationAttempt.user_id == user_id)))
     elif attempt_status != "todas":
-        stmt = stmt.where(Job.attempts.any(ApplicationAttempt.status == attempt_status))
+        stmt = stmt.where(Job.id.in_(select(ApplicationAttempt.job_id).where(ApplicationAttempt.user_id == user_id, ApplicationAttempt.status == attempt_status)))
     if favorite:
-        stmt = stmt.where(Job.is_favorite.is_(True))
+        stmt = stmt.where(JobMatch.is_favorite.is_(True))
     if modality != "Todas":
         stmt = stmt.where(Job.modality.ilike(f"%{modality}%"))
     if q.strip():
         search = f"%{q.strip()}%"
         stmt = stmt.where(or_(Job.title.ilike(search), Job.company.ilike(search), Job.description.ilike(search)))
     if only_new:
-        stmt = stmt.where(~Job.application.has())
-    stmt = stmt.order_by(Job.compatibility.desc() if sort == "Compatibilidade" else Job.created_at.desc()).limit(limit)
-    return [job_dict(j) for j in db.scalars(stmt).unique().all()]
+        stmt = stmt.where(~Job.id.in_(select(Application.job_id).where(Application.user_id == user_id)))
+    stmt = stmt.order_by(JobMatch.compatibility.desc() if sort == "Compatibilidade" else Job.created_at.desc()).limit(limit)
+    return [job_dict(j, db=db, user_id=user_id) for j in db.scalars(stmt).unique().all()]
 
 
 @app.post("/api/jobs")
@@ -612,9 +613,14 @@ def toggle_favorite(job_id: int, request: Request, db: Session = Depends(get_db)
     job = db.get(Job, job_id)
     if not job:
         raise HTTPException(404, "Vaga não encontrada.")
-    job.is_favorite = not job.is_favorite
+    user_id = request.state.user_id
+    match = db.scalar(select(JobMatch).where(JobMatch.job_id == job.id, JobMatch.user_id == user_id))
+    if match is None:
+        match = JobMatch(job_id=job.id, user_id=user_id)
+        db.add(match)
+    match.is_favorite = not match.is_favorite
     db.commit()
-    return {"id": job.id, "is_favorite": job.is_favorite}
+    return {"id": job.id, "is_favorite": match.is_favorite}
 
 
 class ConfirmSent(BaseModel):
