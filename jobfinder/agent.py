@@ -10,20 +10,32 @@ MAX_PREPARE_PER_RUN = 20
 TARGET_LEVELS = ("estagio", "junior")
 
 
-def get_agent_settings(db) -> AgentSettings:
-    s = db.get(AgentSettings, 1)
-    if not s:
-        s = AgentSettings(id=1)
+def get_agent_settings(db, user_id=None) -> AgentSettings:
+    """Carrega configuração individual; modo legado existe apenas para testes/rotinas antigas."""
+    if user_id is None:
+        s = db.get(AgentSettings, 1)
+        if not s:
+            s = AgentSettings(id=1)
+            db.add(s)
+            db.commit()
+            db.refresh(s)
+        return s
+    s = db.scalar(select(AgentSettings).where(AgentSettings.user_id == user_id))
+    if s is None:
+        s = AgentSettings(user_id=user_id)
         db.add(s)
         db.commit()
         db.refresh(s)
     return s
 
 
-def pick_candidates(db, min_score, limit=MAX_PREPARE_PER_RUN):
+def pick_candidates(db, min_score, limit=MAX_PREPARE_PER_RUN, user_id=None):
     """Vagas estágio/júnior compatíveis, sem candidatura e sem tentativa anterior (inclui falhas/canceladas)."""
     attempted = select(ApplicationAttempt.job_id)
     applied = select(Application.job_id)
+    if user_id is not None:
+        attempted = attempted.where(ApplicationAttempt.user_id == user_id)
+        applied = applied.where(Application.user_id == user_id)
     stmt = (select(Job).where(
                 Job.is_archived.is_(False),
                 Job.level.in_(TARGET_LEVELS),
@@ -36,9 +48,9 @@ def pick_candidates(db, min_score, limit=MAX_PREPARE_PER_RUN):
     return list(db.scalars(stmt).all())
 
 
-def run_agent(db, sources=None, limit=80, collect=True, collector=collect_selected):
-    settings_row = get_agent_settings(db)
-    profile = get_profile(db)
+def run_agent(db, sources=None, limit=80, collect=True, collector=collect_selected, user_id=None):
+    settings_row = get_agent_settings(db, user_id=user_id)
+    profile = get_profile(db, user_id=user_id)
     result = {"received": 0, "saved": 0, "duplicates": 0, "filtered_out": 0, "errors": [],
               "candidates": 0, "prepared": 0, "awaiting_approval": 0, "manual_required": 0,
               "sent": 0, "failed": 0, "skipped_daily_limit": 0,
@@ -56,7 +68,7 @@ def run_agent(db, sources=None, limit=80, collect=True, collector=collect_select
             ", ".join(result["profile_gaps"]) + ")."
         return result
 
-    candidates = pick_candidates(db, settings_row.min_score)
+    candidates = pick_candidates(db, settings_row.min_score, user_id=user_id)
     result["candidates"] = len(candidates)
     for job in candidates:
         try:
