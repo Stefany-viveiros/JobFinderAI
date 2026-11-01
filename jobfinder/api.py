@@ -908,11 +908,10 @@ def notification_history(request: Request, db: Session = Depends(get_db)):
 
 
 @app.post("/api/notifications/send")
-def send_notifications(db: Session = Depends(get_db)):
-    if not (settings.smtp_ready and settings.smtp_username and settings.smtp_password):
-        raise HTTPException(400, "Configure as variáveis SMTP no arquivo .env antes de enviar lembretes.")
-    result = send_daily_reminder(db)
-    return {"result": result}
+def send_notifications():
+    # O lembrete SMTP legado usa um destinatário global. Mantido bloqueado no SaaS
+    # até existir configuração e envio isolados por usuário.
+    raise HTTPException(503, "Envio de lembretes por e-mail ficará disponível quando a configuração individual estiver pronta.")
 
 
 
