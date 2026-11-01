@@ -8,9 +8,18 @@ from .filters import normalize_url, dedupe_key, classify_level
 
 STATUSES=["Nova oportunidade","Salva","Candidatura enviada","Teste técnico","Entrevista","Aprovada","Reprovada","Encerrada"]
 
-def get_profile(db):
-    p=db.get(Profile,1)
-    if not p: p=Profile(id=1); db.add(p); db.commit(); db.refresh(p)
+def get_profile(db, user_id=None):
+    """Retorna perfil do usuário; sem user_id, mantém compatibilidade apenas para rotinas legadas internas."""
+    if user_id is None:
+        p = db.get(Profile, 1)
+        if not p:
+            p = Profile(id=1)
+            db.add(p); db.commit(); db.refresh(p)
+        return p
+    p = db.scalar(select(Profile).where(Profile.user_id == user_id))
+    if p is None:
+        p = Profile(user_id=user_id)
+        db.add(p); db.commit(); db.refresh(p)
     return p
 
 def save_jobs(items):
@@ -39,8 +48,8 @@ def refresh_scores(db):
         j.compatibility=s; j.match_reasons="\n".join(r); j.missing_reasons="\n".join(m)
     db.commit()
 
-def create_task(db, title, description="", due_date=None, priority="Média", job_id=None, notify=True):
-    t=Task(title=title.strip(),description=description,due_date=due_date,priority=priority,job_id=job_id,notify=notify)
+def create_task(db, title, description="", due_date=None, priority="Média", job_id=None, notify=True, user_id=None):
+    t=Task(user_id=user_id,title=title.strip(),description=description,due_date=due_date,priority=priority,job_id=job_id,notify=notify)
     db.add(t); db.commit(); db.refresh(t); return t
 
 def complete_task(db, task):

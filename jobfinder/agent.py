@@ -2,7 +2,7 @@
 from sqlalchemy import select
 
 from . import applying
-from .models import AgentSettings, ApplicationAttempt, Application, Job
+from .models import AgentSettings, ApplicationAttempt, Application, Job, JobMatch
 from .service import collect_and_save_ranked, get_profile
 from .sources import SOURCES, collect_selected
 
@@ -10,35 +10,45 @@ MAX_PREPARE_PER_RUN = 20
 TARGET_LEVELS = ("estagio", "junior")
 
 
-def get_agent_settings(db) -> AgentSettings:
-    s = db.get(AgentSettings, 1)
-    if not s:
-        s = AgentSettings(id=1)
+def get_agent_settings(db, user_id=None) -> AgentSettings:
+    """Carrega configuração individual; modo legado existe apenas para testes/rotinas antigas."""
+    if user_id is None:
+        s = db.get(AgentSettings, 1)
+        if not s:
+            s = AgentSettings(id=1)
+            db.add(s)
+            db.commit()
+            db.refresh(s)
+        return s
+    s = db.scalar(select(AgentSettings).where(AgentSettings.user_id == user_id))
+    if s is None:
+        s = AgentSettings(user_id=user_id)
         db.add(s)
         db.commit()
         db.refresh(s)
     return s
 
 
-def pick_candidates(db, min_score, limit=MAX_PREPARE_PER_RUN):
-    """Vagas estágio/júnior compatíveis, sem candidatura e sem tentativa anterior (inclui falhas/canceladas)."""
-    attempted = select(ApplicationAttempt.job_id)
-    applied = select(Application.job_id)
-    stmt = (select(Job).where(
-                Job.is_archived.is_(False),
+def pick_candidates(db, min_score, limit=MAX_PREPARE_PER_RUN, user_id=None):
+    """Seleciona vagas pelo score privado do usuário e exclui suas tentativas/candidaturas."""
+    if user_id is None:
+        return []
+    attempted = select(ApplicationAttempt.job_id).where(ApplicationAttempt.user_id == user_id)
+    applied = select(Application.job_id).where(Application.user_id == user_id)
+    stmt = (select(Job).join(JobMatch, JobMatch.job_id == Job.id).where(
+                JobMatch.user_id == user_id,
+                JobMatch.is_archived.is_(False),
                 Job.level.in_(TARGET_LEVELS),
-                Job.compatibility >= min_score,
-                Job.missing_reasons.not_like("%Requisito(s) obrigatório(s) não identificado(s)%"),
+                JobMatch.compatibility >= min_score,
+                JobMatch.missing_reasons.not_like("%Requisito(s) obrigatório(s) não identificado(s)%"),
                 Job.id.not_in(attempted),
                 Job.id.not_in(applied),
-            )
-            .order_by(Job.compatibility.desc(), Job.id.desc()).limit(limit))
+            ).order_by(JobMatch.compatibility.desc(), Job.id.desc()).limit(limit))
     return list(db.scalars(stmt).all())
 
-
-def run_agent(db, sources=None, limit=80, collect=True, collector=collect_selected):
-    settings_row = get_agent_settings(db)
-    profile = get_profile(db)
+def run_agent(db, sources=None, limit=80, collect=True, collector=collect_selected, user_id=None):
+    settings_row = get_agent_settings(db, user_id=user_id)
+    profile = get_profile(db, user_id=user_id)
     result = {"received": 0, "saved": 0, "duplicates": 0, "filtered_out": 0, "errors": [],
               "candidates": 0, "prepared": 0, "awaiting_approval": 0, "manual_required": 0,
               "sent": 0, "failed": 0, "skipped_daily_limit": 0,
@@ -56,11 +66,11 @@ def run_agent(db, sources=None, limit=80, collect=True, collector=collect_select
             ", ".join(result["profile_gaps"]) + ")."
         return result
 
-    candidates = pick_candidates(db, settings_row.min_score)
+    candidates = pick_candidates(db, settings_row.min_score, user_id=user_id)
     result["candidates"] = len(candidates)
     for job in candidates:
         try:
-            attempt = applying.prepare_attempt(db, job, profile)
+            attempt = applying.prepare_attempt(db, job, profile, user_id=user_id)
             if attempt.channel != "email":
                 result["manual_required"] += 1
                 continue
@@ -69,13 +79,13 @@ def run_agent(db, sources=None, limit=80, collect=True, collector=collect_select
                 db.commit()
                 result["awaiting_approval"] += 1
             elif settings_row.auto_apply_enabled:
-                if applying.sent_today_count(db) >= settings_row.daily_limit:
+                if applying.sent_today_count(db, user_id=user_id) >= settings_row.daily_limit:
                     attempt.detail = f"Limite diário de {settings_row.daily_limit} atingido; fica na fila."
                     db.commit()
                     result["skipped_daily_limit"] += 1
                     result["prepared"] += 1
                     continue
-                applying.send_attempt(db, attempt, settings_row.daily_limit)
+                applying.send_attempt(db, attempt, settings_row.daily_limit, user_id=user_id)
                 result["sent" if attempt.status == "sent" else "failed"] += 1
             else:
                 attempt.detail = "Envio automático desativado; aprove manualmente para enviar."

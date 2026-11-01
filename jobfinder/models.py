@@ -3,6 +3,45 @@ from sqlalchemy import String, Text, Integer, Float, Boolean, DateTime, Date, Fo
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .db import Base
 
+class User(Base):
+    """Conta autenticada do SaaS."""
+    __tablename__ = "users"
+    __table_args__ = (UniqueConstraint("email_normalized", name="uq_users_email_normalized"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(320), nullable=False)
+    email_normalized: Mapped[str] = mapped_column(String(320), nullable=False, index=True)
+    full_name: Mapped[str] = mapped_column(String(150), nullable=False, default="")
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(20), nullable=False, default="user")
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class UserSession(Base):
+    """Sessão opaca; apenas o hash do token é persistido."""
+    __tablename__ = "user_sessions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    csrf_token: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    user: Mapped[User] = relationship()
+
+
+class PasswordResetToken(Base):
+    """Token de recuperação de uso único; somente seu hash é persistido."""
+    __tablename__ = "password_reset_tokens"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    user: Mapped[User] = relationship()
+
+
 class Job(Base):
     __tablename__ = "jobs"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -25,12 +64,28 @@ class Job(Base):
     dedupe_key: Mapped[str | None] = mapped_column(String(400), nullable=True)
     level: Mapped[str] = mapped_column(String(20), default="")  # estagio | junior | outro
     attempts: Mapped[list["ApplicationAttempt"]] = relationship(back_populates="job", cascade="all, delete-orphan", order_by="ApplicationAttempt.id")
-    application: Mapped["Application | None"] = relationship(back_populates="job", uselist=False, cascade="all, delete-orphan")
+    applications: Mapped[list["Application"]] = relationship(back_populates="job", cascade="all, delete-orphan")
     tasks: Mapped[list["Task"]] = relationship(back_populates="job", cascade="all, delete-orphan")
+
+class JobMatch(Base):
+    """Compatibilidade, favoritos e arquivamento de uma vaga por usuário."""
+    __tablename__ = "job_matches"
+    __table_args__ = (UniqueConstraint("user_id", "job_id", name="uq_user_job_match"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False, index=True)
+    compatibility: Mapped[float] = mapped_column(Float, default=0)
+    match_reasons: Mapped[str] = mapped_column(Text, default="")
+    missing_reasons: Mapped[str] = mapped_column(Text, default="")
+    is_favorite: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 
 class Profile(Base):
     __tablename__ = "profile"
-    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, unique=True, index=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(150), default="")
     course: Mapped[str] = mapped_column(String(200), default="")
     institution: Mapped[str] = mapped_column(String(200), default="")
@@ -129,19 +184,22 @@ class PortfolioProject(Base):
 
 class Application(Base):
     __tablename__ = "applications"
+    __table_args__ = (UniqueConstraint("user_id", "job_id", name="uq_user_application_job"),)
     id: Mapped[int] = mapped_column(primary_key=True)
-    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"), unique=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"))
     status: Mapped[str] = mapped_column(String(80), default="Candidatura enviada")
     applied_at: Mapped[date | None] = mapped_column(Date, nullable=True)
     deadline: Mapped[date | None] = mapped_column(Date, nullable=True)
     recruiter: Mapped[str] = mapped_column(String(200), default="")
     notes: Mapped[str] = mapped_column(Text, default="")
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    job: Mapped[Job] = relationship(back_populates="application")
+    job: Mapped[Job] = relationship(back_populates="applications")
 
 class Task(Base):
     __tablename__ = "tasks"
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id"), nullable=True)
     title: Mapped[str] = mapped_column(String(300))
     description: Mapped[str] = mapped_column(Text, default="")
@@ -155,8 +213,9 @@ class Task(Base):
 
 class NotificationLog(Base):
     __tablename__ = "notification_log"
-    __table_args__ = (UniqueConstraint("task_id", "recipient", "send_date", name="uq_task_recipient_day"),)
+    __table_args__ = (UniqueConstraint("user_id", "task_id", "recipient", "send_date", name="uq_user_task_recipient_day"),)
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     task_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     recipient: Mapped[str] = mapped_column(String(300))
     send_date: Mapped[str] = mapped_column(String(20))
@@ -166,9 +225,10 @@ class NotificationLog(Base):
 
 
 class AgentSettings(Base):
-    """Configuração singleton (id=1) do agente de candidaturas."""
+    """Configuração individual do agente por usuário."""
     __tablename__ = "agent_settings"
-    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, unique=True, index=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
     auto_apply_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     require_approval: Mapped[bool] = mapped_column(Boolean, default=True)
     daily_limit: Mapped[int] = mapped_column(Integer, default=5)
@@ -179,6 +239,7 @@ class ApplicationAttempt(Base):
     """Histórico de candidaturas. 'sent' só existe quando houve envio real ou confirmação explícita do usuário."""
     __tablename__ = "application_attempts"
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"))
     # prepared | awaiting_approval | manual_required | sent | failed | cancelled
     status: Mapped[str] = mapped_column(String(30), default="prepared")
@@ -286,6 +347,7 @@ class DevelopmentPlanItem(Base):
     """Meta individual de desenvolvimento ligada a uma competência do catálogo."""
     __tablename__ = "development_plan_items"
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     skill_id: Mapped[int] = mapped_column(ForeignKey("market_skills.id"), index=True)
     source_run_id: Mapped[int | None] = mapped_column(
         ForeignKey("market_analysis_runs.id", ondelete="SET NULL"), nullable=True
@@ -308,6 +370,7 @@ class SkillAssessmentAttempt(Base):
     """Registro de desafio prático e autoavaliação de uma competência."""
     __tablename__ = "skill_assessment_attempts"
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     skill_id: Mapped[int] = mapped_column(ForeignKey("market_skills.id"), index=True)
     plan_item_id: Mapped[int | None] = mapped_column(
         ForeignKey("development_plan_items.id", ondelete="SET NULL"), nullable=True, index=True

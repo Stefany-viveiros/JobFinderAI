@@ -171,7 +171,7 @@ def local_today() -> date:
     return datetime.now(ZoneInfo(settings.timezone)).date()
 
 
-def sent_today_count(db, today: date | None = None) -> int:
+def sent_today_count(db, today: date | None = None, user_id: int | None = None) -> int:
     """Envios automáticos (e-mail) do dia local. Confirmações manuais não consomem o limite."""
     tz = ZoneInfo(settings.timezone)
     day = today or local_today()
@@ -179,32 +179,36 @@ def sent_today_count(db, today: date | None = None) -> int:
     end = start + timedelta(days=1)
     return db.scalar(select(func.count(ApplicationAttempt.id)).where(
         ApplicationAttempt.status == "sent", ApplicationAttempt.channel == "email",
-        ApplicationAttempt.sent_at >= start, ApplicationAttempt.sent_at < end)) or 0
+        ApplicationAttempt.sent_at >= start, ApplicationAttempt.sent_at < end,
+        *([ApplicationAttempt.user_id == user_id] if user_id is not None else []))) or 0
 
 
 # ------------------------------------------------------------------ fluxo
-def active_attempt(db, job_id):
-    return db.scalar(select(ApplicationAttempt).where(
+def active_attempt(db, job_id, user_id: int | None = None):
+    stmt = select(ApplicationAttempt).where(
         ApplicationAttempt.job_id == job_id,
-        ApplicationAttempt.status.in_(OPEN_STATUSES + ("sent",))).order_by(ApplicationAttempt.id.desc()))
+        ApplicationAttempt.status.in_(OPEN_STATUSES + ("sent",)))
+    if user_id is not None:
+        stmt = stmt.where(ApplicationAttempt.user_id == user_id)
+    return db.scalar(stmt.order_by(ApplicationAttempt.id.desc()))
 
 
-def prepare_attempt(db, job: Job, profile) -> ApplicationAttempt:
+def prepare_attempt(db, job: Job, profile, user_id: int | None = None) -> ApplicationAttempt:
     """Monta a candidatura (texto + canal). Não envia nada e não registra como enviada."""
     gaps = profile_gaps(profile)
     if gaps:
         raise ApplyError("Complete seu perfil antes de preparar candidaturas: faltam " + ", ".join(gaps) + ".")
-    existing = active_attempt(db, job.id)
+    existing = active_attempt(db, job.id, user_id)
     if existing:
         raise ApplyError("Esta vaga já tem uma candidatura em andamento ou enviada.")
     subject, body = build_cover_letter(job, profile)
     ok, reason = email_channel_available(job)
     if ok:
-        attempt = ApplicationAttempt(job_id=job.id, status="prepared", channel="email", subject=subject,
+        attempt = ApplicationAttempt(user_id=user_id, job_id=job.id, status="prepared", channel="email", subject=subject,
                                      message=body, recipient=extract_apply_email(job.description),
                                      detail="Pronta para envio por e-mail.")
     else:
-        attempt = ApplicationAttempt(job_id=job.id, status="manual_required", channel="manual", subject=subject,
+        attempt = ApplicationAttempt(user_id=user_id, job_id=job.id, status="manual_required", channel="manual", subject=subject,
                                      message=body, detail=reason + f" Link: {job.url}")
     db.add(attempt)
     db.commit()
@@ -212,12 +216,15 @@ def prepare_attempt(db, job: Job, profile) -> ApplicationAttempt:
     return attempt
 
 
-def _ensure_application(db, job_id):
-    if not db.scalar(select(Application).where(Application.job_id == job_id)):
-        db.add(Application(job_id=job_id, status="Candidatura enviada", applied_at=local_today()))
+def _ensure_application(db, job_id, user_id=None):
+    stmt = select(Application).where(Application.job_id == job_id)
+    if user_id is not None:
+        stmt = stmt.where(Application.user_id == user_id)
+    if not db.scalar(stmt):
+        db.add(Application(user_id=user_id, job_id=job_id, status="Candidatura enviada", applied_at=local_today()))
 
 
-def send_attempt(db, attempt: ApplicationAttempt, daily_limit: int | None = None) -> ApplicationAttempt:
+def send_attempt(db, attempt: ApplicationAttempt, daily_limit: int | None = None, user_id: int | None = None) -> ApplicationAttempt:
     """Envia por e-mail. Só marca 'sent' se o SMTP aceitar a mensagem; erros viram 'failed'."""
     if attempt.status not in SENDABLE_STATUSES:
         raise ApplyError(f"Candidatura com status '{attempt.status}' não pode ser enviada.")
@@ -225,7 +232,7 @@ def send_attempt(db, attempt: ApplicationAttempt, daily_limit: int | None = None
         raise ApplyError("Esta candidatura não tem canal de envio automático; finalize no site original.")
     if not settings.smtp_can_send_applications:
         raise ApplyError("SMTP não configurado no .env.")
-    if daily_limit is not None and sent_today_count(db) >= daily_limit:
+    if daily_limit is not None and sent_today_count(db, user_id=user_id) >= daily_limit:
         raise ApplyError(f"Limite diário de {daily_limit} candidatura(s) automática(s) atingido.")
 
     msg = EmailMessage()
@@ -246,7 +253,7 @@ def send_attempt(db, attempt: ApplicationAttempt, daily_limit: int | None = None
         return attempt
     attempt.status, attempt.sent_at = "sent", datetime.utcnow()
     attempt.detail = f"E-mail aceito pelo servidor SMTP para {attempt.recipient}."
-    _ensure_application(db, attempt.job_id)
+    _ensure_application(db, attempt.job_id, user_id)
     db.commit()
     return attempt
 
@@ -259,17 +266,17 @@ def cancel_attempt(db, attempt):
     return attempt
 
 
-def confirm_manual_send(db, job: Job, note: str = "") -> ApplicationAttempt:
+def confirm_manual_send(db, job: Job, note: str = "", user_id: int | None = None) -> ApplicationAttempt:
     """O usuário declara que enviou pelo site da vaga. É o único caminho manual para 'sent'."""
-    existing = active_attempt(db, job.id)
+    existing = active_attempt(db, job.id, user_id)
     if existing and existing.status == "sent":
         raise ApplyError("Esta vaga já consta como enviada.")
-    attempt = existing or ApplicationAttempt(job_id=job.id)
+    attempt = existing or ApplicationAttempt(user_id=user_id, job_id=job.id)
     attempt.status, attempt.channel, attempt.sent_at = "sent", "manual_confirmed", datetime.utcnow()
     attempt.detail = "Confirmado manualmente pelo usuário." + (f" {note}" if note else "")
     if attempt.id is None:
         db.add(attempt)
-    _ensure_application(db, job.id)
+    _ensure_application(db, job.id, user_id)
     db.commit()
     db.refresh(attempt)
     return attempt

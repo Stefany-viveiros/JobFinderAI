@@ -36,6 +36,17 @@ class Base(DeclarativeBase):
 MIGRATIONS = [
     ("jobs", "dedupe_key", "VARCHAR(400)"),
     ("jobs", "level", "VARCHAR(20) DEFAULT ''"),
+    # Colunas de propriedade começam nullable para preservar os bancos existentes.
+    # Os dados legados permanecem sem proprietário até o bootstrap administrativo
+    # seguro atribuí-los explicitamente; nenhuma conta nova os recebe por padrão.
+    ("profile", "user_id", "INTEGER REFERENCES users(id) ON DELETE CASCADE"),
+    ("applications", "user_id", "INTEGER REFERENCES users(id) ON DELETE CASCADE"),
+    ("tasks", "user_id", "INTEGER REFERENCES users(id) ON DELETE CASCADE"),
+    ("notification_log", "user_id", "INTEGER REFERENCES users(id) ON DELETE CASCADE"),
+    ("agent_settings", "user_id", "INTEGER REFERENCES users(id) ON DELETE CASCADE"),
+    ("application_attempts", "user_id", "INTEGER REFERENCES users(id) ON DELETE CASCADE"),
+    ("development_plan_items", "user_id", "INTEGER REFERENCES users(id) ON DELETE CASCADE"),
+    ("skill_assessment_attempts", "user_id", "INTEGER REFERENCES users(id) ON DELETE CASCADE"),
 ]
 
 
@@ -69,14 +80,16 @@ def init_db():
     from . import models  # noqa: F401
     from .filters import dedupe_key, classify_level
 
+    # Cria primeiro tabelas novas (especialmente users) para que FKs das
+    # colunas adicionadas abaixo funcionem também no PostgreSQL.
+    if engine.dialect.name == "sqlite" and DB_PATH.exists() and DB_PATH.stat().st_size:
+        backup_database()
+    Base.metadata.create_all(bind=engine)
     missing = _missing_columns()
     if missing:
-        if engine.dialect.name == "sqlite":
-            backup_database()
         with engine.begin() as conn:
             for table, column, ddl in missing:
                 conn.execute(text(f'ALTER TABLE "{table}" ADD COLUMN "{column}" {ddl}'))
-    Base.metadata.create_all(bind=engine)
     with engine.begin() as conn:
         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_jobs_dedupe_key ON jobs (dedupe_key)"))
         # Preenche metadados das vagas já existentes (sem tocar nos demais campos).
