@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload, aliased
 
 from .db import init_db, SessionLocal
 from .models import (
-    Job, Application, Task, Profile, NotificationLog, ApplicationAttempt,
+    Job, JobMatch, Application, Task, Profile, NotificationLog, ApplicationAttempt,
     Education, Experience, Course, Certification, PortfolioProject,
     MarketAnalysisRun, MarketSkillMetric, MarketSkillPair, Skill, DevelopmentPlanItem,
 )
@@ -382,29 +382,28 @@ class ProfileUpdate(BaseModel):
     portfolio_projects: Optional[list[PortfolioProjectInput]] = None
 
 
-def job_dict(j: Job, with_application=True):
+def job_dict(j: Job, with_application=True, db=None, user_id=None):
+    match = db.scalar(select(JobMatch).where(JobMatch.job_id == j.id, JobMatch.user_id == user_id)) if db is not None and user_id is not None else None
+    app_row = db.scalar(select(Application).where(Application.job_id == j.id, Application.user_id == user_id)) if with_application and db is not None and user_id is not None else None
+    latest_attempt = db.scalar(select(ApplicationAttempt).where(ApplicationAttempt.job_id == j.id, ApplicationAttempt.user_id == user_id).order_by(ApplicationAttempt.id.desc())) if db is not None and user_id is not None else None
     application = None
-    if with_application and j.application:
-        application = {
-            "id": j.application.id, "status": j.application.status,
-            "applied_at": j.application.applied_at.isoformat() if j.application.applied_at else None,
-            "deadline": j.application.deadline.isoformat() if j.application.deadline else None,
-            "recruiter": j.application.recruiter or "", "notes": j.application.notes or "",
-        }
-    return {
-        "id": j.id, "source": j.source, "source_id": j.source_id,
+    if app_row:
+        application = {"id": app_row.id, "status": app_row.status,
+            "applied_at": app_row.applied_at.isoformat() if app_row.applied_at else None,
+            "deadline": app_row.deadline.isoformat() if app_row.deadline else None,
+            "recruiter": app_row.recruiter or "", "notes": app_row.notes or ""}
+    return {"id": j.id, "source": j.source, "source_id": j.source_id,
         "title": j.title, "company": j.company, "description": j.description or "",
         "location": j.location, "modality": j.modality, "job_type": j.job_type,
         "published_at": j.published_at or "", "url": j.url,
-        "compatibility": round(j.compatibility or 0),
-        "match_reasons": j.match_reasons or "", "missing_reasons": j.missing_reasons or "",
-        "is_favorite": bool(j.is_favorite), "is_archived": bool(j.is_archived),
+        "compatibility": round(match.compatibility or 0) if match else 0,
+        "match_reasons": match.match_reasons or "" if match else "",
+        "missing_reasons": match.missing_reasons or "" if match else "",
+        "is_favorite": bool(match.is_favorite) if match else False,
+        "is_archived": bool(match.is_archived) if match else False,
         "created_at": j.created_at.isoformat() if j.created_at else None,
-        "level": j.level or "",
-        "application": application,
-        "latest_attempt": attempt_dict(j.attempts[-1]) if j.attempts else None,
-    }
-
+        "level": j.level or "", "application": application,
+        "latest_attempt": attempt_dict(latest_attempt) if latest_attempt else None}
 
 def attempt_dict(a: ApplicationAttempt, with_message=False):
     data = {
@@ -484,28 +483,29 @@ def count_attempts_channel(db, channel):
 @app.get("/api/dashboard")
 def dashboard(request: Request, db: Session = Depends(get_db)):
     user_id = request.state.user_id
-    total = db.scalar(select(func.count(Job.id)).where(Job.is_archived.is_(False))) or 0
-    new = db.scalar(select(func.count(Job.id)).where(Job.is_archived.is_(False), ~Job.application.has())) or 0
-    saved = db.scalar(select(func.count(Job.id)).where(Job.is_favorite.is_(True), Job.is_archived.is_(False))) or 0
+    match_filter = select(JobMatch.job_id).where(JobMatch.user_id == user_id, JobMatch.is_archived.is_(False))
+    total = db.scalar(select(func.count(Job.id)).where(Job.id.in_(match_filter))) or 0
+    new = db.scalar(select(func.count(Job.id)).where(Job.id.in_(match_filter), ~Job.id.in_(select(Application.job_id).where(Application.user_id == user_id)))) or 0
+    saved = db.scalar(select(func.count(JobMatch.id)).where(JobMatch.user_id == user_id, JobMatch.is_favorite.is_(True), JobMatch.is_archived.is_(False))) or 0
     apps = db.scalar(select(func.count(Application.id)).where(Application.user_id == user_id)) or 0
     interviews = db.scalar(select(func.count(Application.id)).where(Application.user_id == user_id, Application.status == "Entrevista")) or 0
     pending = db.scalar(select(func.count(Task.id)).where(Task.user_id == user_id, Task.status != "Concluída")) or 0
     overdue = db.scalar(select(func.count(Task.id)).where(Task.user_id == user_id, Task.status != "Concluída", Task.due_date < date.today())) or 0
-    avg_score = db.scalar(select(func.avg(Job.compatibility)).where(Job.is_archived.is_(False))) or 0
+    avg_score = db.scalar(select(func.avg(JobMatch.compatibility)).where(JobMatch.user_id == user_id, JobMatch.is_archived.is_(False))) or 0
     upcoming = db.scalars(select(Task).options(joinedload(Task.job)).where(
         Task.user_id == user_id, Task.status != "Concluída", Task.due_date.is_not(None)
     ).order_by(Task.due_date).limit(6)).all()
-    recent_jobs = db.scalars(select(Job).options(joinedload(Job.application), selectinload(Job.attempts)).where(
-        Job.is_archived.is_(False)
-    ).order_by(Job.created_at.desc()).limit(5)).unique().all()
+    recent_jobs = db.scalars(select(Job).join(JobMatch, JobMatch.job_id == Job.id).where(
+        JobMatch.user_id == user_id, JobMatch.is_archived.is_(False)
+    ).order_by(Job.created_at.desc()).limit(5)).all()
     p = get_profile(db, user_id)
     agent = get_agent_settings(db, user_id=user_id)
     count_attempts = lambda *statuses: db.scalar(select(func.count(func.distinct(ApplicationAttempt.job_id))).where(
         ApplicationAttempt.user_id == user_id, ApplicationAttempt.status.in_(statuses))) or 0
-    compatible = db.scalar(select(func.count(Job.id)).where(
-        Job.is_archived.is_(False), Job.level.in_(TARGET_LEVELS), Job.compatibility >= agent.min_score)) or 0
-    target_jobs = db.scalar(select(func.count(Job.id)).where(
-        Job.is_archived.is_(False), Job.level.in_(TARGET_LEVELS))) or 0
+    compatible = db.scalar(select(func.count(JobMatch.id)).join(Job, Job.id == JobMatch.job_id).where(
+        JobMatch.user_id == user_id, JobMatch.is_archived.is_(False), Job.level.in_(TARGET_LEVELS), JobMatch.compatibility >= agent.min_score)) or 0
+    target_jobs = db.scalar(select(func.count(JobMatch.id)).join(Job, Job.id == JobMatch.job_id).where(
+        JobMatch.user_id == user_id, JobMatch.is_archived.is_(False), Job.level.in_(TARGET_LEVELS))) or 0
     return {
         "metrics": {"total_jobs": total, "new_jobs": new, "favorites": saved,
                     "applications": apps, "interviews": interviews, "pending_tasks": pending,
@@ -519,7 +519,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
                     "awaiting_approval": count_attempts("awaiting_approval"),
                     "failed_applications": count_attempts("failed")},
         "upcoming_tasks": [task_dict(t) for t in upcoming],
-        "recent_jobs": [job_dict(j) for j in recent_jobs],
+        "recent_jobs": [job_dict(j, db=db, user_id=user_id) for j in recent_jobs],
         "profile_name": p.name,
         "smtp_ready": bool(settings.smtp_ready and settings.smtp_username and settings.smtp_password),
     }
