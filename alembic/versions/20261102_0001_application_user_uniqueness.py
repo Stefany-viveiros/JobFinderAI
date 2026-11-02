@@ -22,9 +22,17 @@ def _schema_state():
     if not inspector.has_table(TABLE):
         return [], []
     constraints = inspector.get_unique_constraints(TABLE)
+    # PostgreSQL também expõe o índice físico que implementa uma UNIQUE
+    # constraint em get_indexes(). Não o trate como índice independente:
+    # DROP CONSTRAINT já remove esse índice automaticamente.
+    constraint_names = {
+        item.get("name") for item in constraints if item.get("name")
+    }
     indexes = [
         item for item in inspector.get_indexes(TABLE)
         if item.get("unique")
+        and not item.get("duplicates_constraint")
+        and item.get("name") not in constraint_names
     ]
     return constraints, indexes
 
