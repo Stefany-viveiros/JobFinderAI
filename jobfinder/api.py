@@ -686,13 +686,19 @@ def approve_attempt(attempt_id: int, request: Request, db: Session = Depends(get
     """Aprova e envia por e-mail. O status final reflete o resultado real do envio."""
     attempt = _attempt_or_404(db, attempt_id, request.state.user_id)
     agent_settings = get_agent_settings(db, user_id=request.state.user_id)
-    if attempt.job and (attempt.job.compatibility or 0) < agent_settings.min_score:
+    match = db.scalar(select(JobMatch).where(
+        JobMatch.user_id == request.state.user_id,
+        JobMatch.job_id == attempt.job_id,
+    ))
+    compatibility = match.compatibility if match else 0
+    missing_reasons = match.missing_reasons if match else ""
+    if compatibility < agent_settings.min_score:
         raise HTTPException(
             409,
-            f"Compatibilidade atual ({round(attempt.job.compatibility or 0)}%) abaixo do mínimo configurado "
+            f"Compatibilidade atual ({round(compatibility)}%) abaixo do mínimo configurado "
             f"({agent_settings.min_score}%). Revise a vaga antes de aprovar."
         )
-    if attempt.job and "Requisito(s) obrigatório(s) não identificado(s)" in (attempt.job.missing_reasons or ""):
+    if "Requisito(s) obrigatório(s) não identificado(s)" in (missing_reasons or ""):
         raise HTTPException(
             409,
             "Há requisito(s) obrigatório(s) que ainda não foram identificados no seu perfil. "
