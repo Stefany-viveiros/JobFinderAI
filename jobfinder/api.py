@@ -80,7 +80,7 @@ async def require_authenticated_session(request, call_next):
     path = request.url.path
     public_paths = {
         "/api/health", "/api/auth/register", "/api/auth/login",
-        "/api/auth/logout", "/api/auth/forgot-password", "/api/auth/reset-password",
+        "/api/auth/forgot-password", "/api/auth/reset-password",
     }
     if not path.startswith("/api/") or path in public_paths or path == "/api/auth/me":
         return await call_next(request)
