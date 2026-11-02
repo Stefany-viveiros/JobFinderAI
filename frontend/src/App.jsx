@@ -406,4 +406,71 @@ function Modal({ title, children, onClose }) { useEffect(() => { const f = e => 
 function ModalActions({ busy, onCancel, submit }) { return <div className="modal-actions"><button type="button" className="btn btn-secondary" onClick={onCancel}>Cancelar</button><button type="submit" disabled={busy} className="btn btn-primary">{busy ? <LoaderCircle size={15} className="spin"/> : <Check size={15}/>} {submit}</button></div> }
 function EmptyState({ icon: Icon, title, text, action }) { return <div className="empty-state"><div className="empty-icon"><Icon size={23}/></div><strong>{title}</strong><p>{text}</p>{action}</div> }
 
+
+function App() {
+  const [user, setUser] = useState(null)
+  const [checking, setChecking] = useState(true)
+  const [mode, setMode] = useState('login')
+  const [values, setValues] = useState({ name: '', email: '', password: '', token: new URLSearchParams(window.location.search).get('token') || '' })
+  const [busy, setBusy] = useState(false)
+  const [feedback, setFeedback] = useState('')
+
+  useEffect(() => {
+    api('/auth/me').then(data => { csrfToken = data.csrf_token || ''; setUser(data.user) })
+      .catch(() => { csrfToken = ''; setUser(null) })
+      .finally(() => setChecking(false))
+  }, [])
+
+  async function submit(e) {
+    e.preventDefault(); setBusy(true); setFeedback('')
+    try {
+      if (mode === 'forgot') {
+        const r = await api('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email: values.email }) })
+        setFeedback(r.message)
+      } else if (mode === 'reset') {
+        const r = await api('/auth/reset-password', { method: 'POST', body: JSON.stringify({ token: values.token, password: values.password }) })
+        setFeedback(r.message); setMode('login'); window.history.replaceState({}, '', window.location.pathname)
+      } else {
+        const r = await api(mode === 'register' ? '/auth/register' : '/auth/login', {
+          method: 'POST',
+          body: JSON.stringify(mode === 'register'
+            ? { full_name: values.name, email: values.email, password: values.password }
+            : { email: values.email, password: values.password }),
+        })
+        const session = await api('/auth/me')
+        csrfToken = session.csrf_token || ''; setUser(r.user || session.user)
+      }
+    } catch (err) { setFeedback(err.message || 'Não foi possível concluir a solicitação.') }
+    finally { setBusy(false) }
+  }
+
+  async function logout() {
+    try { await api('/auth/logout', { method: 'POST' }) }
+    catch (err) { setFeedback(err.message) }
+    csrfToken = ''; setUser(null); setMode('login')
+  }
+
+  if (checking) return <main className="auth-screen"><section className="auth-card">Verificando sua sessão...</section></main>
+  if (user) return <WorkspaceApp user={user} onLogout={logout} />
+
+  const title = mode === 'register' ? 'Crie sua conta' : mode === 'forgot' ? 'Recuperar senha' : mode === 'reset' ? 'Redefinir senha' : 'Bem-vinda de volta'
+  return <main className="auth-screen"><section className="auth-card">
+    <div className="auth-brand">jobfinder<span>AI</span></div>
+    <p className="auth-eyebrow">SEU ESPAÇO DE CARREIRA</p><h1>{title}</h1>
+    <p className="auth-description">{mode === 'register' ? 'Organize sua busca por oportunidades em um só lugar.' : mode === 'forgot' ? 'Informe seu e-mail para receber as instruções.' : mode === 'reset' ? 'Escolha uma nova senha com pelo menos 12 caracteres.' : 'Entre para acessar seu workspace profissional.'}</p>
+    {feedback && <div className="auth-message" role="status">{feedback}</div>}
+    <form className="auth-form" onSubmit={submit}>
+      {mode === 'register' && <label>Nome completo<input required minLength="2" autoComplete="name" value={values.name} onChange={e => setValues(v => ({ ...v, name: e.target.value }))}/></label>}
+      {mode === 'reset' && <label>Token<input required value={values.token} onChange={e => setValues(v => ({ ...v, token: e.target.value }))}/></label>}
+      {mode !== 'reset' && <label>E-mail<input required type="email" autoComplete="email" value={values.email} onChange={e => setValues(v => ({ ...v, email: e.target.value }))}/></label>}
+      {mode !== 'forgot' && <label>{mode === 'reset' ? 'Nova senha' : 'Senha'}<input required type="password" minLength={mode === 'login' ? 1 : 12} maxLength="128" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} value={values.password} onChange={e => setValues(v => ({ ...v, password: e.target.value }))}/>{mode !== 'login' && <small>Mínimo de 12 caracteres.</small>}</label>}
+      <button className="btn btn-primary auth-submit" disabled={busy}>{busy ? 'Aguarde...' : mode === 'register' ? 'Criar conta' : mode === 'forgot' ? 'Enviar instruções' : mode === 'reset' ? 'Salvar nova senha' : 'Entrar'}</button>
+    </form>
+    <div className="auth-links">
+      {mode === 'login' && <><button onClick={() => { setMode('forgot'); setFeedback('') }}>Esqueci minha senha</button><span>Não tem conta?</span><button onClick={() => { setMode('register'); setFeedback('') }}>Criar conta</button></>}
+      {mode !== 'login' && <button onClick={() => { setMode('login'); setFeedback('') }}>Voltar para entrar</button>}
+    </div>
+  </section></main>
+}
+
 export default App
