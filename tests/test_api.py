@@ -247,3 +247,74 @@ def test_two_accounts_cannot_read_or_modify_each_others_private_data(client, db)
         }).status_code == 404
 
         assert second.get("/api/attempts").json() == []
+
+        # Preferências do agente também são individuais.
+        settings_response = client.put("/api/agent/settings", json={
+            "auto_apply_enabled": True,
+            "require_approval": False,
+            "daily_limit": 12,
+            "min_score": 91,
+        })
+        assert settings_response.status_code == 200
+        assert client.get("/api/agent/settings").json()["daily_limit"] == 12
+        assert second.get("/api/agent/settings").json()["daily_limit"] != 12
+        assert second.get("/api/agent/settings").json()["min_score"] == 80
+
+        # Plano de desenvolvimento e avaliações pertencem à conta que os criou.
+        from jobfinder.models import Skill, NotificationLog
+        skill = Skill(
+            canonical_name="Python",
+            category="language",
+            aliases_json='["py"]',
+            active=True,
+            taxonomy_version="test",
+        )
+        db.add(skill)
+        db.commit()
+        db.refresh(skill)
+
+        plan_response = client.post("/api/market/development-plan", json={
+            "skill_id": skill.id,
+            "title": "Projeto privado de Python",
+            "objective": "Praticar programação",
+            "activity": "Construir uma API",
+            "estimated_hours": 8,
+        })
+        assert plan_response.status_code == 200
+        plan_item_id = plan_response.json()["item"]["id"]
+        assert second.get("/api/market/development-plan").json()["items"] == []
+        assert second.patch(f"/api/market/development-plan/{plan_item_id}", json={
+            "status": "completed",
+        }).status_code == 404
+
+        assessment_response = client.post("/api/market/assessments", json={
+            "skill_id": skill.id,
+            "plan_item_id": plan_item_id,
+        })
+        assert assessment_response.status_code == 200
+        assessment_id = assessment_response.json()["attempt"]["id"]
+        assert second.get("/api/market/assessments").json()["attempts"] == []
+        assert second.post(f"/api/market/assessments/{assessment_id}/submit", json={
+            "response_text": "Tentativa de acessar avaliação de outra conta.",
+            "evidence_url": "",
+            "rubric_answers": {},
+        }).status_code == 404
+
+        db.add(NotificationLog(
+            user_id=second_user.id + 1000000,
+            task_id=None,
+            recipient="private@example.com",
+            send_date="2026-11-02",
+            status="sent",
+            detail="notificação de outra conta",
+        ))
+        db.add(NotificationLog(
+            user_id=client.get("/api/auth/me").json()["user"]["id"],
+            task_id=None,
+            recipient="primary@example.com",
+            send_date="2026-11-02",
+            status="sent",
+            detail="notificação privada",
+        ))
+        db.commit()
+        assert second.get("/api/notifications").json() == []
