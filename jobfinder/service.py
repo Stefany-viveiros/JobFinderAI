@@ -188,10 +188,12 @@ def collect_for_user(db, items, user_id, limit=80, only_target=True):
         if match is None:
             match = JobMatch(user_id=user_id, job_id=job_id)
             db.add(match)
+            saved_matches += 1
+        # Recalcula o score mesmo para vagas já conhecidas, mas só conta
+        # como "saved" um novo vínculo usuário/vaga.
         match.compatibility = score
         match.match_reasons = "\n".join(reasons)
         match.missing_reasons = "\n".join(missing)
-        saved_matches += 1
     db.commit()
     return {
         "saved": saved_matches, "duplicates": duplicates,
