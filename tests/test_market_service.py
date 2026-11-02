@@ -300,6 +300,7 @@ def test_profile_gap_reassesses_skill_from_submitted_self_assessment(db, test_us
         response_text="Implementei a solução, tratei erros, testei os cenários e documentei a execução.",
         evidence_url="https://github.com/example/python-evidence",
         rubric_answers=answers,
+        user_id=test_user.id,
     )
 
     gap = build_profile_gap(db, user_id=test_user.id, run_id=snapshot["run_id"])
@@ -344,6 +345,7 @@ def test_profile_evidence_keeps_precedence_over_self_assessment(db, test_user):
         response_text="Implementei uma interface funcional, tratei erros, testei e documentei o projeto.",
         evidence_url="https://github.com/example/react-evidence",
         rubric_answers=answers,
+        user_id=test_user.id,
     )
 
     gap = build_profile_gap(db, run_id=snapshot["run_id"])
