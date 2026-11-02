@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select, func, or_
 from sqlalchemy.orm import Session, joinedload, selectinload, aliased
 
-from .db import init_db, SessionLocal
+from .db import init_db, SessionLocal, validate_multitenant_schema
 from .models import (
     Job, JobMatch, Application, Task, Profile, NotificationLog, ApplicationAttempt,
     Education, Experience, Course, Certification, PortfolioProject,
@@ -115,6 +115,8 @@ async def require_authenticated_session(request, call_next):
 @app.on_event("startup")
 def startup():
     init_db()
+    if os.getenv('MULTITENANT_READY', 'false').lower() == 'true':
+        validate_multitenant_schema()
     # Perfis individuais são criados sob demanda após autenticação.
 
 
