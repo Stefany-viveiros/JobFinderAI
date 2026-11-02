@@ -14,7 +14,7 @@ from fastapi import FastAPI, Depends, HTTPException, Query, UploadFile, File, Re
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select, func, or_, case
+from sqlalchemy import select, func, or_, case, delete
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.orm import Session, joinedload, selectinload, aliased
@@ -159,6 +159,11 @@ def _enforce_rate_limit(
     key = _token_hash(f"{scope}|{client_host}|{subject}")
     now = datetime.utcnow()
     cutoff = now - timedelta(seconds=window_seconds)
+    # Todos os limites deste módulo expiram em até 1 hora. Remove buckets
+    # inativos há 48 horas para impedir crescimento indefinido da tabela.
+    db.execute(delete(AuthRateLimit).where(
+        AuthRateLimit.window_started_at < now - timedelta(hours=48)
+    ))
     dialect = db.get_bind().dialect.name
     values = {
         "bucket_key": key,
