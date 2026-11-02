@@ -204,6 +204,7 @@ def test_password_reset_invalidates_all_tokens_and_sessions(client, db, test_use
     })
     assert response.status_code == 200
 
+    db.expire_all()
     tokens = db.scalars(select(PasswordResetToken).where(
         PasswordResetToken.user_id == test_user.id
     )).all()
