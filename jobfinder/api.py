@@ -571,11 +571,16 @@ def create_job(payload: JobCreate, request: Request, db: Session = Depends(get_d
         raise HTTPException(400, "Informe o link original da vaga.")
     item = payload.model_dump()
     item.update({"source": "Manual", "source_id": None, "published_at": payload.published_at})
-    collect_for_user(db, [item], user_id=request.state.user_id, limit=1, only_target=False)
+    result = collect_for_user(db, [item], user_id=request.state.user_id, limit=1, only_target=False)
     existing = db.scalar(select(Job).where(Job.url == url))
     if not existing:
         raise HTTPException(400, "Não foi possível salvar a vaga.")
-    return {"message": "Vaga salva ou atualizada no seu painel.", "job": job_dict(existing, db=db, user_id=request.state.user_id)}
+    message = (
+        "Link já cadastrado."
+        if result["duplicates"]
+        else "Vaga salva ou atualizada no seu painel."
+    )
+    return {"message": message, "job": job_dict(existing, db=db, user_id=request.state.user_id)}
 
 
 @app.post("/api/jobs/collect")
