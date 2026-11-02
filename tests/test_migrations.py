@@ -7,7 +7,7 @@ from alembic.config import Config
 from sqlalchemy.exc import IntegrityError
 
 
-def test_legacy_global_application_constraint_is_migrated_to_per_user(tmp_path):
+def test_legacy_global_application_constraint_is_migrated_to_per_user(tmp_path, monkeypatch):
     database = tmp_path / "legacy.db"
     engine = sa.create_engine(f"sqlite:///{database}")
     metadata = sa.MetaData()
@@ -31,6 +31,7 @@ def test_legacy_global_application_constraint_is_migrated_to_per_user(tmp_path):
     config_path = Path(__file__).resolve().parents[1] / "alembic.ini"
     config = Config(str(config_path))
     config.set_main_option("sqlalchemy.url", f"sqlite:///{database}")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
     command.upgrade(config, "head")
 
     inspector = sa.inspect(engine)
@@ -58,7 +59,7 @@ def test_legacy_global_application_constraint_is_migrated_to_per_user(tmp_path):
     engine.dispose()
 
 
-def test_migration_refuses_duplicate_applications_for_same_user(tmp_path):
+def test_migration_refuses_duplicate_applications_for_same_user(tmp_path, monkeypatch):
     database = tmp_path / "duplicates.db"
     engine = sa.create_engine(f"sqlite:///{database}")
     metadata = sa.MetaData()
@@ -80,12 +81,13 @@ def test_migration_refuses_duplicate_applications_for_same_user(tmp_path):
     config_path = Path(__file__).resolve().parents[1] / "alembic.ini"
     config = Config(str(config_path))
     config.set_main_option("sqlalchemy.url", f"sqlite:///{database}")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
     with pytest.raises(RuntimeError, match="candidaturas duplicadas"):
         command.upgrade(config, "head")
     engine.dispose()
 
 
-def test_postgresql_migration_replaces_global_unique_constraint():
+def test_postgresql_migration_replaces_global_unique_constraint(monkeypatch):
     import os
     from uuid import uuid4
 
@@ -126,6 +128,7 @@ def test_postgresql_migration_replaces_global_unique_constraint():
         config_path = Path(__file__).resolve().parents[1] / "alembic.ini"
         config = Config(str(config_path))
         config.set_main_option("sqlalchemy.url", str(scoped_url).replace("%", "%%"))
+        monkeypatch.setenv("DATABASE_URL", str(scoped_url))
         command.upgrade(config, "head")
 
         inspector = sa.inspect(engine)
