@@ -709,7 +709,7 @@ def approve_attempt(attempt_id: int, request: Request, db: Session = Depends(get
 
 @app.post("/api/attempts/{attempt_id}/cancel")
 def cancel_attempt(attempt_id: int, request: Request, db: Session = Depends(get_db)):
-    attempt = _attempt_or_404(db, attempt_id)
+    attempt = _attempt_or_404(db, attempt_id, request.state.user_id)
     try:
         applying.cancel_attempt(db, attempt)
     except applying.ApplyError as exc:
@@ -729,7 +729,7 @@ def agent_settings_dict(db, user_id=None):
     p = get_profile(db, user_id=user_id)
     return {"auto_apply_enabled": s.auto_apply_enabled, "require_approval": s.require_approval,
             "daily_limit": s.daily_limit, "min_score": s.min_score,
-            "sent_today": applying.sent_today_count(db),
+            "sent_today": applying.sent_today_count(db, user_id=user_id),
             "email_ready": settings.smtp_can_send_applications,
             "profile_gaps": applying.profile_gaps(p), "profile_ready": not applying.profile_gaps(p)}
 
@@ -915,7 +915,7 @@ def notification_history(request: Request, db: Session = Depends(get_db)):
 
 
 @app.post("/api/notifications/send")
-def send_notifications():
+def send_notifications(request: Request):
     # O lembrete SMTP legado usa um destinatário global. Mantido bloqueado no SaaS
     # até existir configuração e envio isolados por usuário.
     raise HTTPException(503, "Envio de lembretes por e-mail ficará disponível quando a configuração individual estiver pronta.")
