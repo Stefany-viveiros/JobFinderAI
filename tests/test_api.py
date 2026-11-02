@@ -193,6 +193,26 @@ def test_login_rate_limit_returns_429_with_retry_after(client):
     assert int(blocked.headers["Retry-After"]) > 0
 
 
+
+def test_rate_limit_cleanup_removes_expired_buckets(client, db):
+    from datetime import datetime, timedelta
+    from jobfinder.models import AuthRateLimit
+
+    stale = AuthRateLimit(
+        bucket_key="a" * 64,
+        window_started_at=datetime.utcnow() - timedelta(days=3),
+        attempts=999,
+    )
+    db.add(stale)
+    db.commit()
+
+    response = client.post("/api/auth/login", json={
+        "email": "cleanup-check@example.com",
+        "password": "SenhaIncorreta123!",
+    })
+    assert response.status_code == 401
+    assert db.get(AuthRateLimit, "a" * 64) is None
+
 def test_market_analysis_is_rate_limited_per_account(client):
     first = client.post("/api/market/analysis/run", json={"level_scope": "both", "days": 30})
     assert first.status_code == 200
