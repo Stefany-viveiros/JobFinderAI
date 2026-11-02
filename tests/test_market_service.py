@@ -206,7 +206,7 @@ def test_development_plan_prevents_duplicate_active_goal_for_same_skill(db, test
 
     create_development_item(db, user_id=test_user.id, skill_id=skill.id)
     try:
-        create_development_item(db, skill_id=skill.id)
+        create_development_item(db, user_id=test_user.id, skill_id=skill.id)
         assert False, "Era esperado impedir uma meta ativa duplicada."
     except ValueError as exc:
         assert "Já existe uma meta ativa" in str(exc)
@@ -234,6 +234,7 @@ def test_skill_assessment_generates_challenge_and_records_self_review(db, test_u
         response_text="Implementei uma pequena aplicação, tratei entradas e documentei como executar.",
         evidence_url="https://github.com/example/python-challenge",
         rubric_answers=answers,
+        user_id=test_user.id,
     )
     assert submitted["status"] == "self_reviewed"
     assert submitted["score"] == 100
@@ -253,7 +254,7 @@ def test_skill_assessment_requires_all_rubric_items_and_evidence(db, test_user):
     db.commit()
     db.refresh(skill)
 
-    attempt = create_skill_assessment(db, skill_id=skill.id)
+    attempt = create_skill_assessment(db, user_id=test_user.id, skill_id=skill.id)
     try:
         submit_skill_assessment(
             db, attempt["id"], response_text="", evidence_url="",
@@ -301,7 +302,7 @@ def test_profile_gap_reassesses_skill_from_submitted_self_assessment(db, test_us
         rubric_answers=answers,
     )
 
-    gap = build_profile_gap(db, run_id=snapshot["run_id"])
+    gap = build_profile_gap(db, user_id=test_user.id, run_id=snapshot["run_id"])
     python = next(item for item in gap["items"] if item["name"] == "Python")
 
     assert python["status"] == "autoavaliada"
@@ -319,7 +320,7 @@ def test_profile_evidence_keeps_precedence_over_self_assessment(db, test_user):
     from jobfinder.models import Profile, PortfolioProject
 
     db.add(Profile(
-        id=1,
+        user_id=test_user.id,
         portfolio_projects=[PortfolioProject(
             name="Projeto React concluído",
             description="Aplicação web desenvolvida com React.",
