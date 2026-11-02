@@ -183,6 +183,45 @@ def test_approval_rejects_stale_or_unconfirmed_compatibility(client, db, ready_p
     assert "requisito(s) obrigatório(s)" in response.json()["detail"]
 
 
+def test_password_reset_invalidates_all_tokens_and_sessions(client, db, test_user):
+    from datetime import datetime, timedelta
+    from sqlalchemy import select
+    from jobfinder.models import PasswordResetToken, UserSession
+    from jobfinder.api import _token_hash
+
+    first_raw = "first-reset-token-value-long-enough"
+    second_raw = "second-reset-token-value-long-enough"
+    expires = datetime.utcnow() + timedelta(minutes=30)
+    db.add_all([
+        PasswordResetToken(user_id=test_user.id, token_hash=_token_hash(first_raw), expires_at=expires),
+        PasswordResetToken(user_id=test_user.id, token_hash=_token_hash(second_raw), expires_at=expires),
+    ])
+    db.commit()
+
+    response = client.post("/api/auth/reset-password", json={
+        "token": first_raw,
+        "password": "NovaSenhaSegura123!",
+    })
+    assert response.status_code == 200
+
+    tokens = db.scalars(select(PasswordResetToken).where(
+        PasswordResetToken.user_id == test_user.id
+    )).all()
+    assert len(tokens) == 2
+    assert all(token.used_at is not None for token in tokens)
+    assert db.scalar(select(UserSession.id).where(
+        UserSession.user_id == test_user.id
+    )) is None
+
+    # O link paralelo também deve ser recusado após a primeira troca.
+    second = client.post("/api/auth/reset-password", json={
+        "token": second_raw,
+        "password": "OutraSenhaSegura456!",
+    })
+    assert second.status_code == 400
+    assert client.get("/api/dashboard").status_code == 401
+
+
 def test_two_accounts_cannot_read_or_modify_each_others_private_data(client, db, test_user):
     from jobfinder.models import User
     from jobfinder.api import password_hasher
