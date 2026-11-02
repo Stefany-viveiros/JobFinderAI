@@ -410,7 +410,7 @@ function EmptyState({ icon: Icon, title, text, action }) { return <div className
 function App() {
   const [user, setUser] = useState(null)
   const [checking, setChecking] = useState(true)
-  const [mode, setMode] = useState('login')
+  const [mode, setMode] = useState(new URLSearchParams(window.location.search).has('token') ? 'reset' : 'login')
   const [values, setValues] = useState({ name: '', email: '', password: '', token: new URLSearchParams(window.location.search).get('token') || '' })
   const [busy, setBusy] = useState(false)
   const [feedback, setFeedback] = useState('')
