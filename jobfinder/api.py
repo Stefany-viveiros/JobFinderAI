@@ -258,8 +258,17 @@ def reset_password(payload: ResetPasswordInput, db: Session = Depends(get_db)):
     user = db.get(User, reset.user_id)
     if not user or not user.is_active:
         raise HTTPException(400, "Não foi possível redefinir a senha.")
+    now = datetime.utcnow()
     user.password_hash = password_hasher.hash(payload.password)
-    reset.used_at = datetime.utcnow()
+    # Uma redefinição bem-sucedida invalida todos os links pendentes da conta,
+    # não apenas o token utilizado nesta requisição.
+    db.query(PasswordResetToken).filter(
+        PasswordResetToken.user_id == user.id,
+        PasswordResetToken.used_at.is_(None),
+    ).update(
+        {PasswordResetToken.used_at: now},
+        synchronize_session=False,
+    )
     # Invalida todas as sessões existentes após a troca da senha.
     db.query(UserSession).filter(UserSession.user_id == user.id).delete()
     db.commit()
