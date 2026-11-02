@@ -230,7 +230,7 @@ function WorkspaceApp({ user, onLogout }) {
           {page === 'Perfil e configurações' && <ProfilePage profile={profile} setProfile={setProfile} onSave={saveProfile} busy={busy} />}
         </>}
       </div>
-      <footer className="footer"><span>© {new Date().getFullYear()} JobFinder AI</span><span><span className="status-dot"/> Seus dados ficam armazenados localmente <CircleHelp size={14}/></span></footer>
+      <footer className="footer"><span>© {new Date().getFullYear()} JobFinder AI</span><span><span className="status-dot"/> Seus dados ficam vinculados à sua conta <CircleHelp size={14}/></span></footer>
     </main>
     {notice && <div className={`toast ${notice.type}`}><span className="toast-symbol">{notice.type === 'error' ? <CircleHelp size={18}/> : <CheckCircle2 size={18}/>}</span><span>{notice.message}</span><button className="icon-btn" onClick={() => setNotice(null)}><X size={16}/></button></div>}
     {modal && <Modal title={modal === 'job' ? 'Adicionar oportunidade' : modal === 'task' ? (editingTask ? 'Editar tarefa' : 'Nova tarefa') : 'Atualizar candidatura'} onClose={() => { setModal(''); setEditingTask(null); setEditingApp(null) }}>
@@ -314,7 +314,7 @@ function ProfilePage({ profile, setProfile, onSave, busy }) {
     form.append('file', file)
     setImporting(true); setImportError(''); setImportMessage('')
     try {
-      const response = await fetch(`${API}/profile/import`, { method: 'POST', body: form })
+      const response = await fetch(`${API}/profile/import`, { method: 'POST', body: form, credentials: 'include', headers: csrfToken ? { 'X-CSRF-Token': csrfToken } : {} })
       const body = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(body.detail || `Erro ${response.status}`)
       setProfile(current => {
