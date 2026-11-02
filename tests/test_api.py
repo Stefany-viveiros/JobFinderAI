@@ -183,6 +183,45 @@ def test_approval_rejects_stale_or_unconfirmed_compatibility(client, db, ready_p
     assert "requisito(s) obrigatório(s)" in response.json()["detail"]
 
 
+def test_login_rate_limit_returns_429_with_retry_after(client):
+    payload = {"email": "unknown-rate-limit@example.com", "password": "SenhaIncorreta123!"}
+    for _ in range(10):
+        response = client.post("/api/auth/login", json=payload)
+        assert response.status_code == 401
+    blocked = client.post("/api/auth/login", json=payload)
+    assert blocked.status_code == 429
+    assert int(blocked.headers["Retry-After"]) > 0
+
+
+
+def test_rate_limit_cleanup_removes_expired_buckets(client, db):
+    from datetime import datetime, timedelta
+    from jobfinder.models import AuthRateLimit
+
+    stale = AuthRateLimit(
+        bucket_key="a" * 64,
+        window_started_at=datetime.utcnow() - timedelta(days=3),
+        attempts=999,
+    )
+    db.add(stale)
+    db.commit()
+
+    response = client.post("/api/auth/login", json={
+        "email": "cleanup-check@example.com",
+        "password": "SenhaIncorreta123!",
+    })
+    assert response.status_code == 401
+    db.expire_all()
+    assert db.get(AuthRateLimit, "a" * 64) is None
+
+def test_market_analysis_is_rate_limited_per_account(client):
+    first = client.post("/api/market/analysis/run", json={"level_scope": "both", "days": 30})
+    assert first.status_code == 200
+    second = client.post("/api/market/analysis/run", json={"level_scope": "both", "days": 30})
+    assert second.status_code == 429
+    assert int(second.headers["Retry-After"]) > 0
+
+
 def test_password_reset_invalidates_all_tokens_and_sessions(client, db, test_user):
     from datetime import datetime, timedelta
     from sqlalchemy import select

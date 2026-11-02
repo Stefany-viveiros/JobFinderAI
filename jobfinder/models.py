@@ -42,6 +42,14 @@ class PasswordResetToken(Base):
     user: Mapped[User] = relationship()
 
 
+class AuthRateLimit(Base):
+    """Contador persistente de limites de requisições; a chave é sempre um hash."""
+    __tablename__ = "auth_rate_limits"
+    bucket_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    window_started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
 class Job(Base):
     __tablename__ = "jobs"
     id: Mapped[int] = mapped_column(primary_key=True)
