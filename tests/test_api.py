@@ -181,3 +181,69 @@ def test_approval_rejects_stale_or_unconfirmed_compatibility(client, db, ready_p
     response = client.post(f"/api/attempts/{attempt['id']}/approve")
     assert response.status_code == 409
     assert "requisito(s) obrigatório(s)" in response.json()["detail"]
+
+
+def test_two_accounts_cannot_read_or_modify_each_others_private_data(client, db):
+    from jobfinder.models import User
+    from jobfinder.api import password_hasher
+
+    second_user = User(
+        email="second@example.com",
+        email_normalized="second@example.com",
+        full_name="Segunda Conta",
+        password_hash=password_hasher.hash("OutraSenhaSegura123!"),
+        role="user",
+        is_active=True,
+    )
+    db.add(second_user)
+    db.commit()
+
+    with TestClient(api_module.app, base_url="https://testserver") as second:
+        login = second.post("/api/auth/login", json={
+            "email": second_user.email,
+            "password": "OutraSenhaSegura123!",
+        })
+        assert login.status_code == 200
+        session = second.get("/api/auth/me")
+        assert session.status_code == 200
+        second.headers.update({"X-CSRF-Token": session.json()["csrf_token"]})
+
+        # Perfil é privado por conta.
+        assert client.put("/api/profile", json={"name": "Conta Primária"}).status_code == 200
+        assert client.get("/api/profile").json()["name"] == "Conta Primária"
+        assert second.get("/api/profile").json()["name"] != "Conta Primária"
+
+        # Tarefas e candidaturas não podem ser lidas nem alteradas pela outra conta.
+        task_response = client.post("/api/tasks", json={
+            "title": "Tarefa privada da primeira conta",
+            "description": "Não deve vazar",
+            "priority": "Média",
+            "notify": False,
+        })
+        assert task_response.status_code == 200
+        task_id = task_response.json()["task"]["id"]
+        assert second.get("/api/tasks").json() == []
+        assert second.put(f"/api/tasks/{task_id}", json={
+            "title": "Tentativa de alteração",
+            "description": "",
+            "due_date": None,
+            "priority": "Média",
+            "status": "Pendente",
+            "notify": False,
+        }).status_code == 404
+
+        job = make_job(db)
+        application_response = client.post(
+            f"/api/jobs/{job.id}/apply", json={"confirmed": True}
+        )
+        assert application_response.status_code == 200
+        application_id = application_response.json()["application_id"]
+        assert second.get("/api/applications").json() == []
+        assert second.put(f"/api/applications/{application_id}", json={
+            "status": "Entrevista",
+            "notes": "Alteração indevida",
+            "recruiter": "",
+            "deadline": None,
+        }).status_code == 404
+
+        assert second.get("/api/attempts").json() == []
