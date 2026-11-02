@@ -92,7 +92,7 @@ def validate_multitenant_schema() -> None:
         for index in inspector.get_indexes("applications")
         if index.get("unique")
     )
-    if ("user_id", "job_id") not in unique_sets:
+    if ("job_id", "user_id") not in unique_sets:
         raise RuntimeError(
             "Schema SaaS inválido: falta unicidade composta (user_id, job_id) em applications."
         )
