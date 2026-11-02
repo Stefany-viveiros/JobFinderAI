@@ -78,7 +78,7 @@ def test_job_filters(client, db):
 
 def test_manual_job_creation_and_duplicate_url(client):
     body = {"title": "Dev Jr", "url": "https://x.test/manual"}
-    assert client.post("/api/jobs", json=body).json()["message"] == "Vaga salva e adicionada ao seu painel."
+    assert client.post("/api/jobs", json=body).json()["message"] == "Vaga salva ou atualizada no seu painel."
     assert client.post("/api/jobs", json=body).json()["message"] == "Link já cadastrado."
 
 
