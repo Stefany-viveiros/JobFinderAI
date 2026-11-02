@@ -29,7 +29,7 @@ def test_pipeline_filters_dedupes_and_prepares_with_approval(db, ready_profile, 
     assert result["awaiting_approval"] == 1 and result["manual_required"] == 1
     assert statuses(db) == [("awaiting_approval", "email"), ("manual_required", "manual")]
     assert smtp_on == []                                         # nada enviado sem aprovação
-    again = run_agent(db, collector=feed())                      # segunda rodada não duplica nada
+    again = run_agent(db, collector=feed(), user_id=test_user.id)                      # segunda rodada não duplica nada
     assert again["saved"] == 0 and again["duplicates"] >= 3 and len(statuses(db)) == 2
 
 
@@ -43,7 +43,7 @@ def test_auto_send_respects_toggle_and_daily_limit(db, ready_profile, smtp_on, t
     assert r["sent"] == 0 and smtp_on == []                       # envio automático desativado
     assert r["prepared"] == 2
 
-    cfg = get_agent_settings(db)
+    cfg = get_agent_settings(db, user_id=test_user.id)
     cfg.auto_apply_enabled = True
     db.commit()
     for a in db.scalars(select(ApplicationAttempt)).all():
@@ -55,17 +55,17 @@ def test_auto_send_respects_toggle_and_daily_limit(db, ready_profile, smtp_on, t
 
 
 def test_incomplete_profile_collects_but_prepares_nothing(db, test_user):
-    r = run_agent(db, collector=feed())
+    r = run_agent(db, collector=feed(), user_id=test_user.id)
     assert r["saved"] == 2 and r["profile_gaps"] and "perfil" in r["message"]
     assert db.scalars(select(ApplicationAttempt)).all() == []
 
 
 def test_smtp_failure_is_recorded_as_failed(db, ready_profile, smtp_on, monkeypatch, test_user):
-    cfg = get_agent_settings(db)
+    cfg = get_agent_settings(db, user_id=test_user.id)
     cfg.require_approval, cfg.auto_apply_enabled = False, True
     db.commit()
     monkeypatch.setattr(applying, "_deliver", lambda m: (_ for _ in ()).throw(OSError("sem rede")))
-    r = run_agent(db, collector=feed())
+    r = run_agent(db, collector=feed(), user_id=test_user.id)
     assert r["failed"] == 1 and r["sent"] == 0
     assert ("failed", "email") in statuses(db)
 
@@ -79,7 +79,7 @@ def test_jobs_below_min_score_are_not_prepared(db, ready_profile, test_user):
 
 
 def test_agent_does_not_prepare_job_with_unconfirmed_mandatory_technology(db, ready_profile, test_user):
-    cfg = get_agent_settings(db)
+    cfg = get_agent_settings(db, user_id=test_user.id)
     cfg.min_score = 0
     db.commit()
     item = {
@@ -100,5 +100,5 @@ def test_agent_does_not_prepare_job_with_unconfirmed_mandatory_technology(db, re
 
 
 def test_default_agent_threshold_is_80(db, test_user):
-    cfg = get_agent_settings(db)
+    cfg = get_agent_settings(db, user_id=test_user.id)
     assert cfg.min_score == 80
