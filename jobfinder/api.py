@@ -978,9 +978,9 @@ def latest_market_analysis(db: Session = Depends(get_db)):
 
 
 @app.get("/api/market/profile-gap")
-def market_profile_gap(run_id: int | None = None, db: Session = Depends(get_db)):
+def market_profile_gap(request: Request, run_id: int | None = None, db: Session = Depends(get_db)):
     """Compara competências do snapshot com evidências registradas no perfil."""
-    return build_profile_gap(db, run_id=run_id)
+    return build_profile_gap(db, user_id=request.state.user_id, run_id=run_id)
 
 
 
@@ -1009,34 +1009,34 @@ class DevelopmentItemUpdate(BaseModel):
 
 
 @app.get("/api/market/development-plan")
-def get_market_development_plan(db: Session = Depends(get_db)):
-    return list_development_plan(db)
+def get_market_development_plan(request: Request, db: Session = Depends(get_db)):
+    return list_development_plan(db, user_id=request.state.user_id)
 
 
 @app.post("/api/market/development-plan")
-def add_market_development_item(payload: DevelopmentItemCreate, db: Session = Depends(get_db)):
+def add_market_development_item(payload: DevelopmentItemCreate, request: Request, db: Session = Depends(get_db)):
     try:
-        item = create_development_item(db, **payload.model_dump())
-        return {"message": "Meta adicionada ao plano.", "item": item, "plan": list_development_plan(db)}
+        item = create_development_item(db, **payload.model_dump(), user_id=request.state.user_id)
+        return {"message": "Meta adicionada ao plano.", "item": item, "plan": list_development_plan(db, user_id=request.state.user_id)}
     except ValueError as exc:
         raise HTTPException(400, str(exc))
 
 
 @app.patch("/api/market/development-plan/{item_id}")
-def edit_market_development_item(item_id: int, payload: DevelopmentItemUpdate, db: Session = Depends(get_db)):
+def edit_market_development_item(item_id: int, payload: DevelopmentItemUpdate, request: Request, db: Session = Depends(get_db)):
     data = payload.model_dump(exclude_unset=True)
     if "status" in data and data["status"] not in DEVELOPMENT_STATUSES:
         raise HTTPException(400, "Status de desenvolvimento inválido.")
     try:
-        item = update_development_item(db, item_id, data)
+        item = update_development_item(db, item_id, data, user_id=request.state.user_id)
         return {"message": "Progresso atualizado.", "item": item}
     except ValueError as exc:
         raise HTTPException(404 if "não encontrada" in str(exc) else 400, str(exc))
 
 
 @app.delete("/api/market/development-plan/{item_id}")
-def delete_market_development_item(item_id: int, db: Session = Depends(get_db)):
-    item = db.get(DevelopmentPlanItem, item_id)
+def delete_market_development_item(item_id: int, request: Request, db: Session = Depends(get_db)):
+    item = db.scalar(select(DevelopmentPlanItem).where(DevelopmentPlanItem.id == item_id, DevelopmentPlanItem.user_id == request.state.user_id))
     if item is None:
         raise HTTPException(404, "Meta de desenvolvimento não encontrada.")
     db.delete(item)
@@ -1055,22 +1055,22 @@ class SkillAssessmentSubmit(BaseModel):
 
 
 @app.get("/api/market/assessments")
-def get_market_assessments(skill_id: Optional[int] = Query(None, gt=0), db: Session = Depends(get_db)):
-    return list_skill_assessments(db, skill_id=skill_id)
+def get_market_assessments(request: Request, skill_id: Optional[int] = Query(None, gt=0), db: Session = Depends(get_db)):
+    return list_skill_assessments(db, user_id=request.state.user_id, skill_id=skill_id)
 
 
 @app.post("/api/market/assessments")
-def start_market_assessment(payload: SkillAssessmentCreate, db: Session = Depends(get_db)):
+def start_market_assessment(payload: SkillAssessmentCreate, request: Request, db: Session = Depends(get_db)):
     try:
-        return {"attempt": create_skill_assessment(db, **payload.model_dump())}
+        return {"attempt": create_skill_assessment(db, **payload.model_dump(), user_id=request.state.user_id)}
     except ValueError as exc:
         raise HTTPException(400, str(exc))
 
 
 @app.post("/api/market/assessments/{attempt_id}/submit")
-def submit_market_assessment(attempt_id: int, payload: SkillAssessmentSubmit, db: Session = Depends(get_db)):
+def submit_market_assessment(attempt_id: int, payload: SkillAssessmentSubmit, request: Request, db: Session = Depends(get_db)):
     try:
-        attempt = submit_skill_assessment(db, attempt_id, **payload.model_dump())
+        attempt = submit_skill_assessment(db, attempt_id, **payload.model_dump(), user_id=request.state.user_id)
         return {"message": "Autoavaliação registrada.", "attempt": attempt}
     except ValueError as exc:
         raise HTTPException(404 if "não encontrado" in str(exc) else 400, str(exc))
