@@ -5,7 +5,7 @@ import secrets
 import smtplib
 from datetime import timedelta
 from pwdlib import PasswordHash
-from .models import User, UserSession, PasswordResetToken
+from .models import User, UserSession, PasswordResetToken, AuthRateLimit
 from .auth import SESSION_COOKIE, COOKIE_SECURE, create_session, clear_session_cookie
 import os
 from typing import Optional
@@ -14,7 +14,9 @@ from fastapi import FastAPI, Depends, HTTPException, Query, UploadFile, File, Re
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, case
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.orm import Session, joinedload, selectinload, aliased
 
 from .db import init_db, SessionLocal, validate_multitenant_schema
@@ -148,14 +150,66 @@ def _token_hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+def _enforce_rate_limit(
+    db: Session, request: Request, *, scope: str, subject: str,
+    limit: int, window_seconds: int,
+) -> None:
+    """Aplica limite persistente e atômico por janela, compatível com SQLite/PostgreSQL."""
+    client_host = request.client.host if request.client else "unknown"
+    key = _token_hash(f"{scope}|{client_host}|{subject}")
+    now = datetime.utcnow()
+    cutoff = now - timedelta(seconds=window_seconds)
+    dialect = db.get_bind().dialect.name
+    values = {
+        "bucket_key": key,
+        "window_started_at": now,
+        "attempts": 1,
+    }
+    if dialect == "sqlite":
+        statement = sqlite_insert(AuthRateLimit).values(**values)
+    elif dialect == "postgresql":
+        statement = postgresql_insert(AuthRateLimit).values(**values)
+    else:
+        raise RuntimeError("Banco não suportado para controle de requisições.")
+
+    expired_window = AuthRateLimit.window_started_at <= cutoff
+    statement = statement.on_conflict_do_update(
+        index_elements=[AuthRateLimit.bucket_key],
+        set_={
+            "attempts": case(
+                (expired_window, 1),
+                else_=AuthRateLimit.attempts + 1,
+            ),
+            "window_started_at": case(
+                (expired_window, now),
+                else_=AuthRateLimit.window_started_at,
+            ),
+        },
+    ).returning(AuthRateLimit.attempts, AuthRateLimit.window_started_at)
+
+    attempts, window_started = db.execute(statement).one()
+    db.commit()
+    if attempts > limit:
+        retry_after = max(
+            1,
+            int((window_started + timedelta(seconds=window_seconds) - now).total_seconds()),
+        )
+        raise HTTPException(
+            status_code=429,
+            detail="Muitas tentativas. Aguarde antes de tentar novamente.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+
 def _public_user(user: User) -> dict:
     return {"id": user.id, "email": user.email, "full_name": user.full_name, "role": user.role}
 
 
 @app.post("/api/auth/register")
-def register(payload: RegisterInput, response: Response, db: Session = Depends(get_db)):
+def register(payload: RegisterInput, request: Request, response: Response, db: Session = Depends(get_db)):
     email = payload.email.strip()
     normalized = email.casefold()
+    _enforce_rate_limit(db, request, scope="auth-register-ip", subject="all", limit=5, window_seconds=3600)
     if db.scalar(select(User).where(User.email_normalized == normalized)):
         raise HTTPException(409, "Já existe uma conta com esse e-mail.")
     user = User(
@@ -174,8 +228,11 @@ def register(payload: RegisterInput, response: Response, db: Session = Depends(g
 
 
 @app.post("/api/auth/login")
-def login(payload: LoginInput, response: Response, db: Session = Depends(get_db)):
-    user = db.scalar(select(User).where(User.email_normalized == payload.email.strip().casefold()))
+def login(payload: LoginInput, request: Request, response: Response, db: Session = Depends(get_db)):
+    normalized_email = payload.email.strip().casefold()
+    _enforce_rate_limit(db, request, scope="auth-login-ip", subject="all", limit=30, window_seconds=900)
+    _enforce_rate_limit(db, request, scope="auth-login-email", subject=normalized_email, limit=10, window_seconds=900)
+    user = db.scalar(select(User).where(User.email_normalized == normalized_email))
     if not user or not user.is_active or not password_hasher.verify(payload.password, user.password_hash):
         raise HTTPException(401, "E-mail ou senha inválidos.")
     create_session(response, db, user)
@@ -209,9 +266,12 @@ def auth_me(request: Request, db: Session = Depends(get_db)):
 
 
 @app.post("/api/auth/forgot-password")
-def forgot_password(payload: ForgotPasswordInput, db: Session = Depends(get_db)):
+def forgot_password(payload: ForgotPasswordInput, request: Request, db: Session = Depends(get_db)):
     # Resposta idêntica exista ou não a conta, para não revelar cadastros.
-    user = db.scalar(select(User).where(User.email_normalized == payload.email.strip().casefold()))
+    normalized_email = payload.email.strip().casefold()
+    _enforce_rate_limit(db, request, scope="auth-forgot-ip", subject="all", limit=10, window_seconds=3600)
+    _enforce_rate_limit(db, request, scope="auth-forgot-email", subject=normalized_email, limit=3, window_seconds=3600)
+    user = db.scalar(select(User).where(User.email_normalized == normalized_email))
     if user:
         raw_token = secrets.token_urlsafe(40)
         reset = PasswordResetToken(
@@ -247,7 +307,9 @@ def forgot_password(payload: ForgotPasswordInput, db: Session = Depends(get_db))
 
 
 @app.post("/api/auth/reset-password")
-def reset_password(payload: ResetPasswordInput, db: Session = Depends(get_db)):
+def reset_password(payload: ResetPasswordInput, request: Request, db: Session = Depends(get_db)):
+    _enforce_rate_limit(db, request, scope="auth-reset-ip", subject="all", limit=10, window_seconds=3600)
+    _enforce_rate_limit(db, request, scope="auth-reset-token", subject=_token_hash(payload.token), limit=5, window_seconds=3600)
     reset = db.scalar(select(PasswordResetToken).where(
         PasswordResetToken.token_hash == _token_hash(payload.token),
         PasswordResetToken.used_at.is_(None),
@@ -950,8 +1012,12 @@ class MarketRunRequest(BaseModel):
 
 
 @app.post("/api/market/analysis/run")
-def run_market_analysis(payload: MarketRunRequest, db: Session = Depends(get_db)):
+def run_market_analysis(payload: MarketRunRequest, request: Request, db: Session = Depends(get_db)):
     """Indexa vagas alvo e cria um snapshot auditável de inteligência de mercado."""
+    _enforce_rate_limit(
+        db, request, scope="market-analysis-user",
+        subject=str(request.state.user_id), limit=1, window_seconds=600,
+    )
     try:
         indexed = index_unprocessed_jobs(db)
         result = create_market_snapshot(
