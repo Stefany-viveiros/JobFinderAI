@@ -4,7 +4,12 @@ import os
 import tempfile
 
 _TMP = tempfile.mkdtemp(prefix="jobfinder-test-")
-os.environ["JOBFINDER_DB_PATH"] = os.path.join(_TMP, "test.db")  # antes de importar jobfinder
+_TEST_POSTGRES_URL = os.getenv("TEST_POSTGRES_URL", "").strip()
+if _TEST_POSTGRES_URL:
+    # No job PostgreSQL, a suíte inteira (incluindo APIs) usa o banco efêmero.
+    os.environ["DATABASE_URL"] = _TEST_POSTGRES_URL
+else:
+    os.environ["JOBFINDER_DB_PATH"] = os.path.join(_TMP, "test.db")  # antes de importar jobfinder
 
 import pytest  # noqa: E402
 from sqlalchemy import select  # noqa: E402
