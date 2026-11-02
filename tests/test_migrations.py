@@ -68,7 +68,6 @@ def test_migration_refuses_duplicate_applications_for_same_user(tmp_path):
         sa.Column("id", sa.Integer, primary_key=True),
         sa.Column("user_id", sa.Integer, nullable=True),
         sa.Column("job_id", sa.Integer, nullable=False),
-        sa.UniqueConstraint("job_id", name="uq_applications_job_id"),
     )
     metadata.create_all(engine)
     with engine.begin() as connection:
