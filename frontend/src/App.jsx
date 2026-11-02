@@ -8,7 +8,8 @@ import {
   SlidersHorizontal, Sparkles, Star, Target, Trash2, UserRound, X, Zap,
 } from 'lucide-react'
 
-const API = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api').replace(/\/$/, '')
+const API = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '')
+let csrfToken = ''
 const STATUS = ['Nova oportunidade', 'Salva', 'Candidatura enviada', 'Teste técnico', 'Entrevista', 'Aprovada', 'Reprovada', 'Encerrada']
 const emptyJob = { title: '', company: '', url: '', location: '', description: '' }
 const emptyTask = { title: '', description: '', due_date: '', priority: 'Média', notify: true }
@@ -18,10 +19,12 @@ const emptyProfile = {
 }
 
 async function api(path, options = {}) {
-  const res = await fetch(`${API}${path}`, {
-    ...options,
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
-  })
+  const method = (options.method || 'GET').toUpperCase()
+  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) }
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && csrfToken) headers['X-CSRF-Token'] = csrfToken
+  const res = await fetch(`${API}${path}`, { ...options, credentials: 'include', headers })
+  const returnedCsrf = res.headers.get('X-CSRF-Token')
+  if (returnedCsrf) csrfToken = returnedCsrf
   const body = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(body.detail || body.message || `Erro ${res.status}`)
   return body
@@ -29,7 +32,7 @@ async function api(path, options = {}) {
 const datePt = (d) => d ? new Date(`${d.slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : 'Sem prazo'
 const initials = (name) => (name || 'JF').trim().split(/\s+/).slice(0, 2).map(x => x[0]).join('').toUpperCase()
 
-function App() {
+function WorkspaceApp({ user, onLogout }) {
   const [page, setPage] = useState('Dashboard')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [dashboard, setDashboard] = useState(null)
@@ -215,7 +218,7 @@ function App() {
     </aside>
     {sidebarOpen && <button className="mobile-scrim" onClick={() => setSidebarOpen(false)} aria-label="Fechar menu"/>}
     <main className="main-area">
-      <header className="topbar"><div className="topbar-left"><button className="icon-btn mobile-menu" onClick={() => setSidebarOpen(true)} aria-label="Abrir menu"><Menu size={21}/></button><div className="breadcrumb">Workspace <span>/</span> <strong>{pageLabel}</strong></div></div><div className="topbar-right"><span className="today-label"><CalendarDays size={15}/>{todayText}</span><button className="icon-btn notification-btn" onClick={() => changePage('Tarefas')} title="Ver tarefas"><Bell size={19}/>{metrics.overdue_tasks > 0 && <i/>}</button><div className="top-avatar">{initials(profile.name)}</div></div></header>
+      <header className="topbar"><div className="topbar-left"><button className="icon-btn mobile-menu" onClick={() => setSidebarOpen(true)} aria-label="Abrir menu"><Menu size={21}/></button><div className="breadcrumb">Workspace <span>/</span> <strong>{pageLabel}</strong></div></div><div className="topbar-right"><span className="today-label"><CalendarDays size={15}/>{todayText}</span><button className="icon-btn notification-btn" onClick={() => changePage('Tarefas')} title="Ver tarefas"><Bell size={19}/>{metrics.overdue_tasks > 0 && <i/>}</button><div className="top-avatar" title={user.email}>{initials(profile.name || user.full_name)}</div><button className="icon-btn" onClick={onLogout} title="Sair" aria-label="Sair"><LogOut size={18}/></button></div></header>
       <div className="content-wrap">
         {loading && !dashboard ? <div className="loading-panel"><LoaderCircle className="spin" size={25}/><span>Carregando seu workspace...</span></div> : <>
           {page === 'Dashboard' && <DashboardPage dashboard={dashboard} jobs={jobs} onNavigate={changePage} onCreateTask={() => { setEditingTask(null); setTaskForm(emptyTask); setModal('task') }} onFavorite={toggleFavorite} />}
