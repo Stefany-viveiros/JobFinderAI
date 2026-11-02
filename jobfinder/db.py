@@ -107,12 +107,21 @@ def init_db():
     from . import models  # noqa: F401
     from .filters import dedupe_key, classify_level
 
+    # Detecta alterações estruturais antes de create_all. O backup é feito
+    # somente quando há colunas legadas a migrar, evitando uma cópia a cada
+    # inicialização (inclusive em reinícios do worker e testes de idempotência).
+    missing = _missing_columns()
+    if (
+        engine.dialect.name == "sqlite"
+        and DB_PATH.exists()
+        and DB_PATH.stat().st_size
+        and missing
+    ):
+        backup_database()
+
     # Cria primeiro tabelas novas (especialmente users) para que FKs das
     # colunas adicionadas abaixo funcionem também no PostgreSQL.
-    if engine.dialect.name == "sqlite" and DB_PATH.exists() and DB_PATH.stat().st_size:
-        backup_database()
     Base.metadata.create_all(bind=engine)
-    missing = _missing_columns()
     if missing:
         with engine.begin() as conn:
             for table, column, ddl in missing:
