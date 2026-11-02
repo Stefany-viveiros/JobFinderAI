@@ -158,12 +158,12 @@ def test_profile_update_recomputes_scores(client, db):
     assert client.get("/api/jobs").json()[0]["compatibility"] > 0
 
 
-def test_approval_rejects_stale_or_unconfirmed_compatibility(client, db, ready_profile):
+def test_approval_rejects_stale_or_unconfirmed_compatibility(client, db, ready_profile, test_user):
     from jobfinder.agent import get_agent_settings
 
     job = make_job(db, compatibility=55)
     attempt = client.post(f"/api/jobs/{job.id}/prepare").json()["attempt"]
-    cfg = get_agent_settings(db)
+    cfg = get_agent_settings(db, user_id=test_user.id)
     cfg.min_score = 60
     db.commit()
     response = client.post(f"/api/attempts/{attempt['id']}/approve")
