@@ -183,7 +183,7 @@ def test_approval_rejects_stale_or_unconfirmed_compatibility(client, db, ready_p
     assert "requisito(s) obrigatório(s)" in response.json()["detail"]
 
 
-def test_two_accounts_cannot_read_or_modify_each_others_private_data(client, db):
+def test_two_accounts_cannot_read_or_modify_each_others_private_data(client, db, test_user):
     from jobfinder.models import User
     from jobfinder.api import password_hasher
 
@@ -301,15 +301,7 @@ def test_two_accounts_cannot_read_or_modify_each_others_private_data(client, db)
         }).status_code == 404
 
         db.add(NotificationLog(
-            user_id=second_user.id + 1000000,
-            task_id=None,
-            recipient="private@example.com",
-            send_date="2026-11-02",
-            status="sent",
-            detail="notificação de outra conta",
-        ))
-        db.add(NotificationLog(
-            user_id=client.get("/api/auth/me").json()["user"]["id"],
+            user_id=test_user.id,
             task_id=None,
             recipient="primary@example.com",
             send_date="2026-11-02",
