@@ -211,6 +211,7 @@ def test_rate_limit_cleanup_removes_expired_buckets(client, db):
         "password": "SenhaIncorreta123!",
     })
     assert response.status_code == 401
+    db.expire_all()
     assert db.get(AuthRateLimit, "a" * 64) is None
 
 def test_market_analysis_is_rate_limited_per_account(client):
