@@ -10,7 +10,7 @@ from tests.conftest import make_job
 def client(monkeypatch, test_user):
     # Exercita a API no modo SaaS real: sessão autenticada, CSRF e schema validado.
     monkeypatch.setenv("MULTITENANT_READY", "true")
-    with TestClient(api_module.app) as c:
+    with TestClient(api_module.app, base_url="https://testserver") as c:
         login = c.post("/api/auth/login", json={
             "email": test_user.email, "password": "SenhaSegura123!"
         })
