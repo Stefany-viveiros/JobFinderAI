@@ -8,7 +8,8 @@ import {
   SlidersHorizontal, Sparkles, Star, Target, Trash2, UserRound, X, Zap,
 } from 'lucide-react'
 
-const API = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api').replace(/\/$/, '')
+const API = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '')
+let csrfToken = ''
 const STATUS = ['Nova oportunidade', 'Salva', 'Candidatura enviada', 'Teste técnico', 'Entrevista', 'Aprovada', 'Reprovada', 'Encerrada']
 const emptyJob = { title: '', company: '', url: '', location: '', description: '' }
 const emptyTask = { title: '', description: '', due_date: '', priority: 'Média', notify: true }
@@ -18,10 +19,12 @@ const emptyProfile = {
 }
 
 async function api(path, options = {}) {
-  const res = await fetch(`${API}${path}`, {
-    ...options,
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
-  })
+  const method = (options.method || 'GET').toUpperCase()
+  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) }
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && csrfToken) headers['X-CSRF-Token'] = csrfToken
+  const res = await fetch(`${API}${path}`, { ...options, credentials: 'include', headers })
+  const returnedCsrf = res.headers.get('X-CSRF-Token')
+  if (returnedCsrf) csrfToken = returnedCsrf
   const body = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(body.detail || body.message || `Erro ${res.status}`)
   return body
@@ -29,7 +32,7 @@ async function api(path, options = {}) {
 const datePt = (d) => d ? new Date(`${d.slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : 'Sem prazo'
 const initials = (name) => (name || 'JF').trim().split(/\s+/).slice(0, 2).map(x => x[0]).join('').toUpperCase()
 
-function App() {
+function WorkspaceApp({ user, onLogout }) {
   const [page, setPage] = useState('Dashboard')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [dashboard, setDashboard] = useState(null)
@@ -215,7 +218,7 @@ function App() {
     </aside>
     {sidebarOpen && <button className="mobile-scrim" onClick={() => setSidebarOpen(false)} aria-label="Fechar menu"/>}
     <main className="main-area">
-      <header className="topbar"><div className="topbar-left"><button className="icon-btn mobile-menu" onClick={() => setSidebarOpen(true)} aria-label="Abrir menu"><Menu size={21}/></button><div className="breadcrumb">Workspace <span>/</span> <strong>{pageLabel}</strong></div></div><div className="topbar-right"><span className="today-label"><CalendarDays size={15}/>{todayText}</span><button className="icon-btn notification-btn" onClick={() => changePage('Tarefas')} title="Ver tarefas"><Bell size={19}/>{metrics.overdue_tasks > 0 && <i/>}</button><div className="top-avatar">{initials(profile.name)}</div></div></header>
+      <header className="topbar"><div className="topbar-left"><button className="icon-btn mobile-menu" onClick={() => setSidebarOpen(true)} aria-label="Abrir menu"><Menu size={21}/></button><div className="breadcrumb">Workspace <span>/</span> <strong>{pageLabel}</strong></div></div><div className="topbar-right"><span className="today-label"><CalendarDays size={15}/>{todayText}</span><button className="icon-btn notification-btn" onClick={() => changePage('Tarefas')} title="Ver tarefas"><Bell size={19}/>{metrics.overdue_tasks > 0 && <i/>}</button><div className="top-avatar" title={user.email}>{initials(profile.name || user.full_name)}</div><button className="icon-btn" onClick={onLogout} title="Sair" aria-label="Sair"><LogOut size={18}/></button></div></header>
       <div className="content-wrap">
         {loading && !dashboard ? <div className="loading-panel"><LoaderCircle className="spin" size={25}/><span>Carregando seu workspace...</span></div> : <>
           {page === 'Dashboard' && <DashboardPage dashboard={dashboard} jobs={jobs} onNavigate={changePage} onCreateTask={() => { setEditingTask(null); setTaskForm(emptyTask); setModal('task') }} onFavorite={toggleFavorite} />}
@@ -227,7 +230,7 @@ function App() {
           {page === 'Perfil e configurações' && <ProfilePage profile={profile} setProfile={setProfile} onSave={saveProfile} busy={busy} />}
         </>}
       </div>
-      <footer className="footer"><span>© {new Date().getFullYear()} JobFinder AI</span><span><span className="status-dot"/> Seus dados ficam armazenados localmente <CircleHelp size={14}/></span></footer>
+      <footer className="footer"><span>© {new Date().getFullYear()} JobFinder AI</span><span><span className="status-dot"/> Seus dados ficam vinculados à sua conta <CircleHelp size={14}/></span></footer>
     </main>
     {notice && <div className={`toast ${notice.type}`}><span className="toast-symbol">{notice.type === 'error' ? <CircleHelp size={18}/> : <CheckCircle2 size={18}/>}</span><span>{notice.message}</span><button className="icon-btn" onClick={() => setNotice(null)}><X size={16}/></button></div>}
     {modal && <Modal title={modal === 'job' ? 'Adicionar oportunidade' : modal === 'task' ? (editingTask ? 'Editar tarefa' : 'Nova tarefa') : 'Atualizar candidatura'} onClose={() => { setModal(''); setEditingTask(null); setEditingApp(null) }}>
@@ -311,7 +314,7 @@ function ProfilePage({ profile, setProfile, onSave, busy }) {
     form.append('file', file)
     setImporting(true); setImportError(''); setImportMessage('')
     try {
-      const response = await fetch(`${API}/profile/import`, { method: 'POST', body: form })
+      const response = await fetch(`${API}/profile/import`, { method: 'POST', body: form, credentials: 'include', headers: csrfToken ? { 'X-CSRF-Token': csrfToken } : {} })
       const body = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(body.detail || `Erro ${response.status}`)
       setProfile(current => {
@@ -402,5 +405,72 @@ function Field({ label, children }) { return <label className="field"><span>{lab
 function Modal({ title, children, onClose }) { useEffect(() => { const f = e => e.key === 'Escape' && onClose(); document.addEventListener('keydown', f); document.body.style.overflow = 'hidden'; return () => {document.removeEventListener('keydown',f);document.body.style.overflow = ''} }, [onClose]); return <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && onClose()}><div className="modal"><div className="modal-header"><div><span className="eyebrow">JOBFINDER AI</span><h2>{title}</h2></div><button className="icon-btn" onClick={onClose} aria-label="Fechar"><X size={20}/></button></div>{children}</div></div> }
 function ModalActions({ busy, onCancel, submit }) { return <div className="modal-actions"><button type="button" className="btn btn-secondary" onClick={onCancel}>Cancelar</button><button type="submit" disabled={busy} className="btn btn-primary">{busy ? <LoaderCircle size={15} className="spin"/> : <Check size={15}/>} {submit}</button></div> }
 function EmptyState({ icon: Icon, title, text, action }) { return <div className="empty-state"><div className="empty-icon"><Icon size={23}/></div><strong>{title}</strong><p>{text}</p>{action}</div> }
+
+
+function App() {
+  const [user, setUser] = useState(null)
+  const [checking, setChecking] = useState(true)
+  const [mode, setMode] = useState(new URLSearchParams(window.location.search).has('token') ? 'reset' : 'login')
+  const [values, setValues] = useState({ name: '', email: '', password: '', token: new URLSearchParams(window.location.search).get('token') || '' })
+  const [busy, setBusy] = useState(false)
+  const [feedback, setFeedback] = useState('')
+
+  useEffect(() => {
+    api('/auth/me').then(data => { csrfToken = data.csrf_token || ''; setUser(data.user) })
+      .catch(() => { csrfToken = ''; setUser(null) })
+      .finally(() => setChecking(false))
+  }, [])
+
+  async function submit(e) {
+    e.preventDefault(); setBusy(true); setFeedback('')
+    try {
+      if (mode === 'forgot') {
+        const r = await api('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email: values.email }) })
+        setFeedback(r.message)
+      } else if (mode === 'reset') {
+        const r = await api('/auth/reset-password', { method: 'POST', body: JSON.stringify({ token: values.token, password: values.password }) })
+        setFeedback(r.message); setMode('login'); window.history.replaceState({}, '', window.location.pathname)
+      } else {
+        const r = await api(mode === 'register' ? '/auth/register' : '/auth/login', {
+          method: 'POST',
+          body: JSON.stringify(mode === 'register'
+            ? { full_name: values.name, email: values.email, password: values.password }
+            : { email: values.email, password: values.password }),
+        })
+        const session = await api('/auth/me')
+        csrfToken = session.csrf_token || ''; setUser(r.user || session.user)
+      }
+    } catch (err) { setFeedback(err.message || 'Não foi possível concluir a solicitação.') }
+    finally { setBusy(false) }
+  }
+
+  async function logout() {
+    try { await api('/auth/logout', { method: 'POST' }) }
+    catch (err) { setFeedback(err.message) }
+    csrfToken = ''; setUser(null); setMode('login')
+  }
+
+  if (checking) return <main className="auth-screen"><section className="auth-card">Verificando sua sessão...</section></main>
+  if (user) return <WorkspaceApp user={user} onLogout={logout} />
+
+  const title = mode === 'register' ? 'Crie sua conta' : mode === 'forgot' ? 'Recuperar senha' : mode === 'reset' ? 'Redefinir senha' : 'Bem-vinda de volta'
+  return <main className="auth-screen"><section className="auth-card">
+    <div className="auth-brand">jobfinder<span>AI</span></div>
+    <p className="auth-eyebrow">SEU ESPAÇO DE CARREIRA</p><h1>{title}</h1>
+    <p className="auth-description">{mode === 'register' ? 'Organize sua busca por oportunidades em um só lugar.' : mode === 'forgot' ? 'Informe seu e-mail para receber as instruções.' : mode === 'reset' ? 'Escolha uma nova senha com pelo menos 12 caracteres.' : 'Entre para acessar seu workspace profissional.'}</p>
+    {feedback && <div className="auth-message" role="status">{feedback}</div>}
+    <form className="auth-form" onSubmit={submit}>
+      {mode === 'register' && <label>Nome completo<input required minLength="2" autoComplete="name" value={values.name} onChange={e => setValues(v => ({ ...v, name: e.target.value }))}/></label>}
+      {mode === 'reset' && <label>Token<input required value={values.token} onChange={e => setValues(v => ({ ...v, token: e.target.value }))}/></label>}
+      {mode !== 'reset' && <label>E-mail<input required type="email" autoComplete="email" value={values.email} onChange={e => setValues(v => ({ ...v, email: e.target.value }))}/></label>}
+      {mode !== 'forgot' && <label>{mode === 'reset' ? 'Nova senha' : 'Senha'}<input required type="password" minLength={mode === 'login' ? 1 : 12} maxLength="128" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} value={values.password} onChange={e => setValues(v => ({ ...v, password: e.target.value }))}/>{mode !== 'login' && <small>Mínimo de 12 caracteres.</small>}</label>}
+      <button className="btn btn-primary auth-submit" disabled={busy}>{busy ? 'Aguarde...' : mode === 'register' ? 'Criar conta' : mode === 'forgot' ? 'Enviar instruções' : mode === 'reset' ? 'Salvar nova senha' : 'Entrar'}</button>
+    </form>
+    <div className="auth-links">
+      {mode === 'login' && <><button onClick={() => { setMode('forgot'); setFeedback('') }}>Esqueci minha senha</button><span>Não tem conta?</span><button onClick={() => { setMode('register'); setFeedback('') }}>Criar conta</button></>}
+      {mode !== 'login' && <button onClick={() => { setMode('login'); setFeedback('') }}>Voltar para entrar</button>}
+    </div>
+  </section></main>
+}
 
 export default App

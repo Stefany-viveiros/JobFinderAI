@@ -17,13 +17,13 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select, func, or_
 from sqlalchemy.orm import Session, joinedload, selectinload, aliased
 
-from .db import init_db, SessionLocal
+from .db import init_db, SessionLocal, validate_multitenant_schema
 from .models import (
     Job, JobMatch, Application, Task, Profile, NotificationLog, ApplicationAttempt,
     Education, Experience, Course, Certification, PortfolioProject,
     MarketAnalysisRun, MarketSkillMetric, MarketSkillPair, Skill, DevelopmentPlanItem,
 )
-from .service import get_profile, save_jobs, refresh_scores, create_task, complete_task, STATUSES, collect_and_save_ranked
+from .service import get_profile, save_jobs, refresh_scores, create_task, complete_task, STATUSES, collect_and_save_ranked, collect_for_user, refresh_user_scores
 from .sources import SOURCES, SOURCE_INFO, LINK_ONLY_SOURCES, collect_selected, external_search_links
 from . import applying
 from .agent import get_agent_settings, run_agent, TARGET_LEVELS
@@ -80,7 +80,7 @@ async def require_authenticated_session(request, call_next):
     path = request.url.path
     public_paths = {
         "/api/health", "/api/auth/register", "/api/auth/login",
-        "/api/auth/logout", "/api/auth/forgot-password", "/api/auth/reset-password",
+        "/api/auth/forgot-password", "/api/auth/reset-password",
     }
     if not path.startswith("/api/") or path in public_paths or path == "/api/auth/me":
         return await call_next(request)
@@ -115,6 +115,8 @@ async def require_authenticated_session(request, call_next):
 @app.on_event("startup")
 def startup():
     init_db()
+    if os.getenv('MULTITENANT_READY', 'false').lower() == 'true':
+        validate_multitenant_schema()
     # Perfis individuais são criados sob demanda após autenticação.
 
 
@@ -563,24 +565,26 @@ def list_jobs(
 
 
 @app.post("/api/jobs")
-def create_job(payload: JobCreate, db: Session = Depends(get_db)):
+def create_job(payload: JobCreate, request: Request, db: Session = Depends(get_db)):
     url = payload.url.strip()
     if not url:
         raise HTTPException(400, "Informe o link original da vaga.")
     item = payload.model_dump()
     item.update({"source": "Manual", "source_id": None, "published_at": payload.published_at})
-    count = save_jobs([item])
+    result = collect_for_user(db, [item], user_id=request.state.user_id, limit=1, only_target=False)
     existing = db.scalar(select(Job).where(Job.url == url))
     if not existing:
         raise HTTPException(400, "Não foi possível salvar a vaga.")
-    if count == 0:
-        return {"message": "Link já cadastrado.", "job": job_dict(existing)}
-    db.refresh(existing)
-    return {"message": "Vaga salva com sucesso.", "job": job_dict(existing)}
+    message = (
+        "Link já cadastrado."
+        if result["duplicates"]
+        else "Vaga salva ou atualizada no seu painel."
+    )
+    return {"message": message, "job": job_dict(existing, db=db, user_id=request.state.user_id)}
 
 
 @app.post("/api/jobs/collect")
-def collect_jobs(payload: dict, db: Session = Depends(get_db)):
+def collect_jobs(payload: dict, request: Request, db: Session = Depends(get_db)):
     names = payload.get("sources") or list(SOURCES.keys())
     link_only = [n for n in names if n in LINK_ONLY_SOURCES]
     if link_only:
@@ -598,7 +602,7 @@ def collect_jobs(payload: dict, db: Session = Depends(get_db)):
         raise HTTPException(400, "O limite deve ser um número entre 1 e 80.")
 
     items, errors = collect_selected(names)
-    result = collect_and_save_ranked(items, limit, only_target=bool(payload.get("only_target", True)))
+    result = collect_for_user(db, items, user_id=request.state.user_id, limit=limit, only_target=bool(payload.get("only_target", True)))
 
     return {
         "received": len(items),
@@ -689,13 +693,19 @@ def approve_attempt(attempt_id: int, request: Request, db: Session = Depends(get
     """Aprova e envia por e-mail. O status final reflete o resultado real do envio."""
     attempt = _attempt_or_404(db, attempt_id, request.state.user_id)
     agent_settings = get_agent_settings(db, user_id=request.state.user_id)
-    if attempt.job and (attempt.job.compatibility or 0) < agent_settings.min_score:
+    match = db.scalar(select(JobMatch).where(
+        JobMatch.user_id == request.state.user_id,
+        JobMatch.job_id == attempt.job_id,
+    ))
+    compatibility = match.compatibility if match else 0
+    missing_reasons = match.missing_reasons if match else ""
+    if compatibility < agent_settings.min_score:
         raise HTTPException(
             409,
-            f"Compatibilidade atual ({round(attempt.job.compatibility or 0)}%) abaixo do mínimo configurado "
+            f"Compatibilidade atual ({round(compatibility)}%) abaixo do mínimo configurado "
             f"({agent_settings.min_score}%). Revise a vaga antes de aprovar."
         )
-    if attempt.job and "Requisito(s) obrigatório(s) não identificado(s)" in (attempt.job.missing_reasons or ""):
+    if "Requisito(s) obrigatório(s) não identificado(s)" in (missing_reasons or ""):
         raise HTTPException(
             409,
             "Há requisito(s) obrigatório(s) que ainda não foram identificados no seu perfil. "
@@ -712,7 +722,7 @@ def approve_attempt(attempt_id: int, request: Request, db: Session = Depends(get
 
 @app.post("/api/attempts/{attempt_id}/cancel")
 def cancel_attempt(attempt_id: int, request: Request, db: Session = Depends(get_db)):
-    attempt = _attempt_or_404(db, attempt_id)
+    attempt = _attempt_or_404(db, attempt_id, request.state.user_id)
     try:
         applying.cancel_attempt(db, attempt)
     except applying.ApplyError as exc:
@@ -732,7 +742,7 @@ def agent_settings_dict(db, user_id=None):
     p = get_profile(db, user_id=user_id)
     return {"auto_apply_enabled": s.auto_apply_enabled, "require_approval": s.require_approval,
             "daily_limit": s.daily_limit, "min_score": s.min_score,
-            "sent_today": applying.sent_today_count(db),
+            "sent_today": applying.sent_today_count(db, user_id=user_id),
             "email_ready": settings.smtp_can_send_applications,
             "profile_gaps": applying.profile_gaps(p), "profile_ready": not applying.profile_gaps(p)}
 
@@ -870,7 +880,7 @@ def update_profile(payload: ProfileUpdate, request: Request, db: Session = Depen
             value = max(0, min(100, value))
         setattr(p, key, value)
     db.commit()
-    refresh_scores(db)
+    refresh_user_scores(db, request.state.user_id)
     db.refresh(p)
     return {"message": "Perfil salvo e compatibilidades recalculadas.", "profile": profile_dict(p)}
 
@@ -918,7 +928,7 @@ def notification_history(request: Request, db: Session = Depends(get_db)):
 
 
 @app.post("/api/notifications/send")
-def send_notifications():
+def send_notifications(request: Request):
     # O lembrete SMTP legado usa um destinatário global. Mantido bloqueado no SaaS
     # até existir configuração e envio isolados por usuário.
     raise HTTPException(503, "Envio de lembretes por e-mail ficará disponível quando a configuração individual estiver pronta.")
@@ -981,9 +991,9 @@ def latest_market_analysis(db: Session = Depends(get_db)):
 
 
 @app.get("/api/market/profile-gap")
-def market_profile_gap(run_id: int | None = None, db: Session = Depends(get_db)):
+def market_profile_gap(request: Request, run_id: int | None = None, db: Session = Depends(get_db)):
     """Compara competências do snapshot com evidências registradas no perfil."""
-    return build_profile_gap(db, run_id=run_id)
+    return build_profile_gap(db, user_id=request.state.user_id, run_id=run_id)
 
 
 
@@ -1012,34 +1022,34 @@ class DevelopmentItemUpdate(BaseModel):
 
 
 @app.get("/api/market/development-plan")
-def get_market_development_plan(db: Session = Depends(get_db)):
-    return list_development_plan(db)
+def get_market_development_plan(request: Request, db: Session = Depends(get_db)):
+    return list_development_plan(db, user_id=request.state.user_id)
 
 
 @app.post("/api/market/development-plan")
-def add_market_development_item(payload: DevelopmentItemCreate, db: Session = Depends(get_db)):
+def add_market_development_item(payload: DevelopmentItemCreate, request: Request, db: Session = Depends(get_db)):
     try:
-        item = create_development_item(db, **payload.model_dump())
-        return {"message": "Meta adicionada ao plano.", "item": item, "plan": list_development_plan(db)}
+        item = create_development_item(db, **payload.model_dump(), user_id=request.state.user_id)
+        return {"message": "Meta adicionada ao plano.", "item": item, "plan": list_development_plan(db, user_id=request.state.user_id)}
     except ValueError as exc:
         raise HTTPException(400, str(exc))
 
 
 @app.patch("/api/market/development-plan/{item_id}")
-def edit_market_development_item(item_id: int, payload: DevelopmentItemUpdate, db: Session = Depends(get_db)):
+def edit_market_development_item(item_id: int, payload: DevelopmentItemUpdate, request: Request, db: Session = Depends(get_db)):
     data = payload.model_dump(exclude_unset=True)
     if "status" in data and data["status"] not in DEVELOPMENT_STATUSES:
         raise HTTPException(400, "Status de desenvolvimento inválido.")
     try:
-        item = update_development_item(db, item_id, data)
+        item = update_development_item(db, item_id, data, user_id=request.state.user_id)
         return {"message": "Progresso atualizado.", "item": item}
     except ValueError as exc:
         raise HTTPException(404 if "não encontrada" in str(exc) else 400, str(exc))
 
 
 @app.delete("/api/market/development-plan/{item_id}")
-def delete_market_development_item(item_id: int, db: Session = Depends(get_db)):
-    item = db.get(DevelopmentPlanItem, item_id)
+def delete_market_development_item(item_id: int, request: Request, db: Session = Depends(get_db)):
+    item = db.scalar(select(DevelopmentPlanItem).where(DevelopmentPlanItem.id == item_id, DevelopmentPlanItem.user_id == request.state.user_id))
     if item is None:
         raise HTTPException(404, "Meta de desenvolvimento não encontrada.")
     db.delete(item)
@@ -1058,22 +1068,22 @@ class SkillAssessmentSubmit(BaseModel):
 
 
 @app.get("/api/market/assessments")
-def get_market_assessments(skill_id: Optional[int] = Query(None, gt=0), db: Session = Depends(get_db)):
-    return list_skill_assessments(db, skill_id=skill_id)
+def get_market_assessments(request: Request, skill_id: Optional[int] = Query(None, gt=0), db: Session = Depends(get_db)):
+    return list_skill_assessments(db, user_id=request.state.user_id, skill_id=skill_id)
 
 
 @app.post("/api/market/assessments")
-def start_market_assessment(payload: SkillAssessmentCreate, db: Session = Depends(get_db)):
+def start_market_assessment(payload: SkillAssessmentCreate, request: Request, db: Session = Depends(get_db)):
     try:
-        return {"attempt": create_skill_assessment(db, **payload.model_dump())}
+        return {"attempt": create_skill_assessment(db, **payload.model_dump(), user_id=request.state.user_id)}
     except ValueError as exc:
         raise HTTPException(400, str(exc))
 
 
 @app.post("/api/market/assessments/{attempt_id}/submit")
-def submit_market_assessment(attempt_id: int, payload: SkillAssessmentSubmit, db: Session = Depends(get_db)):
+def submit_market_assessment(attempt_id: int, payload: SkillAssessmentSubmit, request: Request, db: Session = Depends(get_db)):
     try:
-        attempt = submit_skill_assessment(db, attempt_id, **payload.model_dump())
+        attempt = submit_skill_assessment(db, attempt_id, **payload.model_dump(), user_id=request.state.user_id)
         return {"message": "Autoavaliação registrada.", "attempt": attempt}
     except ValueError as exc:
         raise HTTPException(404 if "não encontrado" in str(exc) else 400, str(exc))

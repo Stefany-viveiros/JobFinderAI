@@ -76,16 +76,52 @@ def _missing_columns():
     return missing
 
 
+
+def validate_multitenant_schema() -> None:
+    """Impede liberar o SaaS se candidaturas ainda tiverem unicidade global por vaga."""
+    inspector = inspect(engine)
+    if not inspector.has_table("applications"):
+        raise RuntimeError("Schema SaaS inválido: tabela applications ausente.")
+
+    unique_sets = {
+        tuple(sorted(item.get("column_names") or ()))
+        for item in inspector.get_unique_constraints("applications")
+    }
+    unique_sets.update(
+        tuple(sorted(index.get("column_names") or ()))
+        for index in inspector.get_indexes("applications")
+        if index.get("unique")
+    )
+    if ("job_id", "user_id") not in unique_sets:
+        raise RuntimeError(
+            "Schema SaaS inválido: falta unicidade composta (user_id, job_id) em applications."
+        )
+    if ("job_id",) in unique_sets:
+        raise RuntimeError(
+            "Schema SaaS inválido: existe unicidade global antiga em applications.job_id. "
+            "Migre a constraint antes de ativar MULTITENANT_READY."
+        )
+
+
 def init_db():
     from . import models  # noqa: F401
     from .filters import dedupe_key, classify_level
 
+    # Detecta alterações estruturais antes de create_all. O backup é feito
+    # somente quando há colunas legadas a migrar, evitando uma cópia a cada
+    # inicialização (inclusive em reinícios do worker e testes de idempotência).
+    missing = _missing_columns()
+    if (
+        engine.dialect.name == "sqlite"
+        and DB_PATH.exists()
+        and DB_PATH.stat().st_size
+        and missing
+    ):
+        backup_database()
+
     # Cria primeiro tabelas novas (especialmente users) para que FKs das
     # colunas adicionadas abaixo funcionem também no PostgreSQL.
-    if engine.dialect.name == "sqlite" and DB_PATH.exists() and DB_PATH.stat().st_size:
-        backup_database()
     Base.metadata.create_all(bind=engine)
-    missing = _missing_columns()
     if missing:
         with engine.begin() as conn:
             for table, column, ddl in missing:

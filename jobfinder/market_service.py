@@ -200,11 +200,11 @@ def create_market_snapshot(
     }
 
 
-def build_profile_gap(db: Session, *, run_id: int | None = None) -> dict:
+def build_profile_gap(db: Session, *, user_id: int, run_id: int | None = None) -> dict:
     """Cruza competências demandadas no snapshot com evidências explícitas do perfil."""
     from .models import Profile
 
-    profile = db.get(Profile, 1)
+    profile = db.scalar(select(Profile).where(Profile.user_id == user_id))
     if profile is None:
         return {"available": False, "message": "Cadastre seu perfil para comparar as competências."}
 
@@ -229,7 +229,7 @@ def build_profile_gap(db: Session, *, run_id: int | None = None) -> dict:
     from .models import SkillAssessmentAttempt
     assessment_rows = db.scalars(
         select(SkillAssessmentAttempt)
-        .where(SkillAssessmentAttempt.status == "self_reviewed")
+        .where(SkillAssessmentAttempt.user_id == user_id, SkillAssessmentAttempt.status == "self_reviewed")
         .order_by(
             SkillAssessmentAttempt.submitted_at.desc(),
             SkillAssessmentAttempt.id.desc(),
@@ -398,11 +398,12 @@ def development_item_dict(item: "DevelopmentPlanItem", skill: Skill) -> dict:
     }
 
 
-def list_development_plan(db: Session) -> dict:
+def list_development_plan(db: Session, *, user_id: int) -> dict:
     from .models import DevelopmentPlanItem
     rows = db.execute(
         select(DevelopmentPlanItem, Skill)
         .join(Skill, Skill.id == DevelopmentPlanItem.skill_id)
+        .where(DevelopmentPlanItem.user_id == user_id)
         .order_by(
             DevelopmentPlanItem.due_date.is_(None),
             DevelopmentPlanItem.due_date,
@@ -428,7 +429,7 @@ def list_development_plan(db: Session) -> dict:
 def create_development_item(
     db: Session, *, skill_id: int, run_id: int | None = None,
     title: str | None = None, objective: str = "", activity: str = "",
-    estimated_hours: int = 4, due_date=None, resource_url: str = "",
+    estimated_hours: int = 4, due_date=None, resource_url: str = "", user_id: int,
 ) -> dict:
     from .models import DevelopmentPlanItem
 
@@ -449,6 +450,7 @@ def create_development_item(
             raise ValueError("A competência não pertence à análise selecionada.")
     duplicate = db.scalar(
         select(DevelopmentPlanItem).where(
+            DevelopmentPlanItem.user_id == user_id,
             DevelopmentPlanItem.skill_id == skill_id,
             DevelopmentPlanItem.status.in_({"planned", "in_progress", "paused"}),
         ).limit(1)
@@ -466,6 +468,7 @@ def create_development_item(
         else:
             activity = f"Pesquise os fundamentos de {skill.canonical_name}, pratique em um cenário pequeno e registre o que conseguiu realizar."
     item = DevelopmentPlanItem(
+        user_id=user_id,
         skill_id=skill_id,
         source_run_id=run_id,
         title=(title or f"Desenvolver {skill.canonical_name}").strip(),
@@ -483,10 +486,10 @@ def create_development_item(
     return development_item_dict(item, skill)
 
 
-def update_development_item(db: Session, item_id: int, payload: dict) -> dict:
+def update_development_item(db: Session, item_id: int, payload: dict, *, user_id: int) -> dict:
     from .models import DevelopmentPlanItem
 
-    item = db.get(DevelopmentPlanItem, item_id)
+    item = db.scalar(select(DevelopmentPlanItem).where(DevelopmentPlanItem.id == item_id, DevelopmentPlanItem.user_id == user_id))
     if item is None:
         raise ValueError("Meta de desenvolvimento não encontrada.")
     allowed = {"status", "progress_percent", "due_date", "notes", "title", "objective", "activity", "estimated_hours", "resource_url"}
@@ -590,18 +593,18 @@ def assessment_attempt_dict(attempt: "SkillAssessmentAttempt", skill: Skill) -> 
     }
 
 
-def create_skill_assessment(db: Session, *, skill_id: int, plan_item_id: int | None = None) -> dict:
+def create_skill_assessment(db: Session, *, skill_id: int, user_id: int, plan_item_id: int | None = None) -> dict:
     from .models import SkillAssessmentAttempt
     skill = db.get(Skill, skill_id)
     if skill is None or not skill.active:
         raise ValueError("Competência não encontrada no catálogo.")
     if plan_item_id is not None:
-        plan_item = db.get(DevelopmentPlanItem, plan_item_id)
+        plan_item = db.scalar(select(DevelopmentPlanItem).where(DevelopmentPlanItem.id == plan_item_id, DevelopmentPlanItem.user_id == user_id))
         if plan_item is None or plan_item.skill_id != skill_id:
             raise ValueError("A meta informada não corresponde à competência.")
     existing = db.scalar(
         select(SkillAssessmentAttempt)
-        .where(SkillAssessmentAttempt.skill_id == skill_id, SkillAssessmentAttempt.status == "draft")
+        .where(SkillAssessmentAttempt.user_id == user_id, SkillAssessmentAttempt.skill_id == skill_id, SkillAssessmentAttempt.status == "draft")
         .order_by(SkillAssessmentAttempt.created_at.desc())
         .limit(1)
     )
@@ -609,6 +612,7 @@ def create_skill_assessment(db: Session, *, skill_id: int, plan_item_id: int | N
         return assessment_attempt_dict(existing, skill)
     challenge = _challenge_for_skill(skill)
     attempt = SkillAssessmentAttempt(
+        user_id=user_id,
         skill_id=skill_id,
         plan_item_id=plan_item_id,
         challenge_title=challenge["title"],
@@ -624,10 +628,10 @@ def create_skill_assessment(db: Session, *, skill_id: int, plan_item_id: int | N
 
 def submit_skill_assessment(
     db: Session, attempt_id: int, *, response_text: str,
-    evidence_url: str, rubric_answers: dict,
+    evidence_url: str, rubric_answers: dict, user_id: int,
 ) -> dict:
     from .models import SkillAssessmentAttempt
-    attempt = db.get(SkillAssessmentAttempt, attempt_id)
+    attempt = db.scalar(select(SkillAssessmentAttempt).where(SkillAssessmentAttempt.id == attempt_id, SkillAssessmentAttempt.user_id == user_id))
     if attempt is None:
         raise ValueError("Desafio não encontrado.")
     if attempt.status != "draft":
@@ -662,13 +666,14 @@ def submit_skill_assessment(
     return assessment_attempt_dict(attempt, skill)
 
 
-def list_skill_assessments(db: Session, *, skill_id: int | None = None) -> dict:
+def list_skill_assessments(db: Session, *, user_id: int, skill_id: int | None = None) -> dict:
     from .models import SkillAssessmentAttempt
     stmt = (
         select(SkillAssessmentAttempt, Skill)
         .join(Skill, Skill.id == SkillAssessmentAttempt.skill_id)
         .order_by(SkillAssessmentAttempt.created_at.desc(), SkillAssessmentAttempt.id.desc())
     )
+    stmt = stmt.where(SkillAssessmentAttempt.user_id == user_id)
     if skill_id is not None:
         stmt = stmt.where(SkillAssessmentAttempt.skill_id == skill_id)
     rows = db.execute(stmt.limit(100)).all()
