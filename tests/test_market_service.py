@@ -348,7 +348,7 @@ def test_profile_evidence_keeps_precedence_over_self_assessment(db, test_user):
         user_id=test_user.id,
     )
 
-    gap = build_profile_gap(db, run_id=snapshot["run_id"])
+    gap = build_profile_gap(db, user_id=test_user.id, run_id=snapshot["run_id"])
     react = next(item for item in gap["items"] if item["name"] == "React")
 
     assert react["status"] == "praticada"
