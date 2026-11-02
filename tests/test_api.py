@@ -78,7 +78,7 @@ def test_job_filters(client, db):
 
 def test_manual_job_creation_and_duplicate_url(client):
     body = {"title": "Dev Jr", "url": "https://x.test/manual"}
-    assert client.post("/api/jobs", json=body).json()["message"] == "Vaga salva com sucesso."
+    assert client.post("/api/jobs", json=body).json()["message"] == "Vaga salva e adicionada ao seu painel."
     assert client.post("/api/jobs", json=body).json()["message"] == "Link já cadastrado."
 
 
@@ -160,6 +160,8 @@ def test_profile_update_recomputes_scores(client, db):
 
 def test_approval_rejects_stale_or_unconfirmed_compatibility(client, db, ready_profile, test_user):
     from jobfinder.agent import get_agent_settings
+    from jobfinder.models import JobMatch
+    from sqlalchemy import select
 
     job = make_job(db, compatibility=55)
     attempt = client.post(f"/api/jobs/{job.id}/prepare").json()["attempt"]
@@ -170,8 +172,11 @@ def test_approval_rejects_stale_or_unconfirmed_compatibility(client, db, ready_p
     assert response.status_code == 409
     assert "abaixo do mínimo" in response.json()["detail"]
 
-    job.compatibility = 90
-    job.missing_reasons = "Requisito(s) obrigatório(s) não identificado(s): java"
+    match = db.scalar(select(JobMatch).where(
+        JobMatch.user_id == test_user.id, JobMatch.job_id == job.id
+    ))
+    match.compatibility = 90
+    match.missing_reasons = "Requisito(s) obrigatório(s) não identificado(s): java"
     db.commit()
     response = client.post(f"/api/attempts/{attempt['id']}/approve")
     assert response.status_code == 409
