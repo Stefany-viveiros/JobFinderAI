@@ -7,8 +7,17 @@ from tests.conftest import make_job
 
 
 @pytest.fixture
-def client():
-    with TestClient(api_module.app) as c:   # dispara o evento de startup
+def client(monkeypatch, test_user):
+    # Exercita a API no modo SaaS real: sessão autenticada, CSRF e schema validado.
+    monkeypatch.setenv("MULTITENANT_READY", "true")
+    with TestClient(api_module.app) as c:
+        login = c.post("/api/auth/login", json={
+            "email": test_user.email, "password": "SenhaSegura123!"
+        })
+        assert login.status_code == 200
+        session = c.get("/api/auth/me")
+        assert session.status_code == 200
+        c.headers.update({"X-CSRF-Token": session.json()["csrf_token"]})
         yield c
 
 
