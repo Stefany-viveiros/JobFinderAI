@@ -18,6 +18,8 @@ def test_legacy_database_is_migrated_without_losing_data(tmp_path):
     """)
     con.commit(); con.close()
     env = {**os.environ, "JOBFINDER_DB_PATH": str(path)}
+    # Este teste cobre explicitamente a migração SQLite mesmo na suíte PostgreSQL.
+    env.pop("DATABASE_URL", None)
     for _ in range(2):  # idempotente
         subprocess.run([sys.executable, "-c", "from jobfinder.db import init_db; init_db()"], check=True, env=env)
     con = sqlite3.connect(path)

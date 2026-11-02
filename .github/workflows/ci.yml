@@ -2,7 +2,7 @@ name: Quality checks
 
 on:
   push:
-    branches: ["main", "feature/**"]
+    branches: ["main", "feature/**", "test/**"]
   pull_request:
     branches: ["main"]
 
@@ -10,9 +10,10 @@ permissions:
   contents: read
 
 jobs:
-  backend:
-    name: Backend tests
+  backend-sqlite:
+    name: Backend tests (SQLite)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -26,6 +27,41 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
       - name: Run test suite
+        run: pytest -q
+
+  backend-postgres:
+    name: Backend tests (PostgreSQL 16)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: jobfinder_test
+          POSTGRES_USER: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d jobfinder_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      TEST_POSTGRES_URL: postgresql+psycopg://postgres@localhost:5432/jobfinder_test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+      - name: Run full test suite against PostgreSQL
         run: pytest -q
 
   frontend:
