@@ -384,24 +384,93 @@ SOURCE_INFO = {
                "note": "Sem API pública de busca/candidatura (só parceiros aprovados) e os termos proíbem "
                        "raspagem. Use os links de busca e cadastre a vaga manualmente."},
     "Vagas.com": {"mode": "link_only", "search_api": False, "apply_api": False,
-                  "note": "Não há API pública documentada. Use os links de busca e cadastre a vaga manualmente; "
-                          "a candidatura é feita no site, com seu login."},
+                  "note": "Portal de vagas. Sem conector autorizado configurado; abra a busca no portal e finalize a candidatura no site."},
+    "LinkedIn": {"mode": "link_only", "search_api": False, "apply_api": False,
+                 "note": "Acesso a APIs de vagas depende de aprovação/parceria. O JobFinder abre a busca; não coleta nem automatiza login/candidatura."},
+    "Gupy": {"mode": "link_only", "search_api": False, "apply_api": False,
+             "note": "ATS de empresas. A API documentada é destinada à integração com páginas de carreira de clientes e exige token da empresa; não é uma API pública agregadora."},
+    "InfoJobs": {"mode": "link_only", "search_api": False, "apply_api": False,
+                 "note": "Busca externa no portal; candidatura e etapas são concluídas no site."},
+    "Catho": {"mode": "link_only", "search_api": False, "apply_api": False,
+              "note": "Busca externa no portal; candidatura e etapas são concluídas no site."},
+    "Sólides Vagas": {"mode": "link_only", "search_api": False, "apply_api": False,
+                      "note": "Portal/ATS; busca externa e candidatura no ambiente da empresa."},
+    "Trabalha Brasil": {"mode": "link_only", "search_api": False, "apply_api": False,
+                        "note": "Busca externa no portal; candidatura no site original."},
+    "Empregos.com.br": {"mode": "link_only", "search_api": False, "apply_api": False,
+                        "note": "Busca externa no portal; candidatura no site original."},
+    "Glassdoor": {"mode": "link_only", "search_api": False, "apply_api": False,
+                  "note": "Busca externa; use também avaliações e informações da empresa no portal."},
+    "Jooble": {"mode": "link_only", "search_api": False, "apply_api": False,
+               "note": "Agregador; busca externa no portal. Vagas podem se repetir em outras fontes."},
+    "CIEE": {"mode": "link_only", "search_api": False, "apply_api": False,
+             "note": "Portal de estágio e aprendizagem; candidatura exige fluxo e cadastro próprios."},
+    "Nube": {"mode": "link_only", "search_api": False, "apply_api": False,
+             "note": "Portal de estágio; candidatura exige fluxo e cadastro próprios."},
+    "Companhia de Estágios": {"mode": "link_only", "search_api": False, "apply_api": False,
+                              "note": "Portal de estágio e trainee; candidatura no ambiente próprio."},
+    "99jobs": {"mode": "link_only", "search_api": False, "apply_api": False,
+               "note": "Portal de carreiras; candidatura no ambiente próprio."},
+    "GeekHunter": {"mode": "link_only", "search_api": False, "apply_api": False,
+                   "note": "Plataforma especializada em tecnologia; cadastro e candidatura no ambiente próprio."},
+    "Programathor": {"mode": "link_only", "search_api": False, "apply_api": False,
+                     "note": "Portal especializado em tecnologia; candidatura no site original."},
+    "Trampos": {"mode": "link_only", "search_api": False, "apply_api": False,
+                "note": "Portal de vagas criativas e digitais; candidatura no site original."},
+    "Remotar": {"mode": "link_only", "search_api": False, "apply_api": False,
+                "note": "Portal de vagas remotas; candidatura no site original."},
+    "Emprega Brasil / SINE": {"mode": "link_only", "search_api": False, "apply_api": False,
+                              "note": "Serviço público de intermediação; consulta e candidatura seguem o fluxo oficial."},
+    "Revelo": {"mode": "link_only", "search_api": False, "apply_api": False,
+               "note": "Plataforma de talentos; disponibilidade e fluxo de cadastro devem ser confirmados no portal."},
 }
 
 LINK_ONLY_SOURCES = [name for name, info in SOURCE_INFO.items() if info["mode"] == "link_only"]
 
 
 def external_search_links(terms=None):
-    """Links para abrir no navegador (nada é raspado). O Vagas.com só recebe o link do site: o formato
-    de URL de busca não foi verificado, então o termo é exibido para você digitar na busca do site."""
+    """Gera atalhos de busca para portais sem conector autorizado.
+
+    Esses links não representam coleta automática nem candidatura automática.
+    """
     from urllib.parse import quote_plus
 
-    terms = [t for t in (terms or ["estágio desenvolvimento de software", "desenvolvedor júnior"]) if t]
+    terms = [t.strip() for t in (terms or [
+        "estágio desenvolvimento de software",
+        "desenvolvedor júnior",
+    ]) if t and t.strip()]
+    if not terms:
+        terms = ["estágio desenvolvimento de software"]
+
+    templates = {
+        "LinkedIn": "https://www.linkedin.com/jobs/search/?keywords={q}",
+        "Indeed": "https://br.indeed.com/jobs?q={q}",
+        "Gupy": "https://www.google.com/search?q=site%3Agupy.io%2Fjobs+{q}",
+        "InfoJobs": "https://www.infojobs.com.br/vagas-de-{q}.aspx",
+        "Catho": "https://www.catho.com.br/vagas/{q}/",
+        "Vagas.com": "https://www.vagas.com.br/",
+        "Sólides Vagas": "https://www.google.com/search?q=site%3Avagas.solides.com.br+{q}",
+        "Trabalha Brasil": "https://www.trabalhabrasil.com.br/vagas-empregos/",
+        "Empregos.com.br": "https://www.empregos.com.br/vagas/",
+        "Glassdoor": "https://www.glassdoor.com.br/Vaga/",
+        "Jooble": "https://br.jooble.org/SearchResult?ukw={q}",
+        "CIEE": "https://portal.ciee.org.br/",
+        "Nube": "https://www.nube.com.br/",
+        "Companhia de Estágios": "https://www.ciadeestagios.com.br/",
+        "99jobs": "https://www.99jobs.com/",
+        "GeekHunter": "https://www.geekhunter.com.br/",
+        "Programathor": "https://programathor.com.br/",
+        "Trampos": "https://trampos.co/",
+        "Remotar": "https://remotar.com.br/",
+        "Emprega Brasil / SINE": "https://servicos.mte.gov.br/",
+        "Revelo": "https://www.revelo.com.br/",
+    }
     links = []
-    for term in terms:
-        links.append({"source": "Indeed", "query": term,
-                      "url": f"https://br.indeed.com/jobs?q={quote_plus(term)}"})
-        links.append({"source": "Vagas.com", "query": term, "url": "https://www.vagas.com.br/"})
+    for source, template in templates.items():
+        for term in terms:
+            encoded = quote_plus(term)
+            url = template.format(q=encoded) if "{q}" in template else template
+            links.append({"source": source, "query": term, "url": url})
     return links
 
 
