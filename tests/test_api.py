@@ -955,3 +955,27 @@ def test_job_actions_require_opportunity_linked_to_authenticated_account(client,
     assert client.get("/api/tasks").json() == []
     assert client.get("/api/applications").json() == []
     assert client.get("/api/attempts").json() == []
+
+
+def test_multitenant_schema_validator_fails_closed_on_legacy_unowned_rows(db):
+    from jobfinder.db import validate_multitenant_schema
+    from jobfinder.models import Task
+
+    # Um schema recém-criado deve satisfazer as FKs e constraints necessárias.
+    validate_multitenant_schema()
+
+    legacy_task = Task(
+        user_id=None,
+        title="Tarefa legada sem proprietário",
+        description="Não pode ser exposta a uma conta nova.",
+        notify=False,
+    )
+    db.add(legacy_task)
+    db.commit()
+
+    with pytest.raises(RuntimeError, match="sem proprietário"):
+        validate_multitenant_schema()
+
+    db.delete(legacy_task)
+    db.commit()
+    validate_multitenant_schema()
