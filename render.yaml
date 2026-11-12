@@ -17,6 +17,8 @@ services:
         value: https://jobfinder-ai-web-imux.onrender.com
       - key: DEMO_READ_ONLY
         value: "true"
+      - key: MULTITENANT_READY
+        value: "false"
       - key: APP_ENV
         value: production
       - key: COOKIE_SECURE
