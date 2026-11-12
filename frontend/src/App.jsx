@@ -331,8 +331,57 @@ function JobCard({ job, onFavorite, onApply, onPrepare }) {
 
 function ApplicationsPage({ applications, onEdit }) {
   const [filter, setFilter] = useState('Todas')
+  const [selectedHistory, setSelectedHistory] = useState(null)
+  const [history, setHistory] = useState(null)
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState('')
   const shown = useMemo(() => applications.filter(a => filter === 'Todas' || a.status === filter), [applications, filter])
-  return <><SectionHeading eyebrow="ACOMPANHE SEU PROGRESSO" title="Minhas candidaturas" subtitle="Registre cada etapa para não perder o fio da sua busca."/><div className="app-stats-row"><div className="app-stat"><span>Total de candidaturas</span><strong>{applications.length}</strong></div><div className="app-stat"><span>Entrevistas</span><strong>{applications.filter(a => a.status === 'Entrevista').length}</strong></div><div className="app-stat"><span>Em andamento</span><strong>{applications.filter(a => !['Aprovada','Reprovada','Encerrada'].includes(a.status)).length}</strong></div><div className="app-stat"><span>Aprovadas</span><strong>{applications.filter(a => a.status === 'Aprovada').length}</strong></div></div><div className="panel applications-panel"><div className="panel-heading"><div><h2>Pipeline de candidaturas</h2><p>Atualize a etapa sempre que houver uma novidade</p></div><select className="compact-select" value={filter} onChange={e => setFilter(e.target.value)}><option>Todas</option>{STATUS.map(s => <option key={s}>{s}</option>)}</select></div>{shown.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Oportunidade</th><th>Etapa</th><th>Data de envio</th><th>Prazo</th><th></th></tr></thead><tbody>{shown.map(a => <tr key={a.id}><td><div className="table-job"><div className="company-avatar small-avatar">{initials(a.job?.company)}</div><div><strong>{a.job?.title}</strong><span>{a.job?.company}</span></div></div></td><td><StatusPill status={a.status}/></td><td>{datePt(a.applied_at)}</td><td>{datePt(a.deadline)}</td><td><button className="btn btn-secondary btn-sm" onClick={() => onEdit(a)}>Atualizar <ChevronDown size={13}/></button></td></tr>)}</tbody></table></div> : <EmptyState icon={BriefcaseBusiness} title="Sua jornada começa com uma candidatura" text="Candidaturas enviadas (pelo agente ou confirmadas por você) aparecem aqui para acompanhar cada etapa."/>}</div></>
+
+  async function openHistory(application) {
+    setSelectedHistory(application)
+    setHistory(null)
+    setHistoryError('')
+    setHistoryLoading(true)
+    try {
+      setHistory(await api(`/applications/${application.id}/history`))
+    } catch (error) {
+      setHistoryError(error.message || 'Não foi possível carregar o histórico desta candidatura.')
+    } finally {
+      setHistoryLoading(false)
+    }
+  }
+
+  return <>
+    <SectionHeading eyebrow="ACOMPANHE SEU PROGRESSO" title="Minhas candidaturas" subtitle="Registre cada etapa e acompanhe como cada oportunidade evoluiu."/>
+    <div className="app-stats-row">
+      <div className="app-stat"><span>Total de candidaturas</span><strong>{applications.length}</strong></div>
+      <div className="app-stat"><span>Entrevistas</span><strong>{applications.filter(a => a.status === 'Entrevista').length}</strong></div>
+      <div className="app-stat"><span>Em andamento</span><strong>{applications.filter(a => !['Aprovada','Reprovada','Encerrada'].includes(a.status)).length}</strong></div>
+      <div className="app-stat"><span>Aprovadas</span><strong>{applications.filter(a => a.status === 'Aprovada').length}</strong></div>
+    </div>
+    <div className="panel applications-panel">
+      <div className="panel-heading"><div><h2>Pipeline de candidaturas</h2><p>Atualize a etapa sempre que houver uma novidade</p></div><select className="compact-select" value={filter} onChange={e => setFilter(e.target.value)}><option>Todas</option>{STATUS.map(s => <option key={s}>{s}</option>)}</select></div>
+      {shown.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Oportunidade</th><th>Etapa</th><th>Data de envio</th><th>Prazo</th><th>Histórico</th><th></th></tr></thead><tbody>{shown.map(a => <tr key={a.id}>
+        <td><div className="table-job"><div className="company-avatar small-avatar">{initials(a.job?.company)}</div><div><strong>{a.job?.title}</strong><span>{a.job?.company}</span></div></div></td>
+        <td><StatusPill status={a.status}/></td><td>{datePt(a.applied_at)}</td><td>{datePt(a.deadline)}</td>
+        <td><button className="btn btn-secondary btn-sm" onClick={() => openHistory(a)}><Clock3 size={13}/> Ver histórico</button></td>
+        <td><button className="btn btn-secondary btn-sm" onClick={() => onEdit(a)}>Atualizar <ChevronDown size={13}/></button></td>
+      </tr>)}</tbody></table></div> : <EmptyState icon={BriefcaseBusiness} title="Sua jornada começa com uma candidatura" text="Candidaturas enviadas (pelo agente ou confirmadas por você) aparecem aqui para acompanhar cada etapa."/>}
+    </div>
+    {selectedHistory && <section className="panel application-history-panel" aria-live="polite">
+      <div className="panel-heading"><div><h2>Histórico de etapas</h2><p>{selectedHistory.job?.title} · {selectedHistory.job?.company}</p></div><button className="icon-btn" onClick={() => {setSelectedHistory(null);setHistory(null)}} aria-label="Fechar histórico"><X size={17}/></button></div>
+      {historyLoading ? <div className="application-history-state"><LoaderCircle className="spin" size={19}/> Carregando histórico...</div> :
+        historyError ? <div className="application-history-error" role="alert">{historyError}</div> :
+        history && (history.has_history ? <ol className="application-history-list">{history.events.map(event => <li key={event.id}>
+          <span className="application-history-marker"/>
+          <div><div className="application-history-event-head"><strong>{event.new_status}</strong><time>{event.occurred_at ? new Date(event.occurred_at).toLocaleString('pt-BR') : 'Data não informada'}</time></div>
+            <p>{event.previous_status ? `Etapa anterior: ${event.previous_status}` : 'Registro inicial da candidatura'}</p>
+            <small>{event.source === 'email' ? 'Envio por e-mail' : event.source === 'manual_confirmed' ? 'Envio confirmado manualmente' : 'Atualização manual'}{event.note ? ` · ${event.note}` : ''}</small>
+          </div>
+        </li>)}</ol> : <div className="application-history-state"><Clock3 size={19}/><span>Nenhum evento foi registrado ainda. O histórico passa a contar a partir desta atualização do JobFinder AI.</span></div>)}
+      {history?.notice && <p className="application-history-notice">{history.notice}</p>}
+    </section>}
+  </>
 }
 function StatusPill({ status }) { const cls = status === 'Entrevista' ? 'purple' : status === 'Aprovada' ? 'green' : ['Reprovada','Encerrada'].includes(status) ? 'gray' : status === 'Teste técnico' ? 'blue' : 'amber'; return <span className={`status-pill ${cls}`}><i/>{status}</span> }
 function TasksPage({ tasks, view, setView, onCreate, onEdit, onComplete, onDelete, onSendReminders, smtpReady, notificationHistory, busy }) {

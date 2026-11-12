@@ -17,7 +17,7 @@ from sqlalchemy import func, select
 
 from .config import settings
 from .matching import normalize, profile_technology_terms
-from .models import Application, ApplicationAttempt, Job
+from .models import Application, ApplicationAttempt, ApplicationEvent, Job
 
 OPEN_STATUSES = ("prepared", "awaiting_approval", "manual_required")
 SENDABLE_STATUSES = ("prepared", "awaiting_approval", "failed")
@@ -216,12 +216,32 @@ def prepare_attempt(db, job: Job, profile, user_id: int | None = None) -> Applic
     return attempt
 
 
-def _ensure_application(db, job_id, user_id=None):
+def _ensure_application(db, job_id, user_id=None, source="manual_confirmed"):
     stmt = select(Application).where(Application.job_id == job_id)
     if user_id is not None:
         stmt = stmt.where(Application.user_id == user_id)
-    if not db.scalar(stmt):
-        db.add(Application(user_id=user_id, job_id=job_id, status="Candidatura enviada", applied_at=local_today()))
+    application = db.scalar(stmt)
+    if application is None:
+        application = Application(
+            user_id=user_id,
+            job_id=job_id,
+            status="Candidatura enviada",
+            applied_at=local_today(),
+        )
+        db.add(application)
+        db.flush()
+        # Histórico novo é estritamente por conta; registros legados sem dono não
+        # recebem eventos que possam ser expostos a qualquer usuário.
+        if user_id is not None:
+            db.add(ApplicationEvent(
+                user_id=user_id,
+                application_id=application.id,
+                previous_status="",
+                new_status=application.status,
+                source=source,
+                note="",
+            ))
+    return application
 
 
 def send_attempt(db, attempt: ApplicationAttempt, daily_limit: int | None = None, user_id: int | None = None) -> ApplicationAttempt:
@@ -253,7 +273,7 @@ def send_attempt(db, attempt: ApplicationAttempt, daily_limit: int | None = None
         return attempt
     attempt.status, attempt.sent_at = "sent", datetime.utcnow()
     attempt.detail = f"E-mail aceito pelo servidor SMTP para {attempt.recipient}."
-    _ensure_application(db, attempt.job_id, user_id)
+    _ensure_application(db, attempt.job_id, user_id, source="email")
     db.commit()
     return attempt
 
@@ -276,7 +296,7 @@ def confirm_manual_send(db, job: Job, note: str = "", user_id: int | None = None
     attempt.detail = "Confirmado manualmente pelo usuário." + (f" {note}" if note else "")
     if attempt.id is None:
         db.add(attempt)
-    _ensure_application(db, job.id, user_id)
+    _ensure_application(db, job.id, user_id, source="manual_confirmed")
     db.commit()
     db.refresh(attempt)
     return attempt

@@ -23,7 +23,7 @@ from .db import init_db, SessionLocal, validate_multitenant_schema
 from .models import (
     Job, JobMatch, Application, Task, Profile, NotificationLog, ApplicationAttempt,
     Education, Experience, Course, Certification, PortfolioProject,
-    MarketAnalysisRun, MarketSkillMetric, MarketSkillPair, Skill, DevelopmentPlanItem, SkillAssessmentAttempt,
+    MarketAnalysisRun, MarketSkillMetric, MarketSkillPair, Skill, DevelopmentPlanItem, SkillAssessmentAttempt, ApplicationEvent,
 )
 from .service import get_profile, save_jobs, refresh_scores, create_task, complete_task, STATUSES, collect_and_save_ranked, collect_for_user, refresh_user_scores
 from .sources import SOURCES, SOURCE_INFO, LINK_ONLY_SOURCES, collect_selected, external_search_links
@@ -925,11 +925,58 @@ def update_application(application_id: int, payload: ApplicationUpdate, request:
         raise HTTPException(404, "Candidatura não encontrada.")
     if payload.status not in STATUSES:
         raise HTTPException(400, "Etapa de candidatura inválida.")
+    previous_status = application.status
     for key, value in payload.model_dump().items():
         setattr(application, key, value)
+    if payload.status != previous_status:
+        db.add(ApplicationEvent(
+            user_id=request.state.user_id,
+            application_id=application.id,
+            previous_status=previous_status or "",
+            new_status=payload.status,
+            source="manual",
+            note=(payload.notes or "").strip(),
+        ))
     db.commit(); db.refresh(application)
     return {"message": "Candidatura atualizada."}
 
+
+
+
+@app.get("/api/applications/{application_id}/history")
+def application_history(application_id: int, request: Request, db: Session = Depends(get_db)):
+    """Retorna somente os eventos vinculados à candidatura e conta autenticadas."""
+    user_id = request.state.user_id
+    application = db.scalar(select(Application).where(
+        Application.id == application_id,
+        Application.user_id == user_id,
+    ))
+    if application is None:
+        raise HTTPException(404, "Candidatura não encontrada.")
+    events = db.scalars(
+        select(ApplicationEvent)
+        .where(
+            ApplicationEvent.application_id == application_id,
+            ApplicationEvent.user_id == user_id,
+        )
+        .order_by(ApplicationEvent.occurred_at.asc(), ApplicationEvent.id.asc())
+    ).all()
+    return {
+        "application_id": application.id,
+        "has_history": bool(events),
+        "events": [{
+            "id": event.id,
+            "previous_status": event.previous_status or "",
+            "new_status": event.new_status,
+            "source": event.source,
+            "note": event.note or "",
+            "occurred_at": event.occurred_at.isoformat() if event.occurred_at else None,
+        } for event in events],
+        "notice": (
+            "O histórico é registrado a partir da ativação desta funcionalidade. "
+            "Etapas anteriores não são inferidas retroativamente."
+        ),
+    }
 
 @app.get("/api/tasks")
 def list_tasks(request: Request, view: str = "Pendentes", db: Session = Depends(get_db)):

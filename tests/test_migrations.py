@@ -11,6 +11,7 @@ def test_legacy_global_application_constraint_is_migrated_to_per_user(tmp_path, 
     database = tmp_path / "legacy.db"
     engine = sa.create_engine(f"sqlite:///{database}")
     metadata = sa.MetaData()
+    sa.Table("users", metadata, sa.Column("id", sa.Integer, primary_key=True))
     applications = sa.Table(
         "applications",
         metadata,
@@ -108,6 +109,7 @@ def test_postgresql_migration_replaces_global_unique_constraint(monkeypatch):
     engine = sa.create_engine(scoped_url)
     try:
         metadata = sa.MetaData()
+        sa.Table("users", metadata, sa.Column("id", sa.Integer, primary_key=True))
         applications = sa.Table(
             "applications",
             metadata,
@@ -162,3 +164,50 @@ def test_postgresql_migration_replaces_global_unique_constraint(monkeypatch):
         with admin_engine.begin() as connection:
             connection.execute(sa.text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
         admin_engine.dispose()
+
+
+
+def test_application_history_migration_creates_account_scoped_event_table(tmp_path, monkeypatch):
+    database = tmp_path / "application-history.db"
+    engine = sa.create_engine(f"sqlite:///{database}")
+    metadata = sa.MetaData()
+    sa.Table("users", metadata, sa.Column("id", sa.Integer, primary_key=True))
+    applications = sa.Table(
+        "applications",
+        metadata,
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("user_id", sa.Integer, nullable=True),
+        sa.Column("job_id", sa.Integer, nullable=False),
+        sa.UniqueConstraint("user_id", "job_id", name="uq_user_application_job"),
+    )
+    metadata.create_all(engine)
+
+    config_path = Path(__file__).resolve().parents[1] / "alembic.ini"
+    config = Config(str(config_path))
+    config.set_main_option("sqlalchemy.url", f"sqlite:///{database}")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    command.upgrade(config, "head")
+
+    inspector = sa.inspect(engine)
+    assert inspector.has_table("application_events")
+    columns = {item["name"]: item for item in inspector.get_columns("application_events")}
+    assert columns["user_id"]["nullable"] is False
+    assert columns["application_id"]["nullable"] is False
+    indexes = {item["name"] for item in inspector.get_indexes("application_events")}
+    assert {
+        "ix_application_events_user_id",
+        "ix_application_events_application_id",
+        "ix_application_events_occurred_at",
+    }.issubset(indexes)
+
+    with engine.begin() as connection:
+        connection.execute(sa.text("INSERT INTO users (id) VALUES (1)"))
+        connection.execute(sa.text("INSERT INTO applications (id, user_id, job_id) VALUES (10, 1, 99)"))
+        connection.execute(sa.text(
+            "INSERT INTO application_events "
+            "(id, user_id, application_id, previous_status, new_status, source, note, occurred_at) "
+            "VALUES (100, 1, 10, '', 'Candidatura enviada', 'manual_confirmed', '', CURRENT_TIMESTAMP)"
+        ))
+        count = connection.execute(sa.text("SELECT COUNT(*) FROM application_events")).scalar_one()
+        assert count == 1
+    engine.dispose()

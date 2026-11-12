@@ -700,3 +700,81 @@ def test_job_diagnosis_is_scoped_to_the_authenticated_users_job_list(client, db,
         session = second.get("/api/auth/me")
         second.headers.update({"X-CSRF-Token": session.json()["csrf_token"]})
         assert second.get(f"/api/jobs/{job.id}/diagnosis").status_code == 404
+
+
+
+def test_application_status_history_records_manual_and_initial_transitions(client, db):
+    job = make_job(db)
+    sent = client.post(f"/api/jobs/{job.id}/apply", json={"confirmed": True})
+    assert sent.status_code == 200
+    application_id = sent.json()["application_id"]
+
+    initial = client.get(f"/api/applications/{application_id}/history")
+    assert initial.status_code == 200
+    assert initial.json()["has_history"] is True
+    assert len(initial.json()["events"]) == 1
+    first = initial.json()["events"][0]
+    assert first["previous_status"] == ""
+    assert first["new_status"] == "Candidatura enviada"
+    assert first["source"] == "manual_confirmed"
+
+    updated = client.put(f"/api/applications/{application_id}", json={
+        "status": "Entrevista",
+        "applied_at": "2026-11-12",
+        "deadline": None,
+        "recruiter": "Pessoa recrutadora",
+        "notes": "Entrevista técnica agendada.",
+    })
+    assert updated.status_code == 200
+    history = client.get(f"/api/applications/{application_id}/history").json()
+    assert len(history["events"]) == 2
+    last = history["events"][1]
+    assert last["previous_status"] == "Candidatura enviada"
+    assert last["new_status"] == "Entrevista"
+    assert last["source"] == "manual"
+    assert last["note"] == "Entrevista técnica agendada."
+    assert "não são inferidas retroativamente" in history["notice"]
+
+    # Salvar observações sem alterar a etapa não cria eventos duplicados.
+    unchanged = client.put(f"/api/applications/{application_id}", json={
+        "status": "Entrevista",
+        "applied_at": "2026-11-12",
+        "deadline": None,
+        "recruiter": "Pessoa recrutadora",
+        "notes": "Atualizei as observações.",
+    })
+    assert unchanged.status_code == 200
+    final = client.get(f"/api/applications/{application_id}/history").json()
+    assert len(final["events"]) == 2
+
+
+def test_application_history_is_isolated_between_accounts(client, db, test_user):
+    from fastapi.testclient import TestClient
+    from jobfinder.api import password_hasher
+    from jobfinder.models import User
+
+    job = make_job(db)
+    response = client.post(f"/api/jobs/{job.id}/apply", json={"confirmed": True})
+    application_id = response.json()["application_id"]
+
+    second_user = User(
+        email="application-history-other@example.com",
+        email_normalized="application-history-other@example.com",
+        full_name="Outra Conta",
+        password_hash=password_hasher.hash("SenhaSeguraOutraConta123!"),
+        role="user",
+        is_active=True,
+    )
+    db.add(second_user)
+    db.commit()
+
+    with TestClient(api_module.app, base_url="https://testserver") as second:
+        login = second.post("/api/auth/login", json={
+            "email": second_user.email,
+            "password": "SenhaSeguraOutraConta123!",
+        })
+        assert login.status_code == 200
+        session = second.get("/api/auth/me")
+        assert session.status_code == 200
+        second.headers.update({"X-CSRF-Token": session.json()["csrf_token"]})
+        assert second.get(f"/api/applications/{application_id}/history").status_code == 404
