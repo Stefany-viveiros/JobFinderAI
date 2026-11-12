@@ -156,6 +156,80 @@ def test_smtp_account_is_encrypted_private_and_used_for_delivery(client, db, rea
     assert client.get("/api/agent/smtp").json() == {"configured": False}
 
 
+
+def test_user_resume_is_stored_encrypted_and_attached_only_to_owner(client, db, ready_profile, test_user, monkeypatch):
+    from cryptography.fernet import Fernet
+    from jobfinder.models import User, UserResume
+    from jobfinder.smtp_credentials import encrypt_password
+
+    monkeypatch.setenv("SMTP_CREDENTIALS_KEY", Fernet.generate_key().decode("ascii"))
+    monkeypatch.setenv("RESUME_STORAGE_KEY", Fernet.generate_key().decode("ascii"))
+    smtp = {
+        "host": "smtp.gmail.com", "port": 587, "username": "ana@test.dev",
+        "password": "smtp-test-secret", "from_email": "ana@test.dev", "use_tls": True,
+    }
+    assert client.put("/api/agent/smtp", json=smtp).status_code == 200
+
+    document = Document()
+    document.add_paragraph("Ana Teste")
+    document.add_paragraph("FORMAÇÃO ACADÊMICA")
+    document.add_paragraph("Análise e Desenvolvimento de Sistemas | FAM")
+    document.add_paragraph("HABILIDADES TÉCNICAS")
+    document.add_paragraph("Python, FastAPI e Git")
+    buffer = io.BytesIO()
+    document.save(buffer)
+    resume_bytes = buffer.getvalue()
+    upload = client.post(
+        "/api/profile/import",
+        files={"file": ("curriculo.docx", resume_bytes,
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+        data={"store_for_applications": "true"},
+    )
+    assert upload.status_code == 200, upload.text
+    assert upload.json()["resume_storage_saved"] is True
+
+    stored = db.query(UserResume).filter_by(user_id=test_user.id).one()
+    assert stored.encrypted_content.encode("ascii") != resume_bytes
+    assert "Ana Teste" not in stored.encrypted_content
+    assert client.get("/api/profile/resume").json()["configured"] is True
+    assert client.get("/api/agent/settings").json()["email_ready"] is True
+
+    # Uma segunda conta não enxerga o currículo da primeira.
+    second = User(
+        email="resume-other@example.com", email_normalized="resume-other@example.com",
+        full_name="Outra pessoa", password_hash=api_module.password_hasher.hash("OutraSenhaSegura123!"),
+        role="user", is_active=True,
+    )
+    db.add(second)
+    db.commit()
+    with TestClient(api_module.app, base_url="https://testserver") as other_client:
+        login = other_client.post("/api/auth/login", json={
+            "email": second.email, "password": "OutraSenhaSegura123!",
+        })
+        assert login.status_code == 200
+        csrf = other_client.get("/api/auth/me").json()["csrf_token"]
+        other_client.headers.update({"X-CSRF-Token": csrf})
+        assert other_client.get("/api/profile/resume").json()["configured"] is False
+
+    delivered = []
+    monkeypatch.setattr(applying, "_deliver", lambda msg, smtp_config=None: delivered.append((msg, smtp_config)))
+    job = make_job(db)
+    prepared = client.post(f"/api/jobs/{job.id}/prepare").json()["attempt"]
+    assert prepared["channel"] == "email" and prepared["status"] == "prepared"
+    sent = client.post(f"/api/attempts/{prepared['id']}/approve")
+    assert sent.status_code == 200, sent.text
+    assert sent.json()["attempt"]["status"] == "sent"
+    assert delivered[0][1]["password"] == "smtp-test-secret"
+    attachments = list(delivered[0][0].iter_attachments())
+    assert len(attachments) == 1
+    assert attachments[0].get_filename() == "curriculo.docx"
+    assert attachments[0].get_payload(decode=True) == resume_bytes
+
+    assert client.delete("/api/profile/resume").status_code == 200
+    assert client.get("/api/profile/resume").json()["configured"] is False
+    assert client.get("/api/agent/settings").json()["email_ready"] is False
+
+
 def test_saas_mode_never_uses_global_smtp_credentials(client, db, ready_profile, smtp_on):
     job = make_job(db)
     response = client.post(f"/api/jobs/{job.id}/prepare")
