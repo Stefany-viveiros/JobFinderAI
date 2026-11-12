@@ -516,6 +516,8 @@ input[type="checkbox"], input[type="radio"] {
 .career-evidence strong{font-size:11px;color:#4d5270}
 .career-evidence span{font-size:11px;color:#858aa0}
 .career-evidence p{font-size:11px;line-height:1.55;color:#777d94;margin:2px 0 0;overflow-wrap:anywhere}
+.career-evidence-superseded{opacity:.62}
+.career-evidence small{font-size:10px;line-height:1.45;color:#858aa0}
 .career-market-context{display:grid;grid-template-columns:1fr auto;gap:4px 10px;padding:10px;border-radius:9px;background:#f7f6ff;margin-bottom:11px}
 .career-market-context span{font-size:11px;color:#777d95;align-self:center}
 .career-market-context strong{font:800 16px Manrope,sans-serif;color:#675bdc}
