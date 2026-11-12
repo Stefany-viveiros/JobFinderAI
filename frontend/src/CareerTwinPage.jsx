@@ -64,6 +64,8 @@ export default function CareerTwinPage({ focusSection = null } = {}) {
   const [filter, setFilter] = useState('all')
   const [ledger, setLedger] = useState([])
   const [reviewingId, setReviewingId] = useState(null)
+  const [reviewHistory, setReviewHistory] = useState({})
+  const [historyLoadingId, setHistoryLoadingId] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -103,6 +105,23 @@ export default function CareerTwinPage({ focusSection = null } = {}) {
       setError(err.message || 'Não foi possível registrar a revisão.')
     } finally {
       setReviewingId(null)
+    }
+  }
+
+  const toggleReviewHistory = async (item) => {
+    if (reviewHistory[item.id]) {
+      setReviewHistory(current => ({ ...current, [item.id]: null }))
+      return
+    }
+    setHistoryLoadingId(item.id)
+    setError('')
+    try {
+      const result = await request(`/career-evidence/${item.id}/reviews`)
+      setReviewHistory(current => ({ ...current, [item.id]: result.items || [] }))
+    } catch (err) {
+      setError(err.message || 'Não foi possível carregar o histórico de revisão.')
+    } finally {
+      setHistoryLoadingId(null)
     }
   }
 
@@ -181,6 +200,18 @@ export default function CareerTwinPage({ focusSection = null } = {}) {
                 Marcar não relevante
               </button>
             </div>}
+            <div className="career-evidence-review-actions">
+              <button className="btn btn-secondary btn-sm" disabled={historyLoadingId === item.id} onClick={() => toggleReviewHistory(item)}>
+                {historyLoadingId === item.id ? 'Carregando…' : reviewHistory[item.id] ? 'Ocultar histórico' : 'Ver histórico'}
+              </button>
+            </div>
+            {Array.isArray(reviewHistory[item.id]) && <ol className="career-review-history">
+              {reviewHistory[item.id].length ? reviewHistory[item.id].map(review => <li key={review.id}>
+                <strong>{review.decision === 'confirmed' ? 'Origem confirmada' : 'Marcada como não relevante'}</strong>
+                <span>{review.note || 'Sem observação adicional'}</span>
+                <small>{review.created_at ? new Date(review.created_at).toLocaleString('pt-BR') : 'Data não informada'}</small>
+              </li>) : <li>Esta evidência ainda não possui revisões.</li>}
+            </ol>}
           </div>
         </div>)}
       </div> : <div className="career-empty"><CircleHelp size={18}/><span>As evidências aparecerão aqui quando você salvar competências em experiências, projetos, cursos, formação ou autoavaliações.</span></div>}
