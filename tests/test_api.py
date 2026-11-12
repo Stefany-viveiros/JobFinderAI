@@ -58,7 +58,7 @@ def test_prepare_then_approve_flow_with_failure_then_success(client, db, ready_p
 
     monkeypatch.setenv("SMTP_CREDENTIALS_KEY", Fernet.generate_key().decode("ascii"))
     config = {
-        "host": "smtp.test", "port": 587, "username": "ana@test.dev",
+        "host": "smtp.gmail.com", "port": 587, "username": "ana@test.dev",
         "password": "smtp-test-secret", "from_email": "ana@test.dev", "use_tls": True,
     }
     assert client.put("/api/agent/smtp", json=config).status_code == 200
@@ -84,7 +84,7 @@ def test_smtp_account_is_encrypted_private_and_used_for_delivery(client, db, rea
 
     monkeypatch.setenv("SMTP_CREDENTIALS_KEY", Fernet.generate_key().decode("ascii"))
     payload = {
-        "host": "smtp.conta.example",
+        "host": "smtp.gmail.com",
         "port": 587,
         "username": "stefany@example.com",
         "password": "senha-super-secreta",
@@ -112,7 +112,7 @@ def test_smtp_account_is_encrypted_private_and_used_for_delivery(client, db, rea
         from_email="other@example.com", use_tls=True,
     ))
     db.commit()
-    assert client.get("/api/agent/smtp").json()["host"] == "smtp.conta.example"
+    assert client.get("/api/agent/smtp").json()["host"] == "smtp.gmail.com"
 
     captured = []
     monkeypatch.setattr(applying, "_deliver", lambda msg, smtp_config=None: captured.append((msg, smtp_config)))
@@ -122,7 +122,7 @@ def test_smtp_account_is_encrypted_private_and_used_for_delivery(client, db, rea
     sent = client.post(f"/api/attempts/{attempt['id']}/approve")
     assert sent.status_code == 200
     assert sent.json()["attempt"]["status"] == "sent"
-    assert captured[0][1]["host"] == "smtp.conta.example"
+    assert captured[0][1]["host"] == "smtp.gmail.com"
     assert captured[0][1]["password"] == "senha-super-secreta"
     assert captured[0][0]["From"] == "stefany@example.com"
 
