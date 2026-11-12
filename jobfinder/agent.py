@@ -33,7 +33,10 @@ def pick_candidates(db, min_score, limit=MAX_PREPARE_PER_RUN, user_id=None):
     """Seleciona vagas pelo score privado do usuário e exclui suas tentativas/candidaturas."""
     if user_id is None:
         return []
-    attempted = select(ApplicationAttempt.job_id).where(ApplicationAttempt.user_id == user_id)
+    attempted = select(ApplicationAttempt.job_id).where(
+        ApplicationAttempt.user_id == user_id,
+        ApplicationAttempt.status != "cancelled",
+    )
     applied = select(Application.job_id).where(Application.user_id == user_id)
     stmt = (select(Job).join(JobMatch, JobMatch.job_id == Job.id).where(
                 JobMatch.user_id == user_id,
