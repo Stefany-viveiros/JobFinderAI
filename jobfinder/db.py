@@ -146,12 +146,12 @@ def validate_multitenant_schema() -> None:
     with engine.connect() as conn:
         mismatched_reviews = conn.execute(text(
             "SELECT COUNT(*) FROM career_evidence_reviews r "
-            "JOIN career_evidence e ON e.id = r.evidence_id "
-            "WHERE r.user_id != e.user_id"
+            "LEFT JOIN career_evidence e ON e.id = r.evidence_id "
+            "WHERE e.id IS NULL OR r.user_id != e.user_id"
         )).scalar_one()
     if mismatched_reviews:
         raise RuntimeError(
-            f"Schema SaaS inválido: {mismatched_reviews} revisão(ões) vinculada(s) a evidências de contas diferentes."
+            f"Schema SaaS inválido: {mismatched_reviews} revisão(ões) sem evidência correspondente ou vinculada(s) a outra conta."
         )
 
     for table in ("applications", "job_matches"):
