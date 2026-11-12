@@ -24,6 +24,7 @@ from .models import (
     Job, JobMatch, Application, Task, Profile, NotificationLog, ApplicationAttempt,
     Education, Experience, Course, Certification, PortfolioProject,
     MarketAnalysisRun, MarketSkillMetric, MarketSkillPair, Skill, DevelopmentPlanItem, SkillAssessmentAttempt, ApplicationEvent,
+    SmtpAccount,
 )
 from .service import get_profile, save_jobs, refresh_scores, create_task, complete_task, STATUSES, collect_and_save_ranked, collect_for_user, refresh_user_scores
 from .sources import SOURCES, SOURCE_INFO, LINK_ONLY_SOURCES, collect_selected, external_search_links
@@ -31,6 +32,7 @@ from . import applying
 from .agent import get_agent_settings, run_agent, TARGET_LEVELS
 from .mailer import send_daily_reminder
 from .config import settings, parse_cors_origins
+from .smtp_credentials import encrypt_password, CredentialEncryptionError
 from .resume_parser import parse_resume, extract_resume_text
 from .resume_ai import analyze_resume_with_gemini, ResumeAIError
 from .market_service import (create_market_snapshot, index_unprocessed_jobs, build_profile_gap,
@@ -611,7 +613,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         "upcoming_tasks": [task_dict(t) for t in upcoming],
         "recent_jobs": [job_dict(j, db=db, user_id=user_id) for j in recent_jobs],
         "profile_name": p.name,
-        "smtp_ready": bool(settings.smtp_ready and settings.smtp_username and settings.smtp_password),
+        "smtp_ready": db.scalar(select(SmtpAccount.id).where(SmtpAccount.user_id == user_id)) is not None,
     }
 
 
@@ -897,6 +899,70 @@ def cancel_attempt(attempt_id: int, request: Request, db: Session = Depends(get_
     return {"message": "Candidatura cancelada.", "attempt": attempt_dict(attempt)}
 
 
+class SmtpAccountUpdate(BaseModel):
+    host: str = Field(..., min_length=3, max_length=255)
+    port: int = Field(587, ge=1, le=65535)
+    username: str = Field(..., min_length=1, max_length=320)
+    password: str = Field(..., min_length=1, max_length=4096)
+    from_email: str = Field(..., min_length=3, max_length=320)
+    use_tls: bool = True
+
+
+def smtp_account_dict(account):
+    if account is None:
+        return {"configured": False}
+    return {
+        "configured": True,
+        "host": account.host,
+        "port": account.port,
+        "username": account.username,
+        "from_email": account.from_email,
+        "use_tls": account.use_tls,
+    }
+
+
+@app.get("/api/agent/smtp")
+def read_smtp_account(request: Request, db: Session = Depends(get_db)):
+    account = db.scalar(select(SmtpAccount).where(SmtpAccount.user_id == request.state.user_id))
+    return smtp_account_dict(account)
+
+
+@app.put("/api/agent/smtp")
+def save_smtp_account(payload: SmtpAccountUpdate, request: Request, db: Session = Depends(get_db)):
+    host = payload.host.strip()
+    sender = payload.from_email.strip()
+    if not host or any(char.isspace() for char in host) or "://" in host or "/" in host:
+        raise HTTPException(422, "Informe somente o hostname do servidor SMTP, sem protocolo ou caminho.")
+    if not re.fullmatch(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", sender):
+        raise HTTPException(422, "Endereço de remetente inválido.")
+    try:
+        encrypted = encrypt_password(payload.password)
+    except CredentialEncryptionError as exc:
+        raise HTTPException(503, str(exc))
+    account = db.scalar(select(SmtpAccount).where(SmtpAccount.user_id == request.state.user_id))
+    if account is None:
+        account = SmtpAccount(user_id=request.state.user_id)
+        db.add(account)
+    account.host = host
+    account.port = payload.port
+    account.username = payload.username.strip()
+    account.encrypted_password = encrypted
+    account.from_email = sender
+    account.use_tls = payload.use_tls
+    db.commit()
+    db.refresh(account)
+    return {"message": "Conexão SMTP individual salva com senha cifrada.", "smtp": smtp_account_dict(account)}
+
+
+@app.delete("/api/agent/smtp")
+def delete_smtp_account(request: Request, db: Session = Depends(get_db)):
+    account = db.scalar(select(SmtpAccount).where(SmtpAccount.user_id == request.state.user_id))
+    if account is not None:
+        db.delete(account)
+        db.commit()
+    return {"message": "Conexão SMTP individual removida.", "smtp": {"configured": False}}
+
+
 class AgentSettingsUpdate(BaseModel):
     auto_apply_enabled: bool = False
     require_approval: bool = True
@@ -910,7 +976,7 @@ def agent_settings_dict(db, user_id=None):
     return {"auto_apply_enabled": s.auto_apply_enabled, "require_approval": s.require_approval,
             "daily_limit": s.daily_limit, "min_score": s.min_score,
             "sent_today": applying.sent_today_count(db, user_id=user_id),
-            "email_ready": settings.smtp_can_send_applications,
+            "email_ready": db.scalar(select(SmtpAccount.id).where(SmtpAccount.user_id == user_id)) is not None,
             "profile_gaps": applying.profile_gaps(p), "profile_ready": not applying.profile_gaps(p)}
 
 
