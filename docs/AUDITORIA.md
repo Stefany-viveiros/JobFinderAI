@@ -186,3 +186,11 @@ O incremento de privacidade do upload foi implementado em `jobfinder/api.py` e `
 - `GET /api/career-evidence/{evidence_id}/reviews` retorna a trilha completa em ordem cronológica e aplica titularidade por conta.
 - A UI do Career Twin permite registrar observações e consultar o histórico. Decisões `dismissed` deixam de alimentar o mapa e o diagnóstico, sem apagar a fonte original.
 - CI do commit `9156f41`: SQLite 148 passed / 3 skipped; PostgreSQL 16 151 passed; build Vite aprovado. Teste adicional de rollback da migração `20261112_0004` também passou no commit `d63be76`: SQLite 149 passed / 3 skipped; PostgreSQL 16 152 passed; build Vite aprovado.
+## Varredura estática de rotas — 12/11/2026
+
+- Inventário revisado de todos os handlers `@app.*` em `jobfinder/api.py` na branch atual.
+- Rotas públicas deliberadas: health e cadastro/login/recuperação de senha; `/api/auth/me` valida a própria sessão. As demais rotas `/api/*` passam pelo middleware de sessão.
+- O middleware recusa o workspace por padrão enquanto `MULTITENANT_READY` não estiver explicitamente ativo e exige CSRF em métodos de escrita após validar a sessão.
+- Operações privadas de perfil, Career Twin/ledger, candidaturas, tentativas, agente, tarefas, notificações, plano e avaliações filtram pela identidade autenticada ou usam helper de titularidade. Ações sobre vagas exigem vínculo ativo em `JobMatch`.
+- Endpoints de mercado que não recebem `user_id` retornam snapshots e combinações agregadas derivados do catálogo público de vagas; não devem conter perfil, score, candidaturas ou dados pessoais.
+- A varredura estática não substitui testes de integração para cada rota nem valida dados legados de um banco real. O gate continua fechado até o ensaio operacional em cópia controlada e plano explícito para linhas sem proprietário.
