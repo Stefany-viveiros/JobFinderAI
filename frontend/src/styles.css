@@ -634,3 +634,7 @@ input[type="checkbox"], input[type="radio"] {
 .application-history-state{display:flex;align-items:center;gap:9px;padding:15px 0;font-size:12px;line-height:1.55;color:#777f96}
 .application-history-error{padding:14px 0;color:#ac4c4c;font-size:12px}
 @media(max-width:680px){.application-history-event-head{flex-direction:column;gap:3px}}
+
+.market-assessment-runner-notice{display:grid;gap:4px;margin:10px 0 14px;padding:11px 13px;border:1px dashed #d8dbea;border-radius:9px;background:#fafbfe}
+.market-assessment-runner-notice strong{font-size:11px;color:#5d6480}
+.market-assessment-runner-notice span{font-size:10px;line-height:1.55;color:#8189a0}

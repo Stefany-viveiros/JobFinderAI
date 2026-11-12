@@ -416,21 +416,7 @@ def test_career_twin_returns_traceable_profile_evidence(client, db, ready_profil
     )
     db.add(sql)
     db.flush()
-    db.add(SkillAssessmentAttempt(
-        user_id=ready_profile.user_id,
-        skill_id=sql.id,
-        challenge_title="Desafio SQL",
-        challenge_prompt="Consulta com JOIN e agregação",
-        rubric_json="[]",
-        response_text="Escrevi uma consulta SQL com JOIN e GROUP BY para consolidar os resultados.",
-        evidence_url="",
-        rubric_answers_json="{}",
-        score=75,
-        feedback="Autoavaliação registrada.",
-        status="self_reviewed",
-        submitted_at=datetime.utcnow(),
-    ))
-    db.add(DevelopmentPlanItem(
+    plan_item = DevelopmentPlanItem(
         user_id=ready_profile.user_id,
         skill_id=sql.id,
         title="Concluir prática de SQL",
@@ -441,6 +427,23 @@ def test_career_twin_returns_traceable_profile_evidence(client, db, ready_profil
         progress_percent=100,
         created_at=datetime.utcnow(),
         completed_at=datetime.utcnow(),
+    )
+    db.add(plan_item)
+    db.flush()
+    db.add(SkillAssessmentAttempt(
+        user_id=ready_profile.user_id,
+        skill_id=sql.id,
+        plan_item_id=plan_item.id,
+        challenge_title="Desafio SQL",
+        challenge_prompt="Consulta com JOIN e agregação",
+        rubric_json="[]",
+        response_text="Escrevi uma consulta SQL com JOIN e GROUP BY para consolidar os resultados.",
+        evidence_url="",
+        rubric_answers_json="{}",
+        score=75,
+        feedback="Autoavaliação registrada.",
+        status="self_reviewed",
+        submitted_at=datetime.utcnow(),
     ))
     db.commit()
 
@@ -459,6 +462,7 @@ def test_career_twin_returns_traceable_profile_evidence(client, db, ready_profil
     sql_skill = next(item for item in payload["skills"] if item["name"] == "SQL")
     assert sql_skill["status"] == "self_assessed"
     assert sql_skill["self_assessment"]["result_kind"] == "self_assessment"
+    assert sql_skill["self_assessment"]["plan_item_id"] == plan_item.id
     assert "não é validação independente" in sql_skill["self_assessment"]["notice"]
 
     timeline = payload["timeline"]
@@ -466,6 +470,7 @@ def test_career_twin_returns_traceable_profile_evidence(client, db, ready_profil
     challenge_event = next(item for item in timeline if item["event_type"] == "self_assessment_submitted")
     assert challenge_event["status"] == "self_reviewed"
     assert "Não representa validação independente" in challenge_event["detail"]
+    assert f"Meta vinculada: #{plan_item.id}" in challenge_event["detail"]
 
 
 def test_career_twin_is_isolated_between_accounts(client, db, test_user, ready_profile):

@@ -154,6 +154,7 @@ def build_career_twin(db: Session, *, user_id: int) -> dict:
         if skill.canonical_name not in assessments_by_skill:
             assessments_by_skill[skill.canonical_name] = {
                 "attempt_id": attempt.id,
+                "plan_item_id": attempt.plan_item_id,
                 "title": attempt.challenge_title,
                 "score": attempt.score,
                 "feedback": attempt.feedback or "",
@@ -343,7 +344,11 @@ def build_career_twin(db: Session, *, user_id: int) -> dict:
         if attempt.submitted_at:
             add_event(
                 "self_assessment_submitted", f"Autoavaliação registrada: {skill_name}",
-                f"Resultado autoavaliado: {attempt.score if attempt.score is not None else 'sem pontuação'}%. Não representa validação independente.",
+                (
+                    f"Resultado autoavaliado: {attempt.score if attempt.score is not None else 'sem pontuação'}%. "
+                    "Não representa validação independente."
+                    + (f" Meta vinculada: #{attempt.plan_item_id}." if attempt.plan_item_id else "")
+                ),
                 attempt.submitted_at, "self_reviewed", "skill_assessment_attempt", attempt.id,
                 attempt.evidence_url or "",
             )

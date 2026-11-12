@@ -422,6 +422,10 @@ export default function MarketIntelligencePage() {
             <span className="market-count">{assessments.summary?.submitted || 0} avaliações registradas</span>
           </div>
           <div className="market-assessment-notice"><ClipboardCheck size={17}/><span>A pontuação é uma autoavaliação. Ela registra sua percepção e suas evidências, mas não certifica nem comprova domínio técnico de forma independente.</span></div>
+          <div className="market-assessment-runner-notice" role="status">
+            <strong>Avaliação automática de código: não disponível.</strong>
+            <span>Os desafios usam checklist e autoavaliação. O código ou arquivo enviado nunca é executado no servidor.</span>
+          </div>
           {selectedAssessment && <div className="market-assessment-editor">
             <div className="market-assessment-editor-head"><div><span className="market-assessment-kicker">DESAFIO PRÁTICO · {selectedAssessment.skill_name}</span><h3>{selectedAssessment.title}</h3></div>
               {selectedAssessment.status === 'draft' && <span className="market-status-pill status-em-estudo">Em aberto</span>}
