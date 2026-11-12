@@ -436,3 +436,17 @@ class CareerEvidence(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
     superseded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+
+class CareerEvidenceReview(Base):
+    """Decisão humana append-only sobre uma evidência, sem alterar sua origem."""
+    __tablename__ = "career_evidence_reviews"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    evidence_id: Mapped[int] = mapped_column(
+        ForeignKey("career_evidence.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    decision: Mapped[str] = mapped_column(String(24), nullable=False)
+    note: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, index=True)
