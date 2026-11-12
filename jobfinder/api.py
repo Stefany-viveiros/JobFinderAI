@@ -784,7 +784,9 @@ def collect_jobs(payload: dict, request: Request, db: Session = Depends(get_db))
         raise HTTPException(400, "O limite deve ser um número entre 1 e 80.")
 
     items, errors = collect_selected(names)
-    result = collect_for_user(db, items, user_id=request.state.user_id, limit=limit, only_target=bool(payload.get("only_target", True)))
+    # O produto é focado em estágio/júnior de tecnologia; clientes não podem
+    # desativar esse filtro por payload e poluir o painel com vagas fora do escopo.
+    result = collect_for_user(db, items, user_id=request.state.user_id, limit=limit, only_target=True)
 
     return {
         "received": len(items),
