@@ -35,3 +35,36 @@ def test_cors_origins_deduplicate_normalized_values():
 def test_cors_origins_reject_wildcard_insecure_or_invalid_values(value):
     with pytest.raises(ValueError):
         parse_cors_origins(value)
+
+
+@pytest.mark.parametrize(
+    "app_env,session_hours,cookie_secure",
+    [
+        ("development", 24, False),
+        ("test", 1, False),
+        ("staging", 24, True),
+        ("production", 24, True),
+        ("production", 720, True),
+    ],
+)
+def test_session_configuration_accepts_safe_values(app_env, session_hours, cookie_secure):
+    from jobfinder.config import validate_session_configuration
+
+    validate_session_configuration(app_env, session_hours, cookie_secure)
+
+
+@pytest.mark.parametrize(
+    "app_env,session_hours,cookie_secure",
+    [
+        ("unknown", 24, True),
+        ("production", 24, False),
+        ("staging", 24, False),
+        ("development", 0, False),
+        ("production", 721, True),
+    ],
+)
+def test_session_configuration_rejects_unsafe_values(app_env, session_hours, cookie_secure):
+    from jobfinder.config import validate_session_configuration
+
+    with pytest.raises(ValueError):
+        validate_session_configuration(app_env, session_hours, cookie_secure)
