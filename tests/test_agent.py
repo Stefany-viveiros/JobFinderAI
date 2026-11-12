@@ -8,7 +8,7 @@ from sqlalchemy import select
 def feed(*extra):
     items = [
         {"source": "Remotive", "title": "Estágio Backend Python", "company": "ACME", "url": "https://a.test/1",
-         "description": "Python FastAPI Git APIs REST. Envie para vagas@acme.com", "location": "Brasil", "modality": "Remoto", "job_type": "Estágio"},
+         "description": "Python FastAPI Git APIs REST. Envie seu currículo para vagas@acme.com", "location": "Brasil", "modality": "Remoto", "job_type": "Estágio"},
         {"source": "OkEmprego", "title": "Estagio  Backend Python", "company": "ACME Ltda", "url": "https://b.test/9",
          "description": "mesma vaga em outra fonte", "location": "Brasil", "modality": "Remoto", "job_type": "Estágio"},
         {"source": "Remotive", "title": "Senior Python Developer", "company": "Big", "url": "https://a.test/2",
@@ -39,7 +39,7 @@ def test_auto_send_respects_toggle_and_daily_limit(db, ready_profile, smtp_on, t
     cfg.require_approval, cfg.auto_apply_enabled, cfg.daily_limit = False, False, 1
     db.commit()
     extra = {"source": "Remotive", "title": "Estágio Dados Python", "company": "Gama", "url": "https://a.test/4",
-             "description": "Python FastAPI Git APIs REST. rh@gama.com", "location": "Brasil", "modality": "Remoto", "job_type": "Estágio"}
+             "description": "Python FastAPI Git APIs REST. Envie seu currículo para rh@gama.com", "location": "Brasil", "modality": "Remoto", "job_type": "Estágio"}
     r = run_agent(db, collector=feed(extra), user_id=test_user.id)
     assert r["sent"] == 0 and smtp_on == []                       # envio automático desativado
     assert r["prepared"] == 2
@@ -131,3 +131,22 @@ def test_legacy_agent_runner_blocks_before_database_when_multitenant(monkeypatch
     result = agent_runner.main()
     assert result["status"] == "blocked"
     assert "execução individual por conta" in result["detail"]
+
+
+
+def test_cancelled_attempt_can_be_prepared_again_by_agent(db, ready_profile, test_user):
+    item = {
+        "source": "Nerdin", "title": "Estágio Backend Python", "company": "Reprocessar",
+        "url": "https://a.test/reprocessar",
+        "description": "Python FastAPI Git. Envie seu currículo para rh@reprocessar.com",
+        "location": "Brasil", "modality": "Remoto", "job_type": "Estágio",
+    }
+    first = run_agent(db, collector=lambda names: ([item], []), user_id=test_user.id)
+    assert first["awaiting_approval"] == 1
+    attempt = db.scalar(select(ApplicationAttempt))
+    applying.cancel_attempt(db, attempt)
+
+    second = run_agent(db, collect=False, user_id=test_user.id)
+    assert second["awaiting_approval"] == 1
+    all_attempts = db.scalars(select(ApplicationAttempt).order_by(ApplicationAttempt.id)).all()
+    assert [row.status for row in all_attempts] == ["cancelled", "awaiting_approval"]
