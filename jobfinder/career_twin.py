@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from .market import extract_skills
-from .evidence_ledger import list_profile_evidence
+from .evidence_ledger import list_profile_evidence, list_dismissed_evidence_keys
 from .models import (
     MarketAnalysisRun,
     MarketSkillMetric,
@@ -100,22 +100,25 @@ def build_career_twin(db: Session, *, user_id: int) -> dict:
         }
 
     evidence_by_skill = defaultdict(list)
+    dismissed_evidence = list_dismissed_evidence_keys(db, user_id=user_id)
 
-    def add(source_type: str, label: str, source_id: int | None, value: str):
+    def add(source_type: str, label: str, source_id: int | None, value: str, source_key: str):
         if not (value or "").strip():
             return
         for evidence in _record_evidence(source_type, label, source_id, value):
+            if (source_key, evidence["canonical_name"]) in dismissed_evidence:
+                continue
             evidence_by_skill[evidence["canonical_name"]].append(evidence)
 
     for item in profile.experiences:
         add("professional_experience", f'{item.role or "Experiência"} · {item.company or "Empresa não informada"}', item.id,
-            f"{item.role} {item.company} {item.description}")
+            f"{item.role} {item.company} {item.description}", f"experience:{item.id}")
 
     for item in profile.portfolio_projects:
         state = _status(item.status)
         source_type = "completed_project" if state in COMPLETED_VALUES else "ongoing_project"
         add(source_type, item.name or "Projeto", item.id,
-            f"{item.name} {item.description} {item.technologies}")
+            f"{item.name} {item.description} {item.technologies}", f"portfolio_project:{item.id}")
 
     for item in profile.courses:
         state = _status(item.status)
@@ -123,23 +126,23 @@ def build_career_twin(db: Session, *, user_id: int) -> dict:
             "ongoing_course" if state in IN_PROGRESS_VALUES else "course_status_unspecified"
         )
         add(source_type, f'{item.name or "Curso"} · {item.provider or "Instituição não informada"}', item.id,
-            f"{item.name} {item.provider}")
+            f"{item.name} {item.provider}", f"course:{item.id}")
 
     for item in profile.certifications_items:
         add("certification_record", f'{item.name or "Certificação"} · {item.issuer or "Emissor não informado"}', item.id,
-            f"{item.name} {item.issuer}")
+            f"{item.name} {item.issuer}", f"certification:{item.id}")
 
     for item in profile.educations:
         add("education_record", f'{item.course or "Formação"} · {item.institution or "Instituição não informada"}', item.id,
-            f"{item.course} {item.institution} {item.description}")
+            f"{item.course} {item.institution} {item.description}", f"education:{item.id}")
 
     # Campos legados continuam disponíveis e suas origens são identificadas.
-    add("legacy_experience", "Experiência (campo legado)", None, profile.experience or "")
-    add("legacy_project", "Projetos (campo legado)", None, profile.projects or "")
-    add("legacy_certification", "Certificações (campo legado)", None, profile.certifications or "")
-    add("self_declared", "Tecnologias declaradas", None, profile.technologies or "")
-    add("self_declared", "Habilidades declaradas", None, profile.skills or "")
-    add("self_declared", "Palavras-chave declaradas", None, profile.keywords or "")
+    add("legacy_experience", "Experiência (campo legado)", None, profile.experience or "", "legacy:experience")
+    add("legacy_project", "Projetos (campo legado)", None, profile.projects or "", "legacy:project")
+    add("legacy_certification", "Certificações (campo legado)", None, profile.certifications or "", "legacy:certification")
+    add("self_declared", "Tecnologias declaradas", None, profile.technologies or "", "legacy:technologies")
+    add("self_declared", "Habilidades declaradas", None, profile.skills or "", "legacy:skills")
+    add("self_declared", "Palavras-chave declaradas", None, profile.keywords or "", "legacy:keywords")
 
     assessment_rows = db.execute(
         select(SkillAssessmentAttempt, Skill)
@@ -152,6 +155,8 @@ def build_career_twin(db: Session, *, user_id: int) -> dict:
     ).all()
     assessments_by_skill = {}
     for attempt, skill in assessment_rows:
+        if (f"challenge_attempt:{attempt.id}", skill.canonical_name) in dismissed_evidence:
+            continue
         if skill.canonical_name not in assessments_by_skill:
             assessments_by_skill[skill.canonical_name] = {
                 "attempt_id": attempt.id,
