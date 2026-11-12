@@ -8,3 +8,13 @@ def test_email_mentions_deadline_and_overdue():
     plain,html=build_email([task],today=date(2026,1,2))
     assert "Enviar currículo" in plain and "VENCIDA" in plain
     assert "Alta" in html
+
+
+def test_legacy_reminder_runner_is_blocked_when_multiuser_gate_is_enabled(monkeypatch):
+    from jobfinder.mailer import send_daily_reminder
+
+    monkeypatch.setenv("MULTITENANT_READY", "true")
+    result = send_daily_reminder(object())
+
+    assert result["status"] == "blocked"
+    assert "envio individual por conta" in result["detail"]
