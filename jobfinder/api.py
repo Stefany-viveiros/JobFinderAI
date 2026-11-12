@@ -37,7 +37,7 @@ from .market_service import (create_market_snapshot, index_unprocessed_jobs, bui
     list_development_plan, create_development_item, update_development_item, DEVELOPMENT_STATUSES,
     create_skill_assessment, submit_skill_assessment, list_skill_assessments, compare_market_trends)
 from .career_twin import build_career_twin
-from .evidence_ledger import sync_profile_evidence, list_profile_evidence, record_self_assessment_evidence
+from .evidence_ledger import sync_profile_evidence, list_profile_evidence, record_self_assessment_evidence, review_profile_evidence
 from .matching import diagnose_job_requirements
 
 app = FastAPI(title="JobFinder AI API", version="1.1.0", description="API do JobFinder AI")
@@ -1072,6 +1072,11 @@ def read_career_twin(request: Request, db: Session = Depends(get_db)):
     return build_career_twin(db, user_id=request.state.user_id)
 
 
+class CareerEvidenceReviewInput(BaseModel):
+    decision: str = Field(pattern="^(confirmed|dismissed)$")
+    note: str = Field("", max_length=1000)
+
+
 @app.get("/api/career-evidence")
 def read_career_evidence(
     request: Request,
@@ -1085,6 +1090,32 @@ def read_career_evidence(
             db, user_id=request.state.user_id, active_only=active_only, limit=limit
         )
     }
+
+
+@app.post("/api/career-evidence/{evidence_id}/review")
+def submit_career_evidence_review(
+    evidence_id: int,
+    payload: CareerEvidenceReviewInput,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Anexa decisão humana sem editar a evidência nem promover proficiência."""
+    try:
+        result = review_profile_evidence(
+            db,
+            evidence_id=evidence_id,
+            user_id=request.state.user_id,
+            decision=payload.decision,
+            note=payload.note,
+        )
+        db.commit()
+        return {"review": result}
+    except LookupError as exc:
+        db.rollback()
+        raise HTTPException(404, str(exc))
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(400, str(exc))
 
 
 @app.put("/api/profile")
