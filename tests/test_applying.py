@@ -33,7 +33,9 @@ def test_prepare_never_marks_as_sent(db, ready_profile):
 
 
 def test_email_channel_requires_published_address_and_smtp(db, ready_profile, smtp_on):
-    assert applying.extract_apply_email("contato: <b>rh@empresa.com.br</b> ou noreply@x.com") == "rh@empresa.com.br"
+    assert applying.extract_apply_email("Envie seu currículo para: <b>rh@empresa.com.br</b> ou noreply@x.com") == "rh@empresa.com.br"
+    assert applying.extract_apply_email("Contato geral: contato@empresa.com.br") is None
+    assert applying.extract_apply_email("Suporte técnico: suporte@empresa.com.br") is None
     assert applying.extract_apply_email("só noreply@x.com") is None
     attempt = applying.prepare_attempt(db, make_job(db), ready_profile)
     assert attempt.channel == "email" and attempt.recipient == "vagas@acme.com" and attempt.status == "prepared"
