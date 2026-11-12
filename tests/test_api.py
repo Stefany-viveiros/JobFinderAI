@@ -1020,3 +1020,79 @@ def test_cors_middleware_allows_only_configured_origins(client):
     })
     assert denied.status_code == 400
     assert denied.headers.get("access-control-allow-origin") is None
+
+
+def test_career_evidence_ledger_versions_profile_sources_and_is_account_scoped(client, test_user):
+    from jobfinder.models import CareerEvidence
+
+    first = client.put("/api/profile", json={
+        "portfolio_projects": [{
+            "name": "Projeto de API",
+            "description": "API backend construída com Python e FastAPI.",
+            "technologies": "Python, FastAPI",
+            "status": "Em desenvolvimento",
+        }]
+    })
+    assert first.status_code == 200
+    assert first.json()["evidence_sync"]["created"] >= 2
+
+    initial = client.get("/api/career-evidence?active_only=true").json()["items"]
+    assert {item["skill_name"] for item in initial} >= {"Python", "FastAPI"}
+    assert all(item["verification_level"] == "self_reported" for item in initial)
+
+    project_id = first.json()["profile"]["portfolio_projects"][0]["id"]
+    repeated = client.put("/api/profile", json={
+        "portfolio_projects": [{
+            "id": project_id,
+            "name": "Projeto de API",
+            "description": "API backend construída com Python e FastAPI.",
+            "technologies": "Python, FastAPI",
+            "status": "Em desenvolvimento",
+        }]
+    })
+    assert repeated.status_code == 200
+    assert repeated.json()["evidence_sync"]["created"] == 0
+    assert len(client.get("/api/career-evidence?active_only=true").json()["items"]) == len(initial)
+
+    changed = client.put("/api/profile", json={
+        "portfolio_projects": [{
+            "id": project_id,
+            "name": "Projeto de API",
+            "description": "API backend construída com Python e PostgreSQL.",
+            "technologies": "Python, PostgreSQL",
+            "status": "Concluído",
+        }]
+    })
+    assert changed.status_code == 200
+    history = client.get("/api/career-evidence").json()["items"]
+    python_versions = [item for item in history if item["skill_name"] == "Python"]
+    assert len(python_versions) >= 2
+    assert any(item["is_active"] for item in python_versions)
+    assert any(not item["is_active"] and item["superseded_at"] for item in python_versions)
+    assert any(item["skill_name"] == "PostgreSQL" and item["is_active"] for item in history)
+    assert all(item["verification_level"] == "self_reported" for item in history)
+
+    removed = client.put("/api/profile", json={"portfolio_projects": []})
+    assert removed.status_code == 200
+    assert removed.json()["evidence_sync"]["superseded"] >= 1
+    assert client.get("/api/career-evidence?active_only=true").json()["items"] == []
+    assert client.get("/api/career-twin").json()["evidence_ledger"] == []
+
+    # Uma segunda conta autenticada não consegue consultar o ledger da primeira.
+    second = TestClient(api_module.app, base_url="https://testserver")
+    registration = second.post("/api/auth/register", json={
+        "email": "outra-conta@example.com",
+        "full_name": "Outra Conta",
+        "password": "OutraSenhaSegura123!",
+    })
+    assert registration.status_code == 200
+    second_session = second.get("/api/auth/me")
+    assert second_session.status_code == 200
+    second.headers.update({"X-CSRF-Token": second_session.json()["csrf_token"]})
+    assert second.get("/api/career-evidence").status_code == 200
+    assert second.get("/api/career-evidence").json()["items"] == []
+
+    # Confirma que o histórico original continua associado à conta original.
+    assert db.scalar(
+        select(CareerEvidence.id).where(CareerEvidence.user_id == test_user.id)
+    ) is not None
