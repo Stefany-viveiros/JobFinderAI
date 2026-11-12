@@ -37,7 +37,7 @@ from .market_service import (create_market_snapshot, index_unprocessed_jobs, bui
     list_development_plan, create_development_item, update_development_item, DEVELOPMENT_STATUSES,
     create_skill_assessment, submit_skill_assessment, list_skill_assessments, compare_market_trends)
 from .career_twin import build_career_twin
-from .evidence_ledger import sync_profile_evidence, list_profile_evidence, record_self_assessment_evidence, review_profile_evidence, list_evidence_reviews
+from .evidence_ledger import sync_profile_evidence, list_profile_evidence, record_self_assessment_evidence, review_profile_evidence, list_evidence_reviews, list_dismissed_evidence_keys
 from .matching import diagnose_job_requirements
 
 app = FastAPI(title="JobFinder AI API", version="1.1.0", description="API do JobFinder AI")
@@ -692,7 +692,10 @@ def diagnose_job(job_id: int, request: Request, db: Session = Depends(get_db)):
         )
     ).all())
     diagnosis = diagnose_job_requirements(
-        job.description or "", profile, self_assessed_skill_names=assessed_names
+        job.description or "",
+        profile,
+        self_assessed_skill_names=assessed_names,
+        dismissed_evidence_keys=list_dismissed_evidence_keys(db, user_id=user_id),
     )
     return {
         "job": {
