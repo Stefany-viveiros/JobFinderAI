@@ -6,6 +6,23 @@ from urllib.parse import urlsplit
 load_dotenv()
 
 
+def _read_bool(name: str, default: str) -> bool:
+    value = os.getenv(name, default).strip().lower()
+    if value not in {"true", "false"}:
+        raise ValueError(f"{name} deve ser true ou false.")
+    return value == "true"
+
+
+def validate_session_configuration(app_env: str, session_hours: int, cookie_secure: bool) -> None:
+    environment = (app_env or "").strip().lower()
+    if environment not in {"development", "test", "staging", "production"}:
+        raise ValueError("APP_ENV deve ser development, test, staging ou production.")
+    if not 1 <= int(session_hours) <= 720:
+        raise ValueError("SESSION_HOURS deve estar entre 1 e 720 horas.")
+    if environment in {"staging", "production"} and not cookie_secure:
+        raise ValueError("COOKIE_SECURE=true é obrigatório em staging e production.")
+
+
 @dataclass(frozen=True)
 class Settings:
     smtp_host: str = os.getenv("SMTP_HOST", "")
@@ -22,6 +39,9 @@ class Settings:
     # Credenciais Gemini ficam somente no ambiente; nunca versionar a chave.
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
     gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+    app_env: str = os.getenv("APP_ENV", "development").strip().lower()
+    session_hours: int = int(os.getenv("SESSION_HOURS", "24"))
+    cookie_secure: bool = _read_bool("COOKIE_SECURE", "true")
 
     @property
     def smtp_ready(self) -> bool:
@@ -35,6 +55,7 @@ class Settings:
 
 
 settings = Settings()
+validate_session_configuration(settings.app_env, settings.session_hours, settings.cookie_secure)
 
 
 def parse_cors_origins(raw: str) -> list[str]:
