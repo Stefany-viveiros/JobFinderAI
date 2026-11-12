@@ -16,6 +16,7 @@ from .models import (
     Profile,
     Skill,
     SkillAssessmentAttempt,
+    DevelopmentPlanItem,
 )
 
 
@@ -240,6 +241,117 @@ def build_career_twin(db: Session, *, user_id: int) -> dict:
             ),
         })
 
+    # Linha do tempo derivada de registros datados e eventos de desenvolvimento.
+    # Uma atividade concluída ou autoavaliação não é promovida automaticamente a proficiência.
+    timeline = []
+
+    def add_event(event_type, title, detail="", date_value=None, status="", source_type="", source_id=None, evidence_url=""):
+        if hasattr(date_value, "isoformat"):
+            date_text = date_value.isoformat()
+        else:
+            date_text = str(date_value or "").strip() or None
+        timeline.append({
+            "event_type": event_type,
+            "title": str(title or "").strip(),
+            "detail": str(detail or "").strip(),
+            "date": date_text,
+            "status": str(status or "").strip(),
+            "source_type": source_type,
+            "source_id": source_id,
+            "evidence_url": str(evidence_url or "").strip(),
+        })
+
+    for item in profile.educations:
+        date_value = item.end_date or item.start_date or None
+        add_event(
+            "education_record", item.course or "Formação acadêmica",
+            " · ".join(x for x in (item.institution, item.degree, item.status) if x),
+            date_value, item.status, "education_record", item.id,
+        )
+
+    for item in profile.experiences:
+        period = " – ".join(x for x in (item.start_date, item.end_date or ("Atual" if item.is_current else "")) if x)
+        add_event(
+            "professional_experience", item.role or "Experiência profissional",
+            " · ".join(x for x in (item.company, period, item.employment_type) if x),
+            item.end_date or item.start_date or None,
+            "Atual" if item.is_current else "Experiência registrada",
+            "professional_experience", item.id,
+        )
+
+    for item in profile.portfolio_projects:
+        state = _status(item.status)
+        add_event(
+            "completed_project" if state in COMPLETED_VALUES else "ongoing_project",
+            item.name or "Projeto de portfólio",
+            item.description or item.technologies or "Projeto registrado no portfólio.",
+            None, item.status, "portfolio_project", item.id,
+            item.repository_url or item.demo_url or "",
+        )
+
+    for item in profile.courses:
+        add_event(
+            "completed_course" if _status(item.status) in COMPLETED_VALUES else "ongoing_course",
+            item.name or "Curso",
+            " · ".join(x for x in (item.provider, item.workload, item.status) if x),
+            item.completed_at or None,
+            item.status, "course_record", item.id, item.credential_url or "",
+        )
+
+    for item in profile.certifications_items:
+        add_event(
+            "certification_record", item.name or "Certificação",
+            " · ".join(x for x in (item.issuer, item.credential_id) if x),
+            item.issued_at or None, "Certificação cadastrada",
+            "certification_record", item.id, item.credential_url or "",
+        )
+
+    plan_rows = db.execute(
+        select(DevelopmentPlanItem, Skill)
+        .join(Skill, Skill.id == DevelopmentPlanItem.skill_id)
+        .where(DevelopmentPlanItem.user_id == user_id)
+        .order_by(DevelopmentPlanItem.created_at.desc(), DevelopmentPlanItem.id.desc())
+    ).all()
+    for item, skill in plan_rows:
+        add_event(
+            "development_goal_created", item.title or f"Desenvolver {skill.canonical_name}",
+            f"Meta de desenvolvimento para {skill.canonical_name}. {item.objective or ''}".strip(),
+            item.created_at, item.status, "development_plan_item", item.id,
+            item.resource_url or "",
+        )
+        if item.completed_at:
+            add_event(
+                "development_goal_completed", f"Meta concluída: {skill.canonical_name}",
+                "Atividade marcada como concluída. Isso registra a execução da meta, não comprova proficiência por si só.",
+                item.completed_at, "completed", "development_plan_item", item.id,
+                item.resource_url or "",
+            )
+
+    all_attempts = db.scalars(
+        select(SkillAssessmentAttempt)
+        .where(SkillAssessmentAttempt.user_id == user_id)
+        .order_by(SkillAssessmentAttempt.created_at.desc(), SkillAssessmentAttempt.id.desc())
+    ).all()
+    for attempt in all_attempts:
+        skill = db.get(Skill, attempt.skill_id)
+        skill_name = skill.canonical_name if skill else "Competência"
+        add_event(
+            "challenge_started", attempt.challenge_title or f"Desafio de {skill_name}",
+            f"Desafio prático iniciado para {skill_name}.",
+            attempt.created_at, attempt.status, "skill_assessment_attempt", attempt.id,
+        )
+        if attempt.submitted_at:
+            add_event(
+                "self_assessment_submitted", f"Autoavaliação registrada: {skill_name}",
+                f"Resultado autoavaliado: {attempt.score if attempt.score is not None else 'sem pontuação'}%. Não representa validação independente.",
+                attempt.submitted_at, "self_reviewed", "skill_assessment_attempt", attempt.id,
+                attempt.evidence_url or "",
+            )
+
+    # Eventos com data conhecida aparecem primeiro, do mais recente para o mais antigo.
+    timeline.sort(key=lambda item: item["date"] or "", reverse=True)
+    timeline.sort(key=lambda item: item["date"] is None)
+
     public_profile = _public_profile(profile)
     sections = {
         "identity": bool(public_profile["name"] or public_profile["interests"]),
@@ -263,6 +375,7 @@ def build_career_twin(db: Session, *, user_id: int) -> dict:
         },
         "sections": sections,
         "skills": skills,
+        "timeline": timeline,
         "market": market_payload,
         "data_quality": {
             "method": "extração determinística por taxonomia e aliases do JobFinder AI",

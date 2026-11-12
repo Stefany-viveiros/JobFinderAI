@@ -75,6 +75,7 @@ export default function CareerTwinPage() {
   const profile = data.profile || {}
   const summary = data.summary || {}
   const skills = data.skills || []
+  const timeline = data.timeline || []
   const visibleSkills = skills.filter(item => filter === 'all' || (
     filter === 'evidence' ? item.evidence?.length > 0 :
     filter === 'declared' ? item.status === 'self_declared' :
@@ -124,6 +125,28 @@ export default function CareerTwinPage() {
           <div><Code2 size={18}/><span><strong>Projetos</strong><small>{profile.projects?.length || 0} registro(s)</small></span></div>
           <div><BookOpen size={18}/><span><strong>Cursos e certificações</strong><small>{(profile.courses?.length || 0) + (profile.certifications?.length || 0)} registro(s)</small></span></div>
         </div>
+        <div className="career-timeline-heading"><strong>Histórico de evolução</strong><span>{timeline.length} evento(s)</span></div>
+        {timeline.length ? <ol className="career-timeline">{timeline.map((event,index) => <li key={`${event.source_type}-${event.source_id ?? index}-${event.event_type}`}>
+          <span className="career-timeline-marker"/>
+          <div className="career-timeline-content">
+            <div><strong>{event.title}</strong><span>{event.date ? new Date(event.date).toLocaleDateString('pt-BR') : 'Data não informada'}</span></div>
+            <p>{event.detail}</p>
+            <small>{({
+              education_record: 'Formação acadêmica',
+              professional_experience: 'Experiência profissional',
+              completed_project: 'Projeto concluído',
+              ongoing_project: 'Projeto em andamento',
+              completed_course: 'Curso concluído',
+              ongoing_course: 'Curso em andamento',
+              certification_record: 'Certificação cadastrada',
+              development_goal_created: 'Plano de desenvolvimento',
+              development_goal_completed: 'Meta concluída',
+              challenge_started: 'Desafio prático',
+              self_assessment_submitted: 'Autoavaliação',
+            })[event.event_type] || event.event_type}</small>
+            {event.evidence_url && <a href={event.evidence_url} target="_blank" rel="noreferrer">Abrir evidência <ArrowUpRight size={12}/></a>}
+          </div>
+        </li>)}</ol> : <div className="career-empty"><CircleHelp size={18}/><span>Seu histórico aparecerá aqui conforme você cadastrar experiências, cursos, projetos e atividades de desenvolvimento.</span></div>}
       </section>
       <section className="panel career-panel">
         <div className="career-panel-heading"><div><span className="career-eyebrow">CONTEXTO DE MERCADO</span><h2>Demanda observada</h2></div></div>

@@ -394,7 +394,8 @@ def test_two_accounts_cannot_read_or_modify_each_others_private_data(client, db,
         assert second.get("/api/notifications").json() == []
 
 def test_career_twin_returns_traceable_profile_evidence(client, db, ready_profile):
-    from jobfinder.models import PortfolioProject, Skill, SkillAssessmentAttempt
+    from datetime import datetime
+    from jobfinder.models import PortfolioProject, Skill, SkillAssessmentAttempt, DevelopmentPlanItem
 
     project = PortfolioProject(
         profile_id=ready_profile.id,
@@ -427,6 +428,19 @@ def test_career_twin_returns_traceable_profile_evidence(client, db, ready_profil
         score=75,
         feedback="Autoavaliação registrada.",
         status="self_reviewed",
+        submitted_at=datetime.utcnow(),
+    ))
+    db.add(DevelopmentPlanItem(
+        user_id=ready_profile.user_id,
+        skill_id=sql.id,
+        title="Concluir prática de SQL",
+        objective="Construir uma consulta com JOIN e agregação.",
+        activity="Criar e documentar consulta.",
+        estimated_hours=4,
+        status="completed",
+        progress_percent=100,
+        created_at=datetime.utcnow(),
+        completed_at=datetime.utcnow(),
     ))
     db.commit()
 
@@ -446,6 +460,12 @@ def test_career_twin_returns_traceable_profile_evidence(client, db, ready_profil
     assert sql_skill["status"] == "self_assessed"
     assert sql_skill["self_assessment"]["result_kind"] == "self_assessment"
     assert "não é validação independente" in sql_skill["self_assessment"]["notice"]
+
+    timeline = payload["timeline"]
+    assert any(item["event_type"] == "development_goal_completed" for item in timeline)
+    challenge_event = next(item for item in timeline if item["event_type"] == "self_assessment_submitted")
+    assert challenge_event["status"] == "self_reviewed"
+    assert "Não representa validação independente" in challenge_event["detail"]
 
 
 def test_career_twin_is_isolated_between_accounts(client, db, test_user, ready_profile):
