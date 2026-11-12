@@ -37,7 +37,7 @@ from .market_service import (create_market_snapshot, index_unprocessed_jobs, bui
     list_development_plan, create_development_item, update_development_item, DEVELOPMENT_STATUSES,
     create_skill_assessment, submit_skill_assessment, list_skill_assessments, compare_market_trends)
 from .career_twin import build_career_twin
-from .evidence_ledger import sync_profile_evidence, list_profile_evidence, record_self_assessment_evidence, review_profile_evidence
+from .evidence_ledger import sync_profile_evidence, list_profile_evidence, record_self_assessment_evidence, review_profile_evidence, list_evidence_reviews
 from .matching import diagnose_job_requirements
 
 app = FastAPI(title="JobFinder AI API", version="1.1.0", description="API do JobFinder AI")
@@ -1116,6 +1116,23 @@ def submit_career_evidence_review(
     except ValueError as exc:
         db.rollback()
         raise HTTPException(400, str(exc))
+
+
+@app.get("/api/career-evidence/{evidence_id}/reviews")
+def read_career_evidence_reviews(
+    evidence_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Retorna decisões históricas sem permitir consultar evidência de outra conta."""
+    try:
+        return {
+            "items": list_evidence_reviews(
+                db, evidence_id=evidence_id, user_id=request.state.user_id
+            )
+        }
+    except LookupError as exc:
+        raise HTTPException(404, str(exc))
 
 
 @app.put("/api/profile")
