@@ -17,8 +17,9 @@ from sqlalchemy import func, select
 
 from .config import settings
 from .matching import normalize, profile_technology_terms
-from .models import Application, ApplicationAttempt, ApplicationEvent, Job, SmtpAccount
+from .models import Application, ApplicationAttempt, ApplicationEvent, Job, SmtpAccount, UserResume
 from .smtp_credentials import decrypt_password, CredentialEncryptionError
+from .resume_storage import decrypt_resume, digest_resume, ResumeStorageError
 
 OPEN_STATUSES = ("prepared", "awaiting_approval", "manual_required")
 SENDABLE_STATUSES = ("prepared", "awaiting_approval", "failed")
@@ -162,12 +163,19 @@ def email_channel_available(job, user_id: int | None = None, db=None) -> tuple[b
             decrypt_password(account.encrypted_password)
         except CredentialEncryptionError:
             return False, "Credencial SMTP indisponível; revise a chave de criptografia do servidor."
-        # O importador atual extrai os dados do currículo, mas não persiste um arquivo
-        # individual seguro para anexar. Não envie uma candidatura sem o CV esperado.
-        return False, (
-            "Envio por e-mail bloqueado: o currículo individual ainda não possui "
-            "armazenamento seguro para anexo. Finalize a candidatura no portal original."
-        )
+        resume = db.scalar(select(UserResume).where(UserResume.user_id == user_id))
+        if resume is None:
+            return False, (
+                "Guarde seu currículo com a opção de armazenamento cifrado no Perfil profissional "
+                "antes de habilitar o envio por e-mail."
+            )
+        try:
+            content = decrypt_resume(resume.encrypted_content)
+        except ResumeStorageError:
+            return False, "Arquivo de currículo indisponível; envie-o novamente com armazenamento cifrado."
+        if not content or digest_resume(content) != resume.sha256:
+            return False, "A integridade do currículo armazenado não pôde ser confirmada; envie-o novamente."
+        return True, ""
     if not settings.smtp_can_send_applications:
         return False, "SMTP não configurado no .env (SMTP_HOST, SMTP_FROM, SMTP_USERNAME, SMTP_PASSWORD)."
     return True, ""
@@ -275,13 +283,32 @@ def send_attempt(db, attempt: ApplicationAttempt, daily_limit: int | None = None
         raise ApplyError("Esta candidatura não tem canal de envio automático; finalize no site original.")
     import os
     smtp_config = None
+    resume_attachment = None
     if os.getenv("MULTITENANT_READY", "false").strip().lower() == "true":
-        # Defesa em profundidade: tentativas antigas ou criadas antes da regra
-        # também não podem enviar sem um anexo de currículo por usuário.
-        raise ApplyError(
-            "Envio por e-mail bloqueado: o currículo individual ainda não possui "
-            "armazenamento seguro para anexo. Finalize a candidatura no portal original."
-        )
+        if user_id is None:
+            raise ApplyError("Envio SMTP exige identidade autenticada.")
+        account = db.scalar(select(SmtpAccount).where(SmtpAccount.user_id == user_id))
+        if account is None:
+            raise ApplyError("Configure sua conexão SMTP individual antes de aprovar o envio.")
+        try:
+            smtp_password = decrypt_password(account.encrypted_password)
+        except CredentialEncryptionError as exc:
+            raise ApplyError(str(exc)) from exc
+        resume = db.scalar(select(UserResume).where(UserResume.user_id == user_id))
+        if resume is None:
+            raise ApplyError("Guarde seu currículo com armazenamento cifrado antes de enviar.")
+        try:
+            resume_content = decrypt_resume(resume.encrypted_content)
+        except ResumeStorageError as exc:
+            raise ApplyError("Currículo indisponível; envie o arquivo novamente.") from exc
+        if not resume_content or digest_resume(resume_content) != resume.sha256:
+            raise ApplyError("A integridade do currículo não pôde ser confirmada; envie-o novamente.")
+        smtp_config = {
+            "host": account.host, "port": account.port, "username": account.username,
+            "password": smtp_password, "use_tls": account.use_tls,
+        }
+        sender_email = account.from_email
+        resume_attachment = (resume_content, resume.content_type, resume.filename)
     else:
         if not settings.smtp_can_send_applications:
             raise ApplyError("SMTP não configurado no .env.")
@@ -292,7 +319,11 @@ def send_attempt(db, attempt: ApplicationAttempt, daily_limit: int | None = None
     msg = EmailMessage()
     msg["Subject"], msg["From"], msg["To"] = attempt.subject, sender_email, attempt.recipient
     msg.set_content(attempt.message)
-    if settings.cv_path:
+    if resume_attachment:
+        content, content_type, filename = resume_attachment
+        maintype, subtype = content_type.split("/", 1)
+        msg.add_attachment(content, maintype=maintype, subtype=subtype, filename=filename)
+    elif settings.cv_path:
         cv = Path(settings.cv_path)
         if not cv.is_file():
             attempt.status, attempt.detail = "failed", f"CV_PATH aponta para um arquivo inexistente: {cv.name}"
