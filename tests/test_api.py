@@ -67,6 +67,17 @@ def test_prepare_then_approve_flow_with_failure_then_success(client, db, ready_p
     assert client.post(f"/api/attempts/{attempt['id']}/cancel").status_code == 409
 
 
+def test_saas_mode_never_uses_global_smtp_credentials(client, db, ready_profile, smtp_on):
+    job = make_job(db)
+    response = client.post(f"/api/jobs/{job.id}/prepare")
+    assert response.status_code == 200
+    attempt = response.json()["attempt"]
+    assert attempt["channel"] == "manual"
+    assert attempt["status"] == "manual_required"
+    assert "SMTP individual" in attempt["detail"]
+    assert smtp_on == []
+
+
 def test_job_filters(client, db):
     make_job(db, title="Estágio Python", source="Remotive", compatibility=80)
     make_job(db, title="Gerente Geral", source="Arbeitnow", level="outro", compatibility=20)
