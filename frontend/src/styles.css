@@ -683,3 +683,26 @@ input[type="checkbox"], input[type="radio"] {
   margin-top: 3px;
   opacity: .72;
 }
+
+
+.career-review-note-label {
+  display: block;
+  margin-top: 10px;
+  font-size: .82rem;
+  font-weight: 600;
+}
+.career-review-note {
+  display: block;
+  width: 100%;
+  max-width: 680px;
+  min-height: 58px;
+  margin-top: 5px;
+  padding: 9px 11px;
+  border: 1px solid var(--border-color, #d9dce3);
+  border-radius: 8px;
+  background: var(--surface, #fff);
+  color: inherit;
+  font: inherit;
+  font-size: .88rem;
+  resize: vertical;
+}
