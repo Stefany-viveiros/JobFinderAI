@@ -58,7 +58,7 @@ function WorkspaceApp({ user, onLogout }) {
   const [editingTask, setEditingTask] = useState(null)
   const [editingApp, setEditingApp] = useState(null)
   const [appForm, setAppForm] = useState({})
-  const [sourceSelection, setSourceSelection] = useState(['Remotive', 'Arbeitnow', 'OkEmprego', 'Nerdin', 'Empregare', 'Empregando Brasil', 'Jobicy', 'Remote OK'])
+  const [sourceSelection, setSourceSelection] = useState(['Arbeitnow', 'OkEmprego', 'Nerdin', 'Empregare', 'Empregando Brasil', 'Jobicy', 'Remote OK'])
   const [levelFilter, setLevelFilter] = useState('alvo')
   const [sourceFilter, setSourceFilter] = useState('Todas')
   const [attemptFilter, setAttemptFilter] = useState('todas')
