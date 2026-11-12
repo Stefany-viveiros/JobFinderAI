@@ -295,6 +295,30 @@ def test_two_accounts_cannot_read_or_modify_each_others_private_data(client, db,
         assert client.get("/api/profile").json()["name"] == "Conta Primária"
         assert second.get("/api/profile").json()["name"] != "Conta Primária"
 
+        # IDs de registros filhos do perfil também não autorizam edição cruzada.
+        primary_profile = client.put("/api/profile", json={
+            "educations": [{
+                "course": "Engenharia da Computação",
+                "institution": "Instituição original",
+                "status": "Em andamento",
+            }],
+        })
+        assert primary_profile.status_code == 200
+        foreign_education = primary_profile.json()["profile"]["educations"][0]
+        second_profile_update = second.put("/api/profile", json={
+            "educations": [{
+                "id": foreign_education["id"],
+                "course": "Curso alterado indevidamente",
+                "institution": "Instituição atacante",
+                "status": "Concluído",
+            }],
+        })
+        assert second_profile_update.status_code == 200
+        assert second_profile_update.json()["profile"]["educations"][0]["id"] != foreign_education["id"]
+        primary_education_after = client.get("/api/profile").json()["educations"][0]
+        assert primary_education_after["course"] == "Engenharia da Computação"
+        assert primary_education_after["institution"] == "Instituição original"
+
         # Tarefas e candidaturas não podem ser lidas nem alteradas pela outra conta.
         task_response = client.post("/api/tasks", json={
             "title": "Tarefa privada da primeira conta",
