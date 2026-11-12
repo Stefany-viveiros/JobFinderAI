@@ -303,7 +303,10 @@ def send_attempt(db, attempt: ApplicationAttempt, daily_limit: int | None = None
             return attempt
         msg.add_attachment(cv.read_bytes(), maintype="application", subtype="pdf", filename=cv.name)
     try:
-        _deliver(msg, smtp_config=smtp_config)
+        if smtp_config is None:
+            _deliver(msg)  # compatibilidade com o transporte legado/local
+        else:
+            _deliver(msg, smtp_config=smtp_config)
     except Exception as exc:  # qualquer falha de rede/autenticação: nada é registrado como enviado
         attempt.status, attempt.detail = "failed", f"{type(exc).__name__}: {exc}"
         db.commit()
