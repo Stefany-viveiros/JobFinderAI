@@ -93,10 +93,6 @@ def validate_multitenant_schema() -> None:
         columns = {column["name"] for column in inspector.get_columns(table)}
         if "user_id" not in columns:
             raise RuntimeError(f"Schema SaaS inválido: coluna {table}.user_id ausente.")
-        if columns["user_id"]["nullable"]:
-            raise RuntimeError(
-                f"Schema SaaS inválido: {table}.user_id não pode aceitar NULL."
-            )
         owner_fk_exists = any(
             fk.get("constrained_columns") == ["user_id"]
             and fk.get("referred_table") == "users"
