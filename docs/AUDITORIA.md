@@ -152,3 +152,12 @@ O incremento de privacidade do upload foi implementado em `jobfinder/api.py` e `
 - A configuração inválida interrompe o startup com erro explícito, evitando uma política CORS permissiva silenciosa.
 - CI do commit `1ac6407`: SQLite 131 passed / 2 skipped; PostgreSQL 16 133 passed; build Vite aprovado.
 - Essa validação cobre a lista de origens configurada, não substitui a configuração correta do domínio real no ambiente de hospedagem. Não houve alteração em Render ou Neon.
+
+
+## Atualização — 12/11/2026: configuração de sessão e cookie
+
+- Configuração de sessão centralizada e validada no startup: ambiente permitido, duração entre 1 e 720 horas e booleano estrito para `COOKIE_SECURE`.
+- Staging/production recusam inicialização com `COOKIE_SECURE=false`; a autenticação usa os valores já validados.
+- `render.yaml` declara `APP_ENV=production`, `COOKIE_SECURE=true` e `SESSION_HOURS=24`; `.env.example` demonstra configuração local separada.
+- CI do commit `e12d575`: SQLite 141 passed / 2 skipped; PostgreSQL 16 143 passed; build Vite aprovado.
+- Alteração apenas no repositório; sem deploy e sem alteração de variáveis no serviço hospedado.
