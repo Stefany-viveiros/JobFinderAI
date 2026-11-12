@@ -132,3 +132,43 @@ def test_empregando_brasil_rejects_oversized_feed(monkeypatch):
     monkeypatch.setattr(requests, "get", lambda *a, **k: response)
     with pytest.raises(ValueError, match="8 MB"):
         sources.fetch_empregando_brasil()
+
+
+def test_jobicy_public_api_is_normalized_with_canonical_attribution(monkeypatch):
+    payload = {
+        "success": True,
+        "jobs": [{
+            "id": 987, "url": "https://jobicy.com/jobs/python-intern",
+            "jobTitle": "Python Intern", "companyName": "Remote Co",
+            "jobDescription": "<p>Build with <b>Python</b></p>",
+            "jobGeo": "Anywhere", "jobType": ["Internship"],
+            "jobIndustry": ["Engineering"], "pubDate": "2026-11-11T10:00:00Z",
+        }],
+    }
+    monkeypatch.setattr(requests, "get", lambda *a, **k: FakeResponse(payload))
+    jobs = sources.fetch_jobicy()
+    assert jobs[0]["source"] == "Jobicy"
+    assert jobs[0]["source_id"] == "987"
+    assert jobs[0]["url"] == "https://jobicy.com/jobs/python-intern"
+    assert jobs[0]["modality"] == "Remoto"
+    assert jobs[0]["description"] == "Build with Python"
+
+
+def test_remoteok_feed_skips_metadata_and_normalizes_jobs(monkeypatch):
+    payload = [
+        {"legal": "Please attribute Remote OK"},
+        {
+            "id": 123, "url": "https://remoteok.com/remote-jobs/123",
+            "position": "Junior Software Engineer", "company": "Remote Ltd",
+            "description": "<p>JavaScript and React</p>", "location": "Worldwide",
+            "tags": ["javascript", "react"], "date": "2026-11-11T10:00:00+00:00",
+        },
+    ]
+    monkeypatch.setattr(requests, "get", lambda *a, **k: FakeResponse(payload))
+    jobs = sources.fetch_remoteok()
+    assert len(jobs) == 1
+    assert jobs[0]["source"] == "Remote OK"
+    assert jobs[0]["source_id"] == "123"
+    assert jobs[0]["title"] == "Junior Software Engineer"
+    assert jobs[0]["url"] == "https://remoteok.com/remote-jobs/123"
+    assert "Remote OK" not in jobs[0]["description"]
