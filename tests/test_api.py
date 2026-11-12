@@ -1167,6 +1167,15 @@ def test_career_evidence_review_is_append_only_and_account_scoped(client, db, te
     ).order_by(CareerEvidenceReview.id).all()
     assert [item.decision for item in history] == ["confirmed", "dismissed"]
 
+    history_response = client.get(
+        f"/api/career-evidence/{evidence['id']}/reviews"
+    )
+    assert history_response.status_code == 200
+    assert [item["decision"] for item in history_response.json()["items"]] == [
+        "confirmed", "dismissed"
+    ]
+
+
     db.refresh(original)
     assert original.excerpt == original_excerpt
     assert original.verification_level == original_level
@@ -1192,6 +1201,11 @@ def test_career_evidence_review_is_append_only_and_account_scoped(client, db, te
         json={"decision": "confirmed", "note": ""},
     )
     assert denied.status_code == 404
+    foreign_history = second.get(
+        f"/api/career-evidence/{evidence['id']}/reviews"
+    )
+    assert foreign_history.status_code == 404
+
     assert db.query(CareerEvidenceReview).filter(
         CareerEvidenceReview.evidence_id == evidence["id"]
     ).count() == 2
