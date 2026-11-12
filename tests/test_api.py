@@ -855,3 +855,44 @@ def test_attempt_list_uses_private_job_match_not_legacy_global_job_score(client,
         assert secondary[0]["job"]["compatibility"] == 21
         assert secondary[0]["job"]["missing_reasons"] == "Lacuna privada da segunda conta"
         assert secondary[0]["job"]["missing_reasons"] != primary[0]["job"]["missing_reasons"]
+
+
+def test_account_rate_limit_is_shared_across_client_ips(db):
+    from fastapi import HTTPException, Request
+    from jobfinder.api import _enforce_rate_limit
+
+    def request_from(ip):
+        return Request({
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": "1.1",
+            "method": "POST",
+            "scheme": "https",
+            "path": "/api/profile/import",
+            "raw_path": b"/api/profile/import",
+            "query_string": b"",
+            "headers": [],
+            "client": (ip, 54321),
+            "server": ("jobfinder.test", 443),
+        })
+
+    # O mesmo usuário não ganha uma nova cota ao trocar de IP.
+    _enforce_rate_limit(
+        db, request_from("203.0.113.10"),
+        scope="resume-import-user", subject="user-42",
+        limit=1, window_seconds=3600,
+    )
+    with pytest.raises(HTTPException) as blocked:
+        _enforce_rate_limit(
+            db, request_from("198.51.100.20"),
+            scope="resume-import-user", subject="user-42",
+            limit=1, window_seconds=3600,
+        )
+    assert blocked.value.status_code == 429
+
+    # A conta diferente mantém sua própria janela, mesmo que a origem coincida.
+    _enforce_rate_limit(
+        db, request_from("203.0.113.10"),
+        scope="resume-import-user", subject="user-43",
+        limit=1, window_seconds=3600,
+    )

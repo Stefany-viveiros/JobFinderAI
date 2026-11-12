@@ -158,7 +158,15 @@ def _enforce_rate_limit(
 ) -> None:
     """Aplica limite persistente e atômico por janela, compatível com SQLite/PostgreSQL."""
     client_host = request.client.host if request.client else "unknown"
-    key = _token_hash(f"{scope}|{client_host}|{subject}")
+    # Contas/e-mails/tokens precisam de uma janela global por identidade,
+    # independente do IP usado. Limites explicitamente por IP continuam separados.
+    subject_scopes = (
+        scope.endswith("-user")
+        or scope.endswith("-email")
+        or scope == "auth-reset-token"
+    )
+    identity = str(subject) if subject_scopes else f"{client_host}|{subject}"
+    key = _token_hash(f"{scope}|{identity}")
     now = datetime.utcnow()
     cutoff = now - timedelta(seconds=window_seconds)
     # Todos os limites deste módulo expiram em até 1 hora. Remove buckets
