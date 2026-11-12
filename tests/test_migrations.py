@@ -159,6 +159,19 @@ def test_postgresql_migration_replaces_global_unique_constraint(monkeypatch):
             assert connection.execute(
                 sa.text("SELECT COUNT(*) FROM applications")
             ).scalar_one() == 4
+
+        # O downgrade global seria destrutivo: duas contas possuem a mesma vaga.
+        with pytest.raises(RuntimeError, match="Downgrade impossível"):
+            command.downgrade(config, "base")
+        with engine.connect() as connection:
+            assert connection.execute(
+                sa.text("SELECT COUNT(*) FROM applications")
+            ).scalar_one() == 4
+        constraints_after_refusal = {
+            tuple(sorted(item.get("column_names") or []))
+            for item in sa.inspect(engine).get_unique_constraints("applications")
+        }
+        assert ("job_id", "user_id") in constraints_after_refusal
     finally:
         engine.dispose()
         with admin_engine.begin() as connection:
