@@ -5,7 +5,8 @@ import {
   Sparkles, Target, UserRound,
 } from 'lucide-react'
 
-const API = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '')\nlet csrfToken = ''
+const API = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '')
+let csrfToken = ''
 const SOURCE_LABELS = {
   professional_experience: 'Experiência profissional',
   completed_project: 'Projeto concluído',
