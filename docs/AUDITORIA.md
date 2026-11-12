@@ -143,3 +143,12 @@ O incremento de privacidade do upload foi implementado em `jobfinder/api.py` e `
 - Testes PostgreSQL efêmeros cobrem criação/FKs da tabela `application_events`, proteção contra rollback com eventos existentes e proteção contra downgrade da unicidade por usuário quando a mesma vaga está associada a contas diferentes.
 - CI do commit `82d60c1`: SQLite 121 passed / 2 skipped; PostgreSQL 16 123 passed; build Vite aprovado.
 - A auditoria endpoint a endpoint ainda não está encerrada: falta validar operacionalmente configuração e migrações do schema completo em cópia controlada, revisar rotinas legadas e planejar a resolução explícita de dados sem proprietário. O gate multiusuário permanece fechado.
+
+
+## Atualização — 12/11/2026: configuração CORS
+
+- A API agora valida `CORS_ORIGINS` no startup e rejeita wildcard com credenciais/cookies, HTTP remoto, caminhos, query/fragment, userinfo e portas inválidas.
+- Origens locais HTTP são permitidas somente para localhost/loopback; origens remotas devem usar HTTPS. Entradas duplicadas são normalizadas.
+- A configuração inválida interrompe o startup com erro explícito, evitando uma política CORS permissiva silenciosa.
+- CI do commit `1ac6407`: SQLite 131 passed / 2 skipped; PostgreSQL 16 133 passed; build Vite aprovado.
+- Essa validação cobre a lista de origens configurada, não substitui a configuração correta do domínio real no ambiente de hospedagem. Não houve alteração em Render ou Neon.
