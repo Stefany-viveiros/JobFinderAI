@@ -4,21 +4,37 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from .matching import normalize
 
-TRACKING_PREFIXES = ("utm_", "ref", "fbclid", "gclid", "mc_", "source", "src")
+TRACKING_PREFIXES = ("utm_", "mc_")
+TRACKING_PARAMS = {"ref", "fbclid", "gclid", "source", "src"}
 UNKNOWN_COMPANY = "empresa nao informada"
 
 
 def normalize_url(url: str) -> str:
-    """Forma canônica para comparar links: sem fragmento, sem parâmetros de rastreio e sem '/' final."""
+    """Normaliza host/esquema e remove tracking sem alterar caixa de caminho/valores."""
     raw = str(url or "").strip()
     if not raw:
         return ""
-    parts = urlsplit(raw)
-    query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True)
-             if not k.lower().startswith(TRACKING_PREFIXES)]
-    cleaned = urlunsplit((parts.scheme.lower(), parts.netloc.lower(), parts.path.rstrip("/"),
-                          urlencode(query), ""))
-    return cleaned.lower()
+    try:
+        parts = urlsplit(raw)
+        scheme = parts.scheme.lower()
+        hostname = (parts.hostname or "").lower()
+        if not scheme or not hostname:
+            return raw
+        port = parts.port
+        if port and not ((scheme == "https" and port == 443) or (scheme == "http" and port == 80)):
+            host = f"[{hostname}]" if ":" in hostname else hostname
+            netloc = f"{host}:{port}"
+        else:
+            netloc = f"[{hostname}]" if ":" in hostname else hostname
+        query = [
+            (key, value) for key, value in parse_qsl(parts.query, keep_blank_values=True)
+            if key.lower() not in TRACKING_PARAMS
+            and not key.lower().startswith(TRACKING_PREFIXES)
+        ]
+        return urlunsplit((scheme, netloc, parts.path.rstrip("/") or "/", urlencode(query), ""))
+    except ValueError:
+        # URL malformada não deve ser fundida com outro registro por normalização permissiva.
+        return raw
 
 
 def _slug(value: str) -> str:
