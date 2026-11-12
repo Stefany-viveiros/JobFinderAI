@@ -1,7 +1,7 @@
 # Progresso — JobFinder AI Proof-to-Opportunity Engine
 
 **Branch:** `feature/proof-to-opportunity-engine`  
-**Último commit de implementação:** `c32a736`  
+**Último commit de implementação:** `b871229`  
 **Atualização:** 12/11/2026.  \n**Cobertura geral estimada:** 92% (estimativa de escopo, não métrica automatizada).
 
 ## Estado de execução
@@ -237,9 +237,9 @@ Continuar a auditoria endpoint a endpoint com foco em vínculo cruzado de entida
 - O status verifica se a chave de criptografia ainda permite descriptografar a credencial; se não, o envio fica indisponível.
 - A página Agente recebeu formulário de conexão, atualização e remoção. O SMTP administrativo de lembretes continua separado.
 - Hostnames SMTP são restritos a provedores conhecidos ou a uma allowlist administrativa `SMTP_ALLOWED_HOSTS`, evitando destinos internos arbitrários.
-- `.env.example` documenta as variáveis e como gerar a chave Fernet. A chave precisa ser configurada como segredo na hospedagem antes de qualquer uso; não houve deploy.
+- `.env.example` documenta as variáveis e como gerar a chave Fernet; `render.yaml` declara `SMTP_CREDENTIALS_KEY` como segredo não sincronizado. A chave precisa ser configurada na hospedagem antes de qualquer uso; não houve deploy.
 - CI do commit `7c7d5ff`: SQLite 153 passed / 3 skipped; PostgreSQL 16 156 passed; Vite build aprovado.
-- Teste adicional de isolamento entre duas sessões autenticadas e bloqueio de host não permitido foi acrescentado depois desse CI e está aguardando validação.
+- Testes adicionais de isolamento entre duas sessões autenticadas e bloqueio de host não permitido passaram no CI do commit `b871229`: SQLite 153 passed / 3 skipped; PostgreSQL 16 156 passed; Vite build aprovado.
 
 **Segurança / decisão:** manter `MULTITENANT_READY=false`. Não usar a chave de produção antes de definir armazenamento seguro, backup e procedimento de rotação; perder a chave torna as senhas armazenadas irrecuperáveis.
 
