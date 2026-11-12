@@ -2,6 +2,7 @@ from datetime import date, datetime
 from email.message import EmailMessage
 import hashlib
 import secrets
+import re
 import smtplib
 from datetime import timedelta
 from pwdlib import PasswordHash
