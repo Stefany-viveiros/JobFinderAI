@@ -32,7 +32,7 @@ async function request(path, options = {}) {
 const number = (value) => new Intl.NumberFormat('pt-BR').format(value || 0)
 const date = (value) => value ? new Date(value).toLocaleDateString('pt-BR') : 'Não informado'
 
-export default function MarketIntelligencePage() {
+export default function MarketIntelligencePage({ focusSection = null } = {}) {
   const [analysis, setAnalysis] = useState(null)
   const [combinations, setCombinations] = useState([])
   const [gap, setGap] = useState(null)
@@ -104,6 +104,17 @@ export default function MarketIntelligencePage() {
   }, [])
 
   useEffect(() => { loadAnalysis(); loadPlan(); loadAssessments() }, [loadAnalysis, loadPlan, loadAssessments])
+  useEffect(() => {
+    if (!focusSection || loading) return
+    const targetIds = {
+      market: 'market-overview',
+      diagnosis: 'market-diagnosis',
+      challenges: 'market-challenges',
+      plan: 'market-plan',
+    }
+    const target = document.getElementById(targetIds[focusSection] || 'market-overview')
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [focusSection, loading, analysis])
 
   async function addToPlan(skill) {
     setAddingSkill(skill.skill_id)
@@ -232,7 +243,7 @@ export default function MarketIntelligencePage() {
   const maxRate = Math.max(1, ...skills.map(skill => skill.mention_rate || 0))
 
   return <>
-    <div className="section-heading market-heading">
+    <div className="section-heading market-heading" id="market-overview">
       <div>
         <div className="eyebrow">DADOS PARA DECISÕES DE CARREIRA</div>
         <h1>Inteligência de mercado</h1>
@@ -380,7 +391,7 @@ export default function MarketIntelligencePage() {
           </>}
         </section>
 
-        <section className="panel market-panel market-development-panel">
+        <section className="panel market-panel market-development-panel" id="market-plan">
           <div className="panel-heading">
             <div><h2>Meu plano de desenvolvimento</h2><p>Transforme competências relevantes em atividades práticas e acompanhe seu progresso.</p></div>
             <span className="market-count">{plan.summary?.completion_rate || 0}% concluído</span>
@@ -416,7 +427,7 @@ export default function MarketIntelligencePage() {
           }
         </section>
 
-        <section className="panel market-panel market-assessment-panel">
+        <section className="panel market-panel market-assessment-panel" id="market-challenges">
           <div className="panel-heading">
             <div><h2>Desafios e validação prática</h2><p>Resolva desafios, registre sua entrega e faça uma autoavaliação baseada em critérios objetivos.</p></div>
             <span className="market-count">{assessments.summary?.submitted || 0} avaliações registradas</span>

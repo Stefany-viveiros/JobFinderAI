@@ -48,7 +48,7 @@ function Evidence({ item }) {
   </div>
 }
 
-export default function CareerTwinPage() {
+export default function CareerTwinPage({ focusSection = null } = {}) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -67,6 +67,15 @@ export default function CareerTwinPage() {
   }, [])
 
   useEffect(() => { load() }, [load])
+  useEffect(() => {
+    if (!focusSection || loading || !data?.available) return
+    const targetIds = {
+      skills: 'career-competencies',
+      timeline: 'career-timeline',
+    }
+    document.getElementById(targetIds[focusSection] || 'career-competencies')
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [focusSection, loading, data])
 
   if (loading) return <div className="career-loading"><LoaderCircle className="spin" size={24}/><span>Construindo sua visão profissional...</span></div>
   if (error) return <section className="panel career-state"><AlertCircle size={25}/><h2>Não foi possível carregar o Career Twin</h2><p>{error}</p><button className="btn btn-primary" onClick={load}><RefreshCw size={15}/> Tentar novamente</button></section>
@@ -101,7 +110,7 @@ export default function CareerTwinPage() {
       <Metric icon={Target} label="Autoavaliações" value={summary.skills_with_self_assessment || 0} detail="Não equivalem a certificação"/>
     </div>
 
-    <section className="panel career-panel">
+    <section className="panel career-panel" id="career-competencies">
       <div className="career-panel-heading"><div><span className="career-eyebrow">MAPA DE COMPETÊNCIAS</span><h2>O que seu histórico demonstra</h2><p>As categorias indicam onde a competência foi mencionada, não o seu nível de domínio.</p></div><button className="btn btn-secondary btn-sm" onClick={load}><RefreshCw size={14}/> Atualizar</button></div>
       <div className="career-filter-row">
         {[['all','Todas'],['evidence','Com evidências'],['declared','Declaradas'],['market','Demanda sem evidência'],['missing','Não identificadas']].map(([value,label]) => <button key={value} className={filter === value ? 'career-filter active' : 'career-filter'} onClick={() => setFilter(value)}>{label}</button>)}
@@ -116,7 +125,7 @@ export default function CareerTwinPage() {
       </div> : <div className="career-empty"><CircleHelp size={20}/><span>Nenhuma competência corresponde a este filtro.</span></div>}
     </section>
 
-    <div className="career-bottom-grid">
+    <div className="career-bottom-grid" id="career-timeline">
       <section className="panel career-panel">
         <div className="career-panel-heading"><div><span className="career-eyebrow">TRAJETÓRIA</span><h2>Seus registros profissionais</h2></div></div>
         <div className="career-record-list">

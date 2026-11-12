@@ -7,6 +7,7 @@ import {
   Check, CheckCircle2, ChevronDown, CircleHelp, Clock3, ExternalLink, Filter,
   LayoutDashboard, LoaderCircle, LogOut, Menu, Plus, Search, Send, Settings,
   SlidersHorizontal, Sparkles, Star, Target, Trash2, UserRound, X, Zap,
+  Layers3, Code2, BookOpen,
 } from 'lucide-react'
 
 const API = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '')
