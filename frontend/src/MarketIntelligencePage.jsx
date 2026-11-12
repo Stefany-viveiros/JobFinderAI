@@ -429,7 +429,3 @@ export default function MarketIntelligencePage() {
       </>}
   </>
 }
-
-.market-gap-sample{display:flex;flex-wrap:wrap;gap:7px 15px;margin:12px 0 15px;padding:10px 12px;border:1px solid #e8eaf1;border-radius:9px;background:#fbfcff}
-.market-gap-sample span,.market-gap-sample strong{font-size:11px;line-height:1.5;color:#68718a}
-.market-gap-sample strong{color:#926b2e}
