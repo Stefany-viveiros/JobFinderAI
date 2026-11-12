@@ -204,3 +204,10 @@ A inspeção foi realizada por leitura dos arquivos da branch no GitHub. O ambie
 **Decisão:** ambos os entrypoints devem verificar `MULTITENANT_READY` antes de inicializar o banco. Se o gate estiver ativo, retornam status bloqueado e registram o motivo. Não tentar adaptar silenciosamente o runner global para todas as contas.
 
 **Consequências:** automação SaaS exige um scheduler novo que itere usuários elegíveis e execute cada tarefa com `user_id`, limites e configurações individuais. Até lá, os agendadores globais permanecem desativados.
+## 20. Revisão humana append-only do ledger
+
+**Contexto:** evidências persistentes precisavam permitir correção contextual pela pessoa sem sobrescrever a origem nem sugerir que uma confirmação de texto prova domínio técnico.
+
+**Decisão:** registrar cada decisão em `CareerEvidenceReview`, com `user_id`, `evidence_id`, decisão (`confirmed` ou `dismissed`), observação opcional e data. Expor a revisão por `POST /api/career-evidence/{evidence_id}/review` e o histórico completo por `GET /api/career-evidence/{evidence_id}/reviews`. Ambos usam exclusivamente a identidade autenticada e verificam titularidade da evidência.
+
+**Consequências:** cada revisão é um novo evento; a evidência e seu `verification_level` não são alterados. “Confirmar origem” significa que a pessoa reconhece a menção/contexto, não que um avaliador independente atestou proficiência. O downgrade da migração `20261112_0004` recusa remover histórico existente. A interface permite observação livre de até 1.000 caracteres e consulta da trilha cronológica.
