@@ -427,3 +427,64 @@ def test_postgresql_career_evidence_migration_preserves_history_on_rollback(monk
         with admin_engine.begin() as connection:
             connection.execute(sa.text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
         admin_engine.dispose()
+
+def test_career_evidence_review_migration_preserves_human_history_on_rollback(tmp_path, monkeypatch):
+    database = tmp_path / "career-evidence-reviews.db"
+    engine = sa.create_engine(f"sqlite:///{database}")
+    metadata = sa.MetaData()
+    sa.Table("users", metadata, sa.Column("id", sa.Integer, primary_key=True))
+    sa.Table(
+        "applications", metadata,
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("user_id", sa.Integer, nullable=True),
+        sa.Column("job_id", sa.Integer, nullable=False),
+        sa.UniqueConstraint("user_id", "job_id", name="uq_user_application_job"),
+    )
+    metadata.create_all(engine)
+
+    config_path = Path(__file__).resolve().parents[1] / "alembic.ini"
+    config = Config(str(config_path))
+    config.set_main_option("sqlalchemy.url", f"sqlite:///{database}")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    command.upgrade(config, "head")
+
+    inspector = sa.inspect(engine)
+    assert inspector.has_table("career_evidence_reviews")
+    columns = {item["name"]: item for item in inspector.get_columns("career_evidence_reviews")}
+    assert columns["user_id"]["nullable"] is False
+    assert columns["evidence_id"]["nullable"] is False
+    indexes = {item["name"] for item in inspector.get_indexes("career_evidence_reviews")}
+    assert {
+        "ix_career_evidence_reviews_user_id",
+        "ix_career_evidence_reviews_evidence_id",
+        "ix_career_evidence_reviews_created_at",
+    }.issubset(indexes)
+
+    with engine.begin() as connection:
+        connection.execute(sa.text("INSERT INTO users (id) VALUES (1)"))
+        connection.execute(sa.text(
+            "INSERT INTO career_evidence "
+            "(id, user_id, skill_name, category, source_type, source_key, source_id, "
+            "source_label, excerpt, evidence_hash, verification_level, is_active, created_at) "
+            "VALUES (1, 1, 'Python', 'language', 'self_declared', 'legacy:skills', NULL, "
+            "'Habilidades declaradas', 'Python', :digest, 'self_reported', 1, CURRENT_TIMESTAMP)"
+        ), {"digest": "c" * 64})
+        connection.execute(sa.text(
+            "INSERT INTO career_evidence_reviews "
+            "(id, user_id, evidence_id, decision, note, created_at) "
+            "VALUES (1, 1, 1, 'confirmed', 'Origem revisada', CURRENT_TIMESTAMP)"
+        ))
+
+    with pytest.raises(RuntimeError, match="Os registros não serão apagados"):
+        command.downgrade(config, "20261112_0003")
+    with engine.connect() as connection:
+        assert connection.execute(
+            sa.text("SELECT COUNT(*) FROM career_evidence_reviews")
+        ).scalar_one() == 1
+    assert sa.inspect(engine).has_table("career_evidence_reviews")
+
+    with engine.begin() as connection:
+        connection.execute(sa.text("DELETE FROM career_evidence_reviews WHERE id = 1"))
+    command.downgrade(config, "20261112_0003")
+    assert not sa.inspect(engine).has_table("career_evidence_reviews")
+    engine.dispose()
