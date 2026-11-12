@@ -272,3 +272,11 @@ A validação é feita em bancos efêmeros do CI; não equivale a um ensaio com 
 - CI `43239908898`: SQLite, PostgreSQL 16 e build Vite aprovados para os testes dedicados da migração SMTP. O downgrade com credenciais existentes foi comprovadamente bloqueado sem remover a linha.
 - CI `43239840762`: SQLite, PostgreSQL 16 e build Vite também aprovados para a primeira revisão dos testes de migração SMTP.
 - Próximo incremento: validação de URL de evidência dos desafios. O serviço passa a aceitar somente HTTPS válido, sem credenciais embutidas, e mantém a regra de que nenhum código enviado é executado. Testes negativos cobrem `javascript:`, `data:`, HTTP, URL com usuário/senha e espaços; CI em andamento.
+
+
+## Resultado — segurança dos links de desafios — 12/11/2026
+
+- Serviço `submit_skill_assessment` valida URLs de evidência no backend; somente HTTPS válido, sem usuário/senha embutidos e sem caracteres de controle/espaços. A validação ocorre mesmo em chamadas internas ao serviço, não apenas no schema HTTP.
+- Testes negativos cobrem esquemas `javascript:` e `data:`, HTTP, credenciais na URL e espaços. O código de desafio continua sem execução no servidor.
+- CI `43240275590` (commit `8e539a84`): SQLite **164 passed, 4 skipped**; PostgreSQL 16 **168 passed**; build Vite **success**.
+- As falhas intermediárias desta implementação foram causadas por imports ausentes e por o teste ler um campo interno não exposto no retorno do serviço; ambas foram corrigidas. O commit validado passou nos três jobs.
