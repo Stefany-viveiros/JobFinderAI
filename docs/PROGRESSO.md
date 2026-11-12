@@ -333,13 +333,13 @@ A validação é feita em bancos efêmeros do CI; não equivale a um ensaio com 
 ## Segurança do envio e transparência SMTP — 12/11/2026
 
 - Revisão do fluxo de candidatura identificou que o importador de currículo extrai os dados para o perfil, mas não mantém um arquivo individual seguro para anexar ao e-mail. O uso de `CV_PATH` global em ambiente multiusuário poderia anexar o currículo de outra pessoa.
-- Para impedir vazamento de dados, o envio por e-mail em modo multiusuário agora falha de forma segura até existir armazenamento individual cifrado e vínculo do arquivo ao usuário. Tentativas antigas também são bloqueadas na camada de envio.
-- Enquanto isso, vagas com contato por e-mail são direcionadas à finalização manual no portal original; o status não é marcado como enviado e nenhum e-mail é disparado.
+- Para impedir vazamento de dados, foi implementado armazenamento individual cifrado com chave Fernet própria (`RESUME_STORAGE_KEY`), tabela `user_resumes` e vínculo obrigatório com `users.id`. Tentativas antigas também são verificadas antes do envio.
+- O usuário escolhe explicitamente, no Perfil profissional, se deseja guardar o PDF/DOCX cifrado. Com SMTP individual válido e currículo íntegro armazenado, o agente anexa o arquivo daquela conta; sem qualquer requisito, mantém a finalização manual no portal original.
 - A API e a interface distinguem “SMTP conectado” de “envio de candidatura liberado”; a tela explica que a conexão SMTP não libera o envio sem o anexo individual seguro.
-- Testes cobrem a tentativa multiusuário com SMTP configurado, verificam o bloqueio e garantem que o transporte de e-mail não é chamado. Testes antigos que esperavam envio sem currículo foram atualizados para validar o comportamento seguro.
+- Testes cobrem criptografia/descriptografia, chave ausente/inválida, integridade SHA-256, migração com proteção contra perda de dados, isolamento entre contas, upload opcional, anexação do arquivo correto e remoção.
 - O workflow de CI agora cancela execuções antigas da mesma branch para priorizar a validação do commit mais recente.
 - Commits desta frente: `878e175`, `3bd9925`, `6ce9da6`, `93728d0`, `0af8960`, `3661427`, `bc2df7f` e `367b246`.
-- **Bloqueio restante para liberar envio multiusuário:** implementar upload/armazenamento cifrado por usuário, retenção/remoção do arquivo, validação do tipo real e anexação do arquivo correspondente à conta autenticada. Não usar currículo global como alternativa.
+- **Operação ainda necessária:** configurar `RESUME_STORAGE_KEY` e `SMTP_CREDENTIALS_KEY` como segredos persistentes no ambiente de hospedagem, aplicar/validar a migração em banco de staging e fazer um envio SMTP real controlado. O arquivo global `CV_PATH` não é usado no modo multiusuário.
 
 
 
@@ -349,3 +349,16 @@ A validação é feita em bancos efêmeros do CI; não equivale a um ensaio com 
 - O teste que inicialmente falhou foi ajustado para refletir o fluxo real: uma tentativa `manual_required` não pode ser aprovada como envio SMTP. A validação final passou nos dois bancos.
 - A regra de segurança permanece: modo multiusuário não envia e-mail até haver currículo individual armazenado e anexado com segurança. O SMTP pode estar conectado, mas isso não significa que o envio de candidatura esteja liberado.
 - O CI da branch agora prioriza a última execução por meio de concorrência com cancelamento de execuções antigas.
+
+
+
+### Armazenamento cifrado de currículo e envio individual — validação concluída
+
+- O importador mantém o comportamento privado por padrão: o arquivo original só é persistido quando a pessoa marca explicitamente **Guardar o arquivo cifrado para candidaturas por e-mail**.
+- Criada a tabela `user_resumes`, com unicidade por conta, FK para `users.id`, nome sanitizado, tipo PDF/DOCX, conteúdo cifrado e hash SHA-256 para checagem de integridade.
+- A criptografia usa chave Fernet independente `RESUME_STORAGE_KEY`; sem chave, o sistema falha fechado e não salva o arquivo. O segredo foi incluído como variável protegida `sync: false` no Blueprint do Render, sem valor ou segredo versionado.
+- Adicionados `GET /api/profile/resume` e `DELETE /api/profile/resume`; a interface mostra o arquivo protegido e permite removê-lo.
+- O envio multiusuário agora só fica habilitado com SMTP individual válido **e** currículo cifrado íntegro da mesma conta. O anexo é recuperado após descriptografia e não utiliza o `CV_PATH` global.
+- Migração `20261112_0006` e validação do schema multiusuário incluem a tabela de currículos.
+- CI [43249953419](https://github.com/Stefany-viveiros/JobFinderAI/actions/runs/43249953419), commit `9d3b81a`: SQLite **177 passed, 4 skipped**; PostgreSQL 16 **181 passed**; build Vite **success**.
+- A integração real ainda precisa de configuração das chaves no ambiente, migração em staging e teste SMTP com uma conta de teste; nenhum e-mail real foi disparado nesta implementação.
