@@ -35,7 +35,7 @@ from .resume_parser import parse_resume, extract_resume_text
 from .resume_ai import analyze_resume_with_gemini, ResumeAIError
 from .market_service import (create_market_snapshot, index_unprocessed_jobs, build_profile_gap,
     list_development_plan, create_development_item, update_development_item, DEVELOPMENT_STATUSES,
-    create_skill_assessment, submit_skill_assessment, list_skill_assessments)
+    create_skill_assessment, submit_skill_assessment, list_skill_assessments, compare_market_trends)
 from .career_twin import build_career_twin
 from .matching import diagnose_job_requirements
 
@@ -1253,6 +1253,18 @@ def submit_market_assessment(attempt_id: int, payload: SkillAssessmentSubmit, re
     except ValueError as exc:
         raise HTTPException(404 if "não encontrado" in str(exc) else 400, str(exc))
 
+
+
+
+
+@app.get("/api/market/trends")
+def market_skill_trends(
+    request: Request,
+    limit: int = Query(10, ge=1, le=50),
+    db: Session = Depends(get_db),
+):
+    """Compara snapshots equivalentes sem misturar janelas ou versões."""
+    return compare_market_trends(db, limit=limit)
 
 
 @app.get("/api/market/analysis/history")

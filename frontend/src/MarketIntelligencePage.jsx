@@ -36,6 +36,7 @@ export default function MarketIntelligencePage() {
   const [analysis, setAnalysis] = useState(null)
   const [combinations, setCombinations] = useState([])
   const [gap, setGap] = useState(null)
+  const [trends, setTrends] = useState(null)
   const [plan, setPlan] = useState({ items: [], summary: {} })
   const [planLoading, setPlanLoading] = useState(true)
   const [addingSkill, setAddingSkill] = useState(null)
@@ -61,15 +62,18 @@ export default function MarketIntelligencePage() {
       const latest = await request('/market/analysis/latest')
       setAnalysis(latest.available ? latest : null)
       if (latest.available) {
-        const [pairs, profileGap] = await Promise.all([
+        const [pairs, profileGap, trendResult] = await Promise.all([
           request(`/market/combinations?run_id=${latest.run.id}&limit=8`),
           request(`/market/profile-gap?run_id=${latest.run.id}`),
+          request('/market/trends?limit=8'),
         ])
         setCombinations(pairs.combinations || [])
         setGap(profileGap.available ? profileGap : null)
+        setTrends(trendResult)
       } else {
         setCombinations([])
         setGap(null)
+        setTrends(null)
       }
     } catch (err) {
       setError(err.message || 'Não foi possível carregar a análise.')
@@ -205,14 +209,16 @@ export default function MarketIntelligencePage() {
         method: 'POST',
         body: JSON.stringify({ level_scope: level, days: Number(days) }),
       })
-      const [latest, pairs, profileGap] = await Promise.all([
+      const [latest, pairs, profileGap, trendResult] = await Promise.all([
         request('/market/analysis/latest'),
         request(`/market/combinations?run_id=${result.run_id}&limit=8`),
         request(`/market/profile-gap?run_id=${result.run_id}`),
+        request('/market/trends?limit=8'),
       ])
       setAnalysis(latest.available ? latest : null)
       setCombinations(pairs.combinations || [])
       setGap(profileGap.available ? profileGap : null)
+      setTrends(trendResult)
       setMessage(`Análise concluída: ${number(result.total_jobs)} vagas analisadas e ${number(result.skills_detected)} competências identificadas.`)
     } catch (err) {
       setError(err.message || 'Não foi possível executar a análise.')
@@ -285,6 +291,26 @@ export default function MarketIntelligencePage() {
         </div>
 
         {run.quality_notes && <div className="market-alert warning"><TriangleAlert size={17}/><span>{run.quality_notes}</span></div>}
+
+        <section className="panel market-panel market-trends-panel">
+          <div className="panel-heading">
+            <div><h2>Tendências observadas entre snapshots</h2><p>Variação da frequência de competências em duas análises comparáveis.</p></div>
+            <span className="market-count">{trends?.available ? 'Comparação histórica' : 'Histórico insuficiente'}</span>
+          </div>
+          {!trends?.available ? <div className="market-inline-empty">{trends?.message || 'Gere snapshots em momentos diferentes, mantendo período e nível equivalentes, para observar tendências.'}</div> : <>
+            <div className="market-trend-context">
+              <span>Anterior: {date(trends.previous.period_start)} a {date(trends.previous.period_end)} · {number(trends.previous.valid_jobs)} vagas</span>
+              <span>Atual: {date(trends.current.period_start)} a {date(trends.current.period_end)} · {number(trends.current.valid_jobs)} vagas</span>
+              <span>Recorte: {trends.scope.level_scope === 'both' ? 'Estágio e júnior' : trends.scope.level_scope === 'estagio' ? 'Estágio' : 'Júnior'} · {trends.scope.days} dias</span>
+            </div>
+            {!trends.sample_sufficient && <div className="market-sample-note">Uma ou ambas as amostras estão abaixo do mínimo configurado. As variações são apenas exploratórias.</div>}
+            {trends.items?.length ? <div className="market-trend-list">{trends.items.map(item => <div className="market-trend-row" key={item.name}>
+              <div><strong>{item.name}</strong><small>{item.category} · {number(item.current_jobs_count)} vagas na análise atual</small></div>
+              <div className="market-trend-rates"><span>{item.previous_mention_rate.toLocaleString('pt-BR')}% → {item.current_mention_rate.toLocaleString('pt-BR')}%</span><strong className={item.direction}>{item.delta_percentage_points > 0 ? '+' : ''}{item.delta_percentage_points.toLocaleString('pt-BR')} p.p.</strong></div>
+            </div>)}</div> : <div className="market-inline-empty">Não há competências classificadas em nenhum dos dois snapshots.</div>}
+            <p className="market-footnote">{trends.notice}</p>
+          </>}
+        </section>
         {run.total_jobs < 30 && <div className="market-sample-note">A amostra ainda é pequena. Os resultados abaixo são observações das vagas coletadas, não um ranking representativo de todo o mercado.</div>}
 
         <div className="market-content-grid">

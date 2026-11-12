@@ -604,3 +604,18 @@ input[type="checkbox"], input[type="radio"] {
 .career-timeline-content>small{font-size:9px;color:#7065d2;font-weight:700}
 .career-timeline-content>a{display:inline-flex;align-items:center;gap:4px;margin-left:8px;font-size:10px;color:#665bd0;text-decoration:none}
 @media(max-width:640px){.career-timeline-content>div{flex-direction:column;gap:2px}}
+
+.market-trend-context{display:flex;flex-wrap:wrap;gap:7px 15px;margin-bottom:12px}
+.market-trend-context span{font-size:10px;line-height:1.5;color:#737b93}
+.market-trend-list{display:grid;gap:0}
+.market-trend-row{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:10px 2px;border-bottom:1px solid #f0f1f5}
+.market-trend-row>div:first-child{display:grid;gap:3px;min-width:0}
+.market-trend-row>div:first-child strong{font-size:12px;color:#3e465e}
+.market-trend-row small{font-size:10px;color:#8990a6}
+.market-trend-rates{display:flex;align-items:center;gap:14px;white-space:nowrap}
+.market-trend-rates span{font-size:10px;color:#737b93}
+.market-trend-rates strong{font-size:11px}
+.market-trend-rates strong.rising{color:#2f865d}
+.market-trend-rates strong.falling{color:#aa5a4b}
+.market-trend-rates strong.stable{color:#777f96}
+@media(max-width:640px){.market-trend-row{align-items:flex-start;flex-direction:column;gap:5px}.market-trend-rates{width:100%;justify-content:space-between}}

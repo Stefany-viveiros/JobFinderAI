@@ -379,3 +379,51 @@ def test_profile_gap_rejects_snapshot_that_is_not_completed(db, test_user):
     gap = build_profile_gap(db, user_id=test_user.id, run_id=run.id)
     assert gap["available"] is False
     assert "concluída" in gap["message"]
+
+
+
+def test_market_trends_compare_only_equivalent_snapshots(db):
+    from jobfinder.market_service import compare_market_trends
+
+    make_job(
+        db,
+        title="Estágio Python",
+        description="Python e FastAPI para desenvolvimento backend.",
+    )
+    previous = create_market_snapshot(db, level_scope="estagio", days=30, min_jobs=1)
+
+    make_job(
+        db,
+        title="Estágio JavaScript",
+        description="JavaScript, React e CSS para desenvolvimento frontend.",
+    )
+    current = create_market_snapshot(db, level_scope="estagio", days=30, min_jobs=1)
+
+    trends = compare_market_trends(db, limit=20)
+    assert trends["available"] is True
+    assert trends["current"]["run_id"] == current["run_id"]
+    assert trends["previous"]["run_id"] == previous["run_id"]
+    assert trends["scope"]["days"] == 30
+    assert trends["scope"]["level_scope"] == "estagio"
+    assert trends["sample_sufficient"] is True
+
+    by_name = {item["name"]: item for item in trends["items"]}
+    assert by_name["Python"]["previous_mention_rate"] == 100.0
+    assert by_name["Python"]["current_mention_rate"] == 50.0
+    assert by_name["Python"]["direction"] == "falling"
+    assert by_name["JavaScript"]["previous_mention_rate"] == 0.0
+    assert by_name["JavaScript"]["current_mention_rate"] == 50.0
+    assert by_name["JavaScript"]["direction"] == "rising"
+    assert "não previsão estatística" in trends["notice"]
+
+
+def test_market_trends_do_not_mix_different_snapshot_scopes(db):
+    from jobfinder.market_service import compare_market_trends
+
+    make_job(db, title="Estágio Python", description="Python e FastAPI.")
+    create_market_snapshot(db, level_scope="estagio", days=30, min_jobs=1)
+    create_market_snapshot(db, level_scope="estagio", days=60, min_jobs=1)
+
+    trends = compare_market_trends(db)
+    assert trends["available"] is False
+    assert "mesmo período, nível e versões" in trends["message"]
