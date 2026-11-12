@@ -1,8 +1,8 @@
 # Progresso — JobFinder AI Proof-to-Opportunity Engine
 
 **Branch:** `feature/proof-to-opportunity-engine`  
-**Último commit:** `37244165da95663a4303bb9711c55e549ccfcc47`  
-**Atualização:** 12/11/2026.  \n**Cobertura geral estimada:** 78% (estimativa de escopo, não métrica automatizada).
+**Último commit de implementação:** `fd6b7c4`  
+**Atualização:** 12/11/2026.  \n**Cobertura geral estimada:** 85% (estimativa de escopo, não métrica automatizada).
 
 ## Estado de execução
 
@@ -10,9 +10,9 @@
 |---|---|---|
 | A — Auditoria | Concluída | Matriz em `docs/AUDITORIA.md`; frontend, API, modelos, serviços, migrações, testes e deploy revisados na branch |
 | B — Segurança e privacidade | Incrementos concluídos; liberação SaaS pendente | Consentimento explícito para Gemini, upload endurecido, rate limit, CSRF e testes de isolamento; gate continua fechado |
-| C — Career Twin | Incremento concluído | Read model determinístico, evidências por origem, linha do tempo com dados da conta e eventos de plano/desafio; CI aprovado |
+| C — Career Twin | Incremento concluído | Read model determinístico, evidências por origem, linha do tempo e Ledger persistente versionado; Career Twin exibe versões ativas e anteriores, com CI SQLite/PostgreSQL/Vite aprovado |
 | D — Diagnóstico de oportunidades | Incremento concluído | Endpoint por vaga com classificação de requisitos e rastreabilidade de evidências; não mede proficiência; CI aprovado |
-| E — Desenvolvimento e desafios | Parcial, com UX reforçada | Autoavaliação agora referencia a meta do plano na evidência e na linha do tempo; interface informa explicitamente que avaliação automática/runner de código não está disponível. Ledger persistente e validação independente seguem pendentes |
+| E — Desenvolvimento e desafios | Parcial, com evidências persistentes | Desafios enviados geram evidência `self_assessed` vinculada à tentativa e à competência. Continua sem execução de código ou validação independente; UI deixa essa limitação explícita |
 | F — Candidaturas e agente | Histórico concluído; métricas parciais | Pipeline e política do agente preservados; histórico por evento/conta no backend e frontend. Painel mostra totais, entrevistas, andamento e aprovações; taxa de conversão não é exibida sem base temporal/coorte suficiente. Métricas de retorno e cobertura das fontes ainda pendentes |
 | G — Inteligência de mercado | Incremento concluído | Snapshot, Skill Gap com contexto de amostra e comparação de dois snapshots equivalentes; agendamento recorrente ainda depende de infraestrutura |
 | H — Qualidade e entrega | Parcial, CI verde | CI SQLite/PostgreSQL/build aprovado na revisão atual; navegação modular ligada às telas existentes; upload DOCX endurecido; downgrade de histórico preserva dados. Não houve deploy; gates continuam fechados |
@@ -195,3 +195,24 @@ Continuar a auditoria endpoint a endpoint com foco em vínculo cruzado de entida
 - Além dos testes unitários de parsing, foi adicionado teste de preflight real no middleware FastAPI/Starlette: origem local autorizada recebe CORS com credenciais; origem externa não cadastrada recebe rejeição sem cabeçalho de permissão.
 - CI do commit `efab261`: SQLite **144 passed, 2 skipped**; PostgreSQL 16 **146 passed**; build Vite **success**.
 - O resultado valida o middleware com a configuração padrão dos testes; o domínio real de produção continua dependendo da variável explícita `CORS_ORIGINS` no serviço hospedado.
+
+## Ledger persistente de evidências — 12/11/2026
+
+- Criada a tabela `career_evidence`, sempre vinculada a `users.id`, com competência, categoria, origem, chave estável da fonte, trecho curto, hash, nível de validação, estado ativo/inativo e data de substituição.
+- A sincronização ocorre ao salvar o perfil. Novas fontes recebem IDs antes da geração da chave; atualizações idênticas são idempotentes; mudanças criam nova versão e inativam a anterior; registros removidos deixam de ser ativos sem apagar o histórico.
+- O endpoint `GET /api/career-evidence` não aceita `user_id` do cliente e filtra pela conta autenticada.
+- O Career Twin apresenta o histórico persistido, inclusive versões anteriores. Autoavaliações de desafios são registradas como `self_assessed`, nunca como validação independente.
+- A migração `20261112_0003` é aditiva e impede downgrade com histórico existente.
+- Testes cobrem idempotência, versionamento, remoção, isolamento entre contas, autoavaliação e preservação do ledger em rollback.
+- Commits desta etapa: `a2e4b69` (modelo), `fddd978` (migração), `4bba430` (sincronização), `c6ce99c` (endpoint), `40ea667` (Career Twin), `46da40e` (testes), `79bf295` / `04ad962` (correções de sincronização), `5c279fd` (teste de rollback), `c486e66` / `bd0a956` / `a160933` (autoavaliação), `ddadab1` (interface do histórico) e `fd6b7c4` (estilos de versões anteriores).
+- CI funcional do ledger: [execução 43157143830](https://github.com/Stefany-viveiros/JobFinderAI/actions/runs/43157143830) — SQLite **146 passed, 2 skipped**; PostgreSQL 16 **148 passed**; build Vite **success**.
+- Execução da última alteração visual: [CI 43157232132](https://github.com/Stefany-viveiros/JobFinderAI/actions/runs/43157232132). Build Vite e SQLite aprovados; PostgreSQL ainda em execução no momento desta atualização.
+
+## Próximos passos
+
+1. Completar a revisão final de isolamento de rotas e operações de conta, mantendo `MULTITENANT_READY=false` até validação integral.
+2. Evoluir desafios para uma trilha de validação externa segura; não executar código de usuário no servidor atual.
+3. Adicionar interface de revisão e correção das evidências, mantendo a origem e o histórico.
+4. Concluir métricas de retorno de candidaturas com dados reais e coortes comparáveis.
+5. Implementar agendamento real de snapshots de mercado e notificações individuais, sem reativar runners globais.
+6. Validar migrações e schema em banco PostgreSQL efêmero antes de qualquer decisão operacional. Nenhuma migração ou deploy de produção está autorizado nesta etapa.
