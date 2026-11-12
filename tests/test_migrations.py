@@ -356,3 +356,74 @@ def test_career_evidence_migration_preserves_versioned_history_on_rollback(tmp_p
         assert connection.execute(sa.text("SELECT COUNT(*) FROM career_evidence")).scalar_one() == 1
     assert sa.inspect(engine).has_table("career_evidence")
     engine.dispose()
+
+
+def test_postgresql_career_evidence_migration_preserves_history_on_rollback(monkeypatch):
+    import os
+    from uuid import uuid4
+    from sqlalchemy.engine import make_url
+
+    postgres_url = os.getenv("TEST_POSTGRES_URL")
+    if not postgres_url:
+        pytest.skip("TEST_POSTGRES_URL não configurada; teste executado no CI com PostgreSQL.")
+
+    admin_engine = sa.create_engine(postgres_url)
+    schema = f"jobfinder_career_evidence_{uuid4().hex}"
+    with admin_engine.begin() as connection:
+        connection.execute(sa.text(f'CREATE SCHEMA "{schema}"'))
+
+    scoped_url = make_url(postgres_url).set(
+        query={"options": f"-csearch_path={schema}"}
+    )
+    engine = sa.create_engine(scoped_url)
+    try:
+        metadata = sa.MetaData()
+        sa.Table("users", metadata, sa.Column("id", sa.Integer, primary_key=True))
+        sa.Table(
+            "applications", metadata,
+            sa.Column("id", sa.Integer, primary_key=True),
+            sa.Column("user_id", sa.Integer, nullable=True),
+            sa.Column("job_id", sa.Integer, nullable=False),
+            sa.UniqueConstraint("user_id", "job_id", name="uq_user_application_job"),
+        )
+        metadata.create_all(engine)
+
+        config_path = Path(__file__).resolve().parents[1] / "alembic.ini"
+        config = Config(str(config_path))
+        config.set_main_option("sqlalchemy.url", str(scoped_url).replace("%", "%%"))
+        monkeypatch.setenv("DATABASE_URL", str(scoped_url))
+        command.upgrade(config, "head")
+
+        inspector = sa.inspect(engine)
+        assert inspector.has_table("career_evidence")
+        foreign_keys = inspector.get_foreign_keys("career_evidence")
+        assert any(
+            fk["constrained_columns"] == ["user_id"] and fk["referred_table"] == "users"
+            for fk in foreign_keys
+        )
+
+        with engine.begin() as connection:
+            connection.execute(sa.text("INSERT INTO users (id) VALUES (1)"))
+            connection.execute(sa.text(
+                "INSERT INTO career_evidence "
+                "(id, user_id, skill_name, category, source_type, source_key, source_id, "
+                "source_label, excerpt, evidence_hash, verification_level, is_active, created_at) "
+                "VALUES (1, 1, 'Python', 'language', 'self_declared', 'legacy:skills', NULL, "
+                "'Habilidades declaradas', 'Python', :digest, 'self_reported', true, CURRENT_TIMESTAMP)"
+            ), {"digest": "b" * 64})
+
+        with pytest.raises(RuntimeError, match="Os dados não serão apagados"):
+            command.downgrade(config, "20261112_0002")
+        with engine.connect() as connection:
+            assert connection.execute(sa.text("SELECT COUNT(*) FROM career_evidence")).scalar_one() == 1
+        assert sa.inspect(engine).has_table("career_evidence")
+
+        with engine.begin() as connection:
+            connection.execute(sa.text("DELETE FROM career_evidence WHERE id = 1"))
+        command.downgrade(config, "20261112_0002")
+        assert not sa.inspect(engine).has_table("career_evidence")
+    finally:
+        engine.dispose()
+        with admin_engine.begin() as connection:
+            connection.execute(sa.text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+        admin_engine.dispose()
