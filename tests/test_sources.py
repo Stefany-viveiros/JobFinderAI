@@ -60,9 +60,23 @@ def test_one_failing_source_does_not_break_collection(monkeypatch):
 
 
 def test_indeed_and_vagascom_are_link_only_and_never_fetched():
-    assert set(sources.LINK_ONLY_SOURCES) == {"Indeed", "Vagas.com"}
-    assert "Indeed" not in sources.SOURCES and "Vagas.com" not in sources.SOURCES
+    assert {"Indeed", "Vagas.com", "LinkedIn", "Gupy", "InfoJobs", "CIEE", "Nube"} <= set(sources.LINK_ONLY_SOURCES)
+    assert all(name not in sources.SOURCES for name in sources.LINK_ONLY_SOURCES)
     assert all(not sources.SOURCE_INFO[n]["apply_api"] for n in sources.SOURCE_INFO)
     links = sources.external_search_links(["estágio python"])
-    assert {l["source"] for l in links} == {"Indeed", "Vagas.com"}
+    assert {"Indeed", "Vagas.com", "LinkedIn", "Gupy", "InfoJobs"} <= {l["source"] for l in links}
     assert all(l["url"].startswith("https://") for l in links)
+
+
+def test_brazilian_portal_catalog_is_link_only_and_never_claims_auto_apply():
+    expected = {
+        "LinkedIn", "Gupy", "InfoJobs", "Catho", "Sólides Vagas",
+        "Trabalha Brasil", "Empregos.com.br", "Glassdoor", "Jooble",
+        "CIEE", "Nube", "Companhia de Estágios", "99jobs", "GeekHunter",
+        "Programathor", "Trampos", "Remotar", "Emprega Brasil / SINE",
+    }
+    assert expected <= set(sources.SOURCE_INFO)
+    for name in expected:
+        assert sources.SOURCE_INFO[name]["mode"] == "link_only"
+        assert sources.SOURCE_INFO[name]["search_api"] is False
+        assert sources.SOURCE_INFO[name]["apply_api"] is False
