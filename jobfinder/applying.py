@@ -26,8 +26,8 @@ SENDABLE_STATUSES = ("prepared", "awaiting_approval", "failed")
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 BLOCKED_LOCAL_PARTS = ("noreply", "no-reply", "donotreply", "do-not-reply", "mailer-daemon", "privacy", "abuse")
 APPLY_CONTEXT_RE = re.compile(
-    r"\\b(candidatura|candidatar|curr[ií]culo|curriculo|selec[aã]o|recrutamento|"
-    r"\\brh\\b|talentos|vagas|trabalhe conosco|apply|careers|career|jobs|hiring)\\b",
+    r"\b(candidatura|candidatar|curr[ií]culo|curriculo|selec[aã]o|recrutamento|"
+    r"\brh\b|talentos|vagas|trabalhe conosco|apply|careers|career|jobs|hiring)\b",
     re.IGNORECASE,
 )
 
