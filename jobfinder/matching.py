@@ -407,16 +407,47 @@ def _profile_sources(profile) -> list[dict]:
     return sources
 
 
+def _evidence_source_key(source: dict) -> str:
+    """Reconstrói a chave estável usada pelo ledger para a mesma origem."""
+    source_type = source.get("source_type")
+    source_id = source.get("source_id")
+    if source_id is not None:
+        prefixes = {
+            "professional_experience": "experience",
+            "completed_project": "portfolio_project",
+            "ongoing_project": "portfolio_project",
+            "project_status_ambiguous": "portfolio_project",
+            "completed_course": "course",
+            "ongoing_course": "course",
+            "course_status_ambiguous": "course",
+            "certification_record": "certification",
+            "education_record": "education",
+        }
+        prefix = prefixes.get(source_type)
+        return f"{prefix}:{source_id}" if prefix else ""
+    legacy = {
+        "Experiência (campo legado)": "legacy:experience",
+        "Projeto (campo legado)": "legacy:project",
+        "Certificação (campo legado)": "legacy:certification",
+        "Tecnologias declaradas": "legacy:technologies",
+        "Habilidades declaradas": "legacy:skills",
+        "Palavras-chave declaradas": "legacy:keywords",
+    }
+    return legacy.get(source.get("source_label"), "")
+
+
 def diagnose_job_requirements(
     description: str,
     profile,
     *,
     self_assessed_skill_names: set[str] | None = None,
+    dismissed_evidence_keys: set[tuple[str, str]] | None = None,
 ) -> dict:
     """Relaciona requisitos textuais da vaga às origens registradas no perfil."""
     requirements = classify_job_requirements(description)
     sources = _profile_sources(profile)
     self_assessed = {normalize(item) for item in (self_assessed_skill_names or set())}
+    dismissed = dismissed_evidence_keys or set()
     evidenced_sources = {
         "professional_experience", "completed_project", "completed_course",
         "certification_record", "education_record", "legacy_experience",
@@ -444,6 +475,7 @@ def diagnose_job_requirements(
         matched = [
             source for source in sources
             if _contains_phrase(source["text"], name)
+            and (_evidence_source_key(source), normalize(name)) not in dismissed
         ]
         evidence = [
             {
