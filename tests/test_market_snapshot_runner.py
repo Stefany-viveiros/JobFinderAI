@@ -95,3 +95,46 @@ def test_runner_rebuilds_immediately_when_taxonomy_changes(db, monkeypatch):
     result = market_snapshot_runner.run_snapshot_if_due(db, now=now)
 
     assert result["status"] == "created"
+
+
+def test_market_runner_schema_validation_requires_current_revision_and_tables():
+    from pathlib import Path
+
+    import sqlalchemy as sa
+    import pytest
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    engine = sa.create_engine("sqlite:///:memory:")
+    root = Path(market_snapshot_runner.__file__).resolve().parents[1]
+    scripts = ScriptDirectory.from_config(Config(str(root / "alembic.ini")))
+    head = scripts.get_heads()[0]
+    try:
+        with engine.begin() as connection:
+            connection.execute(sa.text(
+                "CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"
+            ))
+            connection.execute(
+                sa.text("INSERT INTO alembic_version (version_num) VALUES (:revision)"),
+                {"revision": head},
+            )
+            for table in market_snapshot_runner.REQUIRED_MARKET_TABLES:
+                connection.execute(sa.text(f'CREATE TABLE "{table}" (id INTEGER PRIMARY KEY)'))
+        with engine.connect() as connection:
+            result = market_snapshot_runner.validate_market_schema(connection)
+        assert result == {"revision": head, "tables": "ok"}
+    finally:
+        engine.dispose()
+
+
+def test_market_runner_schema_validation_rejects_missing_market_tables():
+    import sqlalchemy as sa
+    import pytest
+
+    engine = sa.create_engine("sqlite:///:memory:")
+    try:
+        with engine.connect() as connection:
+            with pytest.raises(RuntimeError, match="revisão Alembic atual"):
+                market_snapshot_runner.validate_market_schema(connection)
+    finally:
+        engine.dispose()
