@@ -54,6 +54,8 @@ def test_apply_endpoint_requires_explicit_confirmation(client, db):
 
 
 def test_prepare_then_approve_flow_with_failure_then_success(client, db, ready_profile, smtp_on, monkeypatch):
+    # Exercita explicitamente o modo legado/local; SaaS usa SMTP individual cifrado.
+    monkeypatch.setenv("MULTITENANT_READY", "false")
     job = make_job(db)
     attempt = client.post(f"/api/jobs/{job.id}/prepare").json()["attempt"]
     assert attempt["status"] == "prepared" and "Python" in attempt["message"]
@@ -65,6 +67,60 @@ def test_prepare_then_approve_flow_with_failure_then_success(client, db, ready_p
     r = client.post(f"/api/attempts/{attempt['id']}/approve").json()          # nova tentativa após falha
     assert r["attempt"]["status"] == "sent"
     assert client.post(f"/api/attempts/{attempt['id']}/cancel").status_code == 409
+
+
+def test_smtp_account_is_encrypted_private_and_used_for_delivery(client, db, ready_profile, monkeypatch, test_user):
+    from cryptography.fernet import Fernet
+    from jobfinder.models import SmtpAccount, User
+    from sqlalchemy import select
+
+    monkeypatch.setenv("SMTP_CREDENTIALS_KEY", Fernet.generate_key().decode("ascii"))
+    payload = {
+        "host": "smtp.conta.example",
+        "port": 587,
+        "username": "stefany@example.com",
+        "password": "senha-super-secreta",
+        "from_email": "stefany@example.com",
+        "use_tls": True,
+    }
+    saved = client.put("/api/agent/smtp", json=payload)
+    assert saved.status_code == 200
+    assert saved.json()["smtp"]["configured"] is True
+    assert "password" not in saved.json()["smtp"]
+    account = db.scalar(select(SmtpAccount).where(SmtpAccount.user_id == test_user.id))
+    assert account.encrypted_password != payload["password"]
+    assert "senha-super-secreta" not in account.encrypted_password
+
+    # Uma segunda conta não recebe nem os metadados SMTP da primeira.
+    second = User(
+        email="second-smtp@example.com", email_normalized="second-smtp@example.com",
+        full_name="Segunda conta", password_hash="not-used", role="user", is_active=True,
+    )
+    db.add(second)
+    db.flush()
+    db.add(SmtpAccount(
+        user_id=second.id, host="smtp.other.example", port=465,
+        username="other@example.com", encrypted_password=account.encrypted_password,
+        from_email="other@example.com", use_tls=True,
+    ))
+    db.commit()
+    assert client.get("/api/agent/smtp").json()["host"] == "smtp.conta.example"
+
+    captured = []
+    monkeypatch.setattr(applying, "_deliver", lambda msg, smtp_config=None: captured.append((msg, smtp_config)))
+    job = make_job(db)
+    attempt = client.post(f"/api/jobs/{job.id}/prepare").json()["attempt"]
+    assert attempt["channel"] == "email" and attempt["status"] == "prepared"
+    sent = client.post(f"/api/attempts/{attempt['id']}/approve")
+    assert sent.status_code == 200
+    assert sent.json()["attempt"]["status"] == "sent"
+    assert captured[0][1]["host"] == "smtp.conta.example"
+    assert captured[0][1]["password"] == "senha-super-secreta"
+    assert captured[0][0]["From"] == "stefany@example.com"
+
+    deleted = client.delete("/api/agent/smtp")
+    assert deleted.status_code == 200
+    assert client.get("/api/agent/smtp").json() == {"configured": False}
 
 
 def test_saas_mode_never_uses_global_smtp_credentials(client, db, ready_profile, smtp_on):
