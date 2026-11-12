@@ -106,6 +106,21 @@ def test_default_agent_threshold_is_80(db, test_user):
 
 
 
+def test_agent_rejects_missing_identity_before_loading_global_settings(db, monkeypatch):
+    from jobfinder import agent
+
+    monkeypatch.setattr(
+        agent, "get_agent_settings",
+        lambda *args, **kwargs: pytest.fail("não deve carregar configuração global"),
+    )
+    monkeypatch.setattr(
+        agent, "get_profile",
+        lambda *args, **kwargs: pytest.fail("não deve carregar perfil sem identidade"),
+    )
+    with pytest.raises(ValueError, match="usuário autenticado"):
+        run_agent(db, collector=lambda names: pytest.fail("não deve coletar vagas"))
+
+
 def test_legacy_agent_runner_blocks_before_database_when_multitenant(monkeypatch):
     from jobfinder import agent_runner
 
