@@ -1,8 +1,8 @@
 # Progresso — JobFinder AI Proof-to-Opportunity Engine
 
 **Branch:** `feature/proof-to-opportunity-engine`  
-**Último commit de implementação:** `d63be76`  
-**Atualização:** 12/11/2026.  \n**Cobertura geral estimada:** 88% (estimativa de escopo, não métrica automatizada).
+**Último commit de implementação:** `c32a736`  
+**Atualização:** 12/11/2026.  \n**Cobertura geral estimada:** 89% (estimativa de escopo, não métrica automatizada).
 
 ## Estado de execução
 
@@ -10,7 +10,7 @@
 |---|---|---|
 | A — Auditoria | Concluída | Matriz em `docs/AUDITORIA.md`; frontend, API, modelos, serviços, migrações, testes e deploy revisados na branch |
 | B — Segurança e privacidade | Incrementos concluídos; liberação SaaS pendente | Consentimento explícito para Gemini, upload endurecido, rate limit, CSRF e testes de isolamento; gate continua fechado |
-| C — Career Twin | Incremento concluído | Read model, linha do tempo e Ledger persistente versionado; revisão humana com observação, histórico append-only, exclusão de evidência irrelevante do Career Twin/diagnóstico e consulta isolada por conta. CI funcional aprovado; teste de rollback da migração em validação |
+| C — Career Twin | Incremento concluído | Read model, linha do tempo e Ledger persistente versionado; revisão humana com observação, histórico append-only, exclusão de evidência irrelevante do Career Twin/diagnóstico e consulta isolada por conta. Gate de schema também valida FKs, proprietário e revisões cruzadas; CI da última proteção em validação |
 | D — Diagnóstico de oportunidades | Incremento concluído | Endpoint por vaga com classificação de requisitos e rastreabilidade de evidências; não mede proficiência; CI aprovado |
 | E — Desenvolvimento e desafios | Parcial, com evidências persistentes | Desafios enviados geram evidência `self_assessed` vinculada à tentativa e à competência. Continua sem execução de código ou validação independente; UI deixa essa limitação explícita |
 | F — Candidaturas e agente | Histórico concluído; métricas parciais | Pipeline e política do agente preservados; histórico por evento/conta no backend e frontend. Painel mostra totais, entrevistas, andamento e aprovações; taxa de conversão não é exibida sem base temporal/coorte suficiente. Métricas de retorno e cobertura das fontes ainda pendentes |
@@ -72,14 +72,14 @@ Os avisos de depreciação registrados pelo CI não foram tratados como falhas. 
 - Validar upgrades/rollbacks Alembic em cópia controlada de banco e revisar os registros sem `user_id`.
 - Definir agendador recorrente real para snapshots de mercado (por exemplo, job/cron compatível com infraestrutura contratada); não há execução quinzenal automática ativa.
 - Completar análise de candidaturas com métricas de conversão sem inferir resultados inexistentes.
-- O ledger persistente e a revisão humana estão implementados; falta fechar a validação final da UI/API e documentar a execução aprovada.
+- Ledger persistente e revisão humana implementados e documentados; CI anterior aprovado. A proteção do gate multiusuário para revisões cruzadas está em validação.
 - Não implementar runner de código até existir isolamento descartável, sem rede e com limites testados.
 - Revisar configuração de e-mail por usuário; o destinatário SMTP global não deve ser liberado no SaaS.
 - Atualizar e validar a configuração de produção somente após aprovação de segurança.
 
 ## Próximo passo exato
 
-Fechar a validação da revisão do ledger, concluir a auditoria endpoint a endpoint e ensaiar migrações em banco efêmero. Manter `MULTITENANT_READY=false` até haver evidência suficiente de isolamento e plano de tratamento de dados legados.
+Fechar a validação do gate de schema e preparar checklist de release candidate. A varredura estática de rotas e o ensaio de migração em banco efêmero estão documentados; manter `MULTITENANT_READY=false` até resolver dados legados e configurações por conta.
 
 
 ## Incrementos recentes de segurança e candidaturas — 12/11/2026
