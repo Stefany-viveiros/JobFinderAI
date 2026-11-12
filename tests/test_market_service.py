@@ -163,6 +163,12 @@ def test_profile_gap_distinguishes_project_course_declaration_and_missing(db, te
     assert by_name["JavaScript"]["status"] == "declarada"
     assert by_name["Docker"]["status"] == "nao_identificada"
     assert gap["available"] is True
+    assert gap["market"]["level_scope"] == "estagio"
+    assert gap["market"]["valid_jobs"] == 1
+    assert gap["market"]["sample_minimum"] == 1
+    assert gap["market"]["sample_sufficient"] is True
+    assert gap["market"]["period_start"]
+    assert gap["market"]["period_end"]
     assert "não significa falta de conhecimento" in gap["notice"]
 
 
@@ -353,3 +359,23 @@ def test_profile_evidence_keeps_precedence_over_self_assessment(db, test_user):
 
     assert react["status"] == "praticada"
     assert react["assessment"]["score"] == 100
+
+
+
+def test_profile_gap_rejects_snapshot_that_is_not_completed(db, test_user):
+    from jobfinder.market_service import build_profile_gap
+    from jobfinder.models import MarketAnalysisRun, Profile
+
+    db.add(Profile(user_id=test_user.id, technologies="Python"))
+    run = MarketAnalysisRun(
+        level_scope="estagio",
+        area_scope="technology",
+        filters_json='{"days": 30, "levels": ["estagio"]}',
+        status="running",
+    )
+    db.add(run)
+    db.commit()
+
+    gap = build_profile_gap(db, user_id=test_user.id, run_id=run.id)
+    assert gap["available"] is False
+    assert "concluída" in gap["message"]

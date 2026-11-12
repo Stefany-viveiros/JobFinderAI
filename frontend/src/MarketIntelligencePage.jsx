@@ -8,9 +8,21 @@ import {
 const API = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api').replace(/\/$/, '')
 
 async function request(path, options = {}) {
+  const method = (options.method || 'GET').toUpperCase()
+  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) }
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+    // Renova o token por operação para não reutilizar CSRF de uma sessão anterior.
+    const sessionResponse = await fetch(`${API}/auth/me`, { credentials: 'include' })
+    const sessionBody = await sessionResponse.json().catch(() => ({}))
+    if (!sessionResponse.ok || !sessionBody.csrf_token) {
+      throw new Error(sessionBody.detail || 'Sua sessão expirou. Entre novamente para continuar.')
+    }
+    headers['X-CSRF-Token'] = sessionBody.csrf_token
+  }
   const response = await fetch(`${API}${path}`, {
     ...options,
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    credentials: 'include',
+    headers,
   })
   const body = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(body.detail || body.message || `Erro ${response.status}`)
@@ -306,6 +318,12 @@ export default function MarketIntelligencePage() {
             <span className="market-count">{gap ? `${gap.total_skills} competências` : 'Perfil não analisado'}</span>
           </div>
           {!gap ? <div className="market-inline-empty">Cadastre ou complete seu perfil profissional para comparar as competências com o mercado.</div> : <>
+            {gap.market && <div className="market-gap-sample" aria-label="Amostra usada no diagnóstico">
+              <span>Período: {date(gap.market.period_start)} a {date(gap.market.period_end)}</span>
+              <span>Nível: {gap.market.level_scope === 'both' ? 'Estágio e júnior' : gap.market.level_scope === 'estagio' ? 'Estágio' : 'Júnior'}</span>
+              <span>Amostra: {number(gap.market.valid_jobs)} vagas · mínimo {number(gap.market.sample_minimum)}</span>
+              {!gap.market.sample_sufficient && <strong>Amostra abaixo do mínimo; recomendações são exploratórias.</strong>}
+            </div>}
             <div className="market-gap-summary">
               <div><strong>{gap.counts?.experiencia || 0}</strong><span>Experiência</span></div>
               <div><strong>{(gap.counts?.projeto || 0) + (gap.counts?.praticada || 0)}</strong><span>Projetos e prática</span></div>
@@ -411,3 +429,7 @@ export default function MarketIntelligencePage() {
       </>}
   </>
 }
+
+.market-gap-sample{display:flex;flex-wrap:wrap;gap:7px 15px;margin:12px 0 15px;padding:10px 12px;border:1px solid #e8eaf1;border-radius:9px;background:#fbfcff}
+.market-gap-sample span,.market-gap-sample strong{font-size:11px;line-height:1.5;color:#68718a}
+.market-gap-sample strong{color:#926b2e}

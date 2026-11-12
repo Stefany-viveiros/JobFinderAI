@@ -121,7 +121,7 @@ def create_market_snapshot(
 
     run = MarketAnalysisRun(
         period_start=start, period_end=now, level_scope=level_scope,
-        area_scope="technology", filters_json=json.dumps({"days": days, "levels": levels}),
+        area_scope="technology", filters_json=json.dumps({"days": days, "levels": levels, "min_jobs": max(1, int(min_jobs))}),
         total_jobs=len(jobs), valid_jobs=len(jobs), jobs_with_description=with_description,
         sources_json=json.dumps(sources, ensure_ascii=False),
         taxonomy_version=taxonomy_version(), extractor_version=EXTRACTOR_VERSION,
@@ -214,8 +214,25 @@ def build_profile_gap(db: Session, *, user_id: int, run_id: int | None = None) -
         .order_by(MarketAnalysisRun.created_at.desc(), MarketAnalysisRun.id.desc())
         .limit(1)
     )
-    if run is None:
-        return {"available": False, "message": "Gere uma análise de mercado antes de consultar o Skill Gap."}
+    if run is None or run.status != "completed":
+        return {"available": False, "message": "Gere uma análise de mercado concluída antes de consultar o Skill Gap."}
+
+    try:
+        filters = json.loads(run.filters_json or "{}")
+    except (TypeError, ValueError):
+        filters = {}
+    sample_minimum = max(1, int(filters.get("min_jobs", 30) or 30))
+    market_context = {
+        "run_id": run.id,
+        "period_start": run.period_start.isoformat() if run.period_start else None,
+        "period_end": run.period_end.isoformat() if run.period_end else None,
+        "level_scope": run.level_scope,
+        "valid_jobs": run.valid_jobs,
+        "jobs_with_description": run.jobs_with_description,
+        "sample_minimum": sample_minimum,
+        "sample_sufficient": run.valid_jobs >= sample_minimum,
+        "quality_notes": run.quality_notes or "",
+    }
 
     metric_rows = db.execute(
         select(MarketSkillMetric, Skill)
@@ -366,6 +383,7 @@ def build_profile_gap(db: Session, *, user_id: int, run_id: int | None = None) -
     return {
         "available": True,
         "run_id": run.id,
+        "market": market_context,
         "total_skills": len(items),
         "counts": counts,
         "items": items,
