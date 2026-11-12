@@ -1022,7 +1022,8 @@ def test_cors_middleware_allows_only_configured_origins(client):
     assert denied.headers.get("access-control-allow-origin") is None
 
 
-def test_career_evidence_ledger_versions_profile_sources_and_is_account_scoped(client, test_user):
+def test_career_evidence_ledger_versions_profile_sources_and_is_account_scoped(client, test_user, db):
+    from sqlalchemy import select
     from jobfinder.models import CareerEvidence
 
     first = client.put("/api/profile", json={
