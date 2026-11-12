@@ -1,7 +1,7 @@
 # Progresso — JobFinder AI Proof-to-Opportunity Engine
 
 **Branch:** `feature/proof-to-opportunity-engine`  
-**Último commit de implementação:** `fd6b7c4`  
+**Último commit de implementação:** `1d14ed8`  
 **Atualização:** 12/11/2026.  \n**Cobertura geral estimada:** 85% (estimativa de escopo, não métrica automatizada).
 
 ## Estado de execução
@@ -10,12 +10,12 @@
 |---|---|---|
 | A — Auditoria | Concluída | Matriz em `docs/AUDITORIA.md`; frontend, API, modelos, serviços, migrações, testes e deploy revisados na branch |
 | B — Segurança e privacidade | Incrementos concluídos; liberação SaaS pendente | Consentimento explícito para Gemini, upload endurecido, rate limit, CSRF e testes de isolamento; gate continua fechado |
-| C — Career Twin | Incremento concluído | Read model determinístico, evidências por origem, linha do tempo e Ledger persistente versionado; Career Twin exibe versões ativas e anteriores, com CI SQLite/PostgreSQL/Vite aprovado |
+| C — Career Twin | Incremento concluído | Read model, linha do tempo e Ledger persistente versionado; revisão humana com observação, histórico append-only e consulta isolada por conta. CI da revisão atual em validação |
 | D — Diagnóstico de oportunidades | Incremento concluído | Endpoint por vaga com classificação de requisitos e rastreabilidade de evidências; não mede proficiência; CI aprovado |
 | E — Desenvolvimento e desafios | Parcial, com evidências persistentes | Desafios enviados geram evidência `self_assessed` vinculada à tentativa e à competência. Continua sem execução de código ou validação independente; UI deixa essa limitação explícita |
 | F — Candidaturas e agente | Histórico concluído; métricas parciais | Pipeline e política do agente preservados; histórico por evento/conta no backend e frontend. Painel mostra totais, entrevistas, andamento e aprovações; taxa de conversão não é exibida sem base temporal/coorte suficiente. Métricas de retorno e cobertura das fontes ainda pendentes |
 | G — Inteligência de mercado | Incremento concluído | Snapshot, Skill Gap com contexto de amostra e comparação de dois snapshots equivalentes; agendamento recorrente ainda depende de infraestrutura |
-| H — Qualidade e entrega | Parcial, CI verde | CI SQLite/PostgreSQL/build aprovado na revisão atual; navegação modular ligada às telas existentes; upload DOCX endurecido; downgrade de histórico preserva dados. Não houve deploy; gates continuam fechados |
+| H — Qualidade e entrega | Parcial, sem deploy | CI anterior verde; revisão do histórico de evidências em validação; navegação modular, upload DOCX endurecido e migrações aditivas. `main`, Render e Neon permanecem intocados |
 
 ## Implementações commitadas nesta branch
 
@@ -72,14 +72,14 @@ Os avisos de depreciação registrados pelo CI não foram tratados como falhas. 
 - Validar upgrades/rollbacks Alembic em cópia controlada de banco e revisar os registros sem `user_id`.
 - Definir agendador recorrente real para snapshots de mercado (por exemplo, job/cron compatível com infraestrutura contratada); não há execução quinzenal automática ativa.
 - Completar análise de candidaturas com métricas de conversão sem inferir resultados inexistentes.
-- Evoluir registro versionado de evidências (ledger), sem duplicar o perfil.
+- O ledger persistente e a revisão humana estão implementados; falta fechar a validação final da UI/API e documentar a execução aprovada.
 - Não implementar runner de código até existir isolamento descartável, sem rede e com limites testados.
 - Revisar configuração de e-mail por usuário; o destinatário SMTP global não deve ser liberado no SaaS.
 - Atualizar e validar a configuração de produção somente após aprovação de segurança.
 
 ## Próximo passo exato
 
-Auditar todas as rotas restantes de autenticação, perfil, configurações e candidaturas e acrescentar testes de acesso cruzado onde ainda faltar cobertura. Depois revisar o schema/migrações em ambiente de teste PostgreSQL e só então decidir sobre qualquer mudança de `MULTITENANT_READY`.  
+Fechar a validação da revisão do ledger, concluir a auditoria endpoint a endpoint e ensaiar migrações em banco efêmero. Manter `MULTITENANT_READY=false` até haver evidência suficiente de isolamento e plano de tratamento de dados legados.
 
 
 ## Incrementos recentes de segurança e candidaturas — 12/11/2026
@@ -216,3 +216,11 @@ Continuar a auditoria endpoint a endpoint com foco em vínculo cruzado de entida
 4. Concluir métricas de retorno de candidaturas com dados reais e coortes comparáveis.
 5. Implementar agendamento real de snapshots de mercado e notificações individuais, sem reativar runners globais.
 6. Validar migrações e schema em banco PostgreSQL efêmero antes de qualquer decisão operacional. Nenhuma migração ou deploy de produção está autorizado nesta etapa.
+
+## Revisão humana do ledger — 12/11/2026
+
+- `POST /api/career-evidence/{evidence_id}/review` registra decisões `confirmed` e `dismissed` em eventos append-only, com observação opcional de até 1.000 caracteres.
+- `GET /api/career-evidence/{evidence_id}/reviews` devolve o histórico completo em ordem cronológica e retorna 404 para evidências de outra conta.
+- `GET /api/career-evidence` continua apresentando a decisão mais recente, sem alterar `verification_level` ou a evidência original.
+- O Career Twin permite adicionar observação, confirmar a origem ou marcar a menção como não relevante e consultar todas as revisões.
+- Testes cobrem histórico completo, preservação da evidência original e isolamento entre contas. A CI do commit `1d14ed8` ainda precisa concluir SQLite, PostgreSQL 16 e Vite antes de declarar a etapa validada.
