@@ -2,6 +2,7 @@
 import json
 from collections import Counter
 from datetime import datetime, timedelta
+from urllib.parse import urlsplit
 
 from sqlalchemy import select, delete
 from sqlalchemy.orm import Session
@@ -660,6 +661,23 @@ def submit_skill_assessment(
         raise ValueError("Responda a todos os critérios da autoavaliação.")
     if len((response_text or "").strip()) < 30 and not (evidence_url or "").strip():
         raise ValueError("Descreva sua solução ou informe um link de evidência.")
+    clean_url = (evidence_url or "").strip()
+    if clean_url:
+        try:
+            parsed_url = urlsplit(clean_url)
+            valid_https_url = (
+                parsed_url.scheme == "https"
+                and bool(parsed_url.hostname)
+                and parsed_url.username is None
+                and parsed_url.password is None
+                and not any(ord(char) < 32 or char.isspace() for char in clean_url)
+            )
+            # Acessar .port também valida portas malformadas.
+            _ = parsed_url.port
+        except ValueError:
+            valid_https_url = False
+        if not valid_https_url:
+            raise ValueError("O link de evidência precisa ser uma URL HTTPS válida, sem credenciais.")
     passed = [item for item in criteria if rubric_answers[item["id"]]]
     pending = [item["label"] for item in criteria if not rubric_answers[item["id"]]]
     score = round((len(passed) / len(criteria)) * 100) if criteria else 0
@@ -672,7 +690,7 @@ def submit_skill_assessment(
     if pending:
         feedback += " Pontos para revisar: " + " ".join(pending)
     attempt.response_text = (response_text or "").strip()
-    attempt.evidence_url = (evidence_url or "").strip()
+    attempt.evidence_url = clean_url
     attempt.rubric_answers_json = json.dumps(rubric_answers, ensure_ascii=False)
     attempt.score = score
     attempt.feedback = feedback
