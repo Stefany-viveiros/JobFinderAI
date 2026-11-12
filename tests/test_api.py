@@ -53,19 +53,27 @@ def test_apply_endpoint_requires_explicit_confirmation(client, db):
     assert client.post(f"/api/jobs/{job.id}/apply", json={"confirmed": True}).status_code == 409
 
 
-def test_prepare_then_approve_flow_with_failure_then_success(client, db, ready_profile, smtp_on, monkeypatch):
-    # Exercita explicitamente o modo legado/local; SaaS usa SMTP individual cifrado.
-    monkeypatch.setenv("MULTITENANT_READY", "false")
+def test_prepare_then_approve_flow_with_failure_then_success(client, db, ready_profile, monkeypatch):
+    from cryptography.fernet import Fernet
+
+    monkeypatch.setenv("SMTP_CREDENTIALS_KEY", Fernet.generate_key().decode("ascii"))
+    config = {
+        "host": "smtp.test", "port": 587, "username": "ana@test.dev",
+        "password": "smtp-test-secret", "from_email": "ana@test.dev", "use_tls": True,
+    }
+    assert client.put("/api/agent/smtp", json=config).status_code == 200
     job = make_job(db)
     attempt = client.post(f"/api/jobs/{job.id}/prepare").json()["attempt"]
     assert attempt["status"] == "prepared" and "Python" in attempt["message"]
-    monkeypatch.setattr(applying, "_deliver", lambda m: (_ for _ in ()).throw(OSError("falhou")))
+    monkeypatch.setattr(applying, "_deliver", lambda m, smtp_config=None: (_ for _ in ()).throw(OSError("falhou")))
     r = client.post(f"/api/attempts/{attempt['id']}/approve").json()
     assert r["attempt"]["status"] == "failed" and "falhou" in r["message"]
     assert client.get("/api/dashboard").json()["metrics"]["failed_applications"] == 1
-    monkeypatch.setattr(applying, "_deliver", lambda m: smtp_on.append(m))
+    sent = []
+    monkeypatch.setattr(applying, "_deliver", lambda m, smtp_config=None: sent.append((m, smtp_config)))
     r = client.post(f"/api/attempts/{attempt['id']}/approve").json()          # nova tentativa após falha
     assert r["attempt"]["status"] == "sent"
+    assert sent[0][1]["password"] == "smtp-test-secret"
     assert client.post(f"/api/attempts/{attempt['id']}/cancel").status_code == 409
 
 
