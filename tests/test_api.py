@@ -127,6 +127,18 @@ def test_smtp_account_is_encrypted_private_and_used_for_delivery(client, db, rea
         from_email="other@example.com", use_tls=True,
     ))
     db.commit()
+    second.password_hash = api_module.password_hasher.hash("OutraSenhaSegura123!")
+    db.commit()
+    assert client.get("/api/agent/smtp").json()["host"] == "smtp.gmail.com"
+    with TestClient(api_module.app, base_url="https://testserver") as second_client:
+        login = second_client.post("/api/auth/login", json={
+            "email": second.email, "password": "OutraSenhaSegura123!",
+        })
+        assert login.status_code == 200
+        csrf = second_client.get("/api/auth/me").json()["csrf_token"]
+        second_client.headers.update({"X-CSRF-Token": csrf})
+        assert second_client.get("/api/agent/smtp").json()["host"] == "smtp.other.example"
+        assert second_client.delete("/api/agent/smtp").status_code == 200
     assert client.get("/api/agent/smtp").json()["host"] == "smtp.gmail.com"
 
     captured = []
