@@ -195,3 +195,13 @@ O incremento de privacidade do upload foi implementado em `jobfinder/api.py` e `
 - Endpoints de mercado que não recebem `user_id` retornam snapshots e combinações agregadas derivados do catálogo público de vagas; não devem conter perfil, score, candidaturas ou dados pessoais.
 - `validate_multitenant_schema()` agora inclui `career_evidence` e `career_evidence_reviews`, valida `user_id` obrigatório, FK da evidência e rejeita revisões órfãs ou vinculadas a outra conta. Testes cobrem tentativa de vínculo cruzado. CI do commit `c32a736`: SQLite 150 passed / 3 skipped; PostgreSQL 16 153 passed; build Vite aprovado ([43222155480](https://github.com/Stefany-viveiros/JobFinderAI/actions/runs/43222155480)).
 - A varredura estática não substitui testes de integração para cada rota nem valida dados legados de um banco real. O gate continua fechado até o ensaio operacional em cópia controlada e plano explícito para linhas sem proprietário.
+
+
+## Runner de snapshots — revisão de segurança de 12/11/2026
+
+- O workflow .github/workflows/market-snapshot.yml só executa no branch padrão, tanto no cron quanto no acionamento manual.
+- Antes de qualquer snapshot, market_snapshot_runner compara a revisão atual do banco com a única head Alembic e verifica as tabelas obrigatórias. Não chama init_db() e não executa migrações.
+- Falha de secret ausente, schema desatualizado ou tabelas ausentes deve interromper o job; o agendador não é mecanismo de bootstrap.
+- CI da revisão 9a4dec5 (run 43268397872): SQLite, PostgreSQL 16 e build Vite concluídos com sucesso.
+- A operação recorrente permanece pendente até a criação do secret MARKET_DATABASE_URL no GitHub Actions do branch padrão e a validação de acesso somente ao banco de mercado autorizado.
+- Não confundir este runner de snapshots com o agente de candidaturas ou notificações individuais; estes fluxos não foram ativados por esta alteração.
