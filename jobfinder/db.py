@@ -77,9 +77,12 @@ def _missing_columns():
 
 
 
-def validate_multitenant_schema() -> None:
-    """Valida propriedade, FKs e unicidade antes de liberar o workspace multiusuário."""
-    inspector = inspect(engine)
+def validate_multitenant_schema(connection=None) -> None:
+    """Valida propriedade, FKs e unicidade usando a conexão fornecida, quando houver."""
+    if connection is None:
+        with engine.connect() as owned_connection:
+            return validate_multitenant_schema(owned_connection)
+    inspector = inspect(connection)
     user_scoped_tables = (
         "user_sessions", "password_reset_tokens", "profile", "job_matches",
         "applications", "application_events", "tasks", "notification_log",
@@ -103,10 +106,9 @@ def validate_multitenant_schema() -> None:
             raise RuntimeError(
                 f"Schema SaaS inválido: {table}.user_id precisa referenciar users.id."
             )
-        with engine.connect() as conn:
-            unowned = conn.execute(
-                text(f'SELECT COUNT(*) FROM "{table}" WHERE user_id IS NULL')
-            ).scalar_one()
+        unowned = connection.execute(
+            text(f'SELECT COUNT(*) FROM "{table}" WHERE user_id IS NULL')
+        ).scalar_one()
         if unowned:
             raise RuntimeError(
                 f"Schema SaaS inválido: {table} contém {unowned} registro(s) sem proprietário. "
@@ -143,12 +145,11 @@ def validate_multitenant_schema() -> None:
         raise RuntimeError(
             "Schema SaaS inválido: career_evidence_reviews.evidence_id precisa referenciar career_evidence.id."
         )
-    with engine.connect() as conn:
-        mismatched_reviews = conn.execute(text(
-            "SELECT COUNT(*) FROM career_evidence_reviews r "
-            "LEFT JOIN career_evidence e ON e.id = r.evidence_id "
-            "WHERE e.id IS NULL OR r.user_id != e.user_id"
-        )).scalar_one()
+    mismatched_reviews = connection.execute(text(
+        "SELECT COUNT(*) FROM career_evidence_reviews r "
+        "LEFT JOIN career_evidence e ON e.id = r.evidence_id "
+        "WHERE e.id IS NULL OR r.user_id != e.user_id"
+    )).scalar_one()
     if mismatched_reviews:
         raise RuntimeError(
             f"Schema SaaS inválido: {mismatched_reviews} revisão(ões) sem evidência correspondente ou vinculada(s) a outra conta."
@@ -156,12 +157,11 @@ def validate_multitenant_schema() -> None:
 
     # O histórico de candidatura também é privado: não basta o evento
     # pertencer a um usuário válido; ele precisa pertencer ao dono da candidatura.
-    with engine.connect() as conn:
-        mismatched_application_events = conn.execute(text(
-            "SELECT COUNT(*) FROM application_events ev "
-            "LEFT JOIN applications a ON a.id = ev.application_id "
-            "WHERE a.id IS NULL OR ev.user_id != a.user_id"
-        )).scalar_one()
+    mismatched_application_events = connection.execute(text(
+        "SELECT COUNT(*) FROM application_events ev "
+        "LEFT JOIN applications a ON a.id = ev.application_id "
+        "WHERE a.id IS NULL OR ev.user_id != a.user_id"
+    )).scalar_one()
     if mismatched_application_events:
         raise RuntimeError(
             f"Schema SaaS inválido: {mismatched_application_events} evento(s) de candidatura "
