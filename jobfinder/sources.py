@@ -465,12 +465,12 @@ def external_search_links(terms=None):
         "Emprega Brasil / SINE": "https://servicos.mte.gov.br/",
         "Revelo": "https://www.revelo.com.br/",
     }
+    query = " ".join(terms)
+    encoded = quote_plus(query)
     links = []
     for source, template in templates.items():
-        for term in terms:
-            encoded = quote_plus(term)
-            url = template.format(q=encoded) if "{q}" in template else template
-            links.append({"source": source, "query": term, "url": url})
+        url = template.format(q=encoded) if "{q}" in template else template
+        links.append({"source": source, "query": query, "url": url})
     return links
 
 
