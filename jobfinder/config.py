@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import os
 from dotenv import load_dotenv
+from urllib.parse import urlsplit
 
 load_dotenv()
 
@@ -34,3 +35,32 @@ class Settings:
 
 
 settings = Settings()
+
+
+def parse_cors_origins(raw: str) -> list[str]:
+    """Valida origens CORS explícitas; nunca combina wildcard com credenciais."""
+    origins = [item.strip().rstrip("/") for item in (raw or "").split(",") if item.strip()]
+    if not origins:
+        raise ValueError("CORS_ORIGINS precisa conter ao menos uma origem explícita.")
+    if "*" in origins:
+        raise ValueError("CORS_ORIGINS não aceita wildcard quando credenciais/cookies estão habilitados.")
+
+    validated = []
+    for origin in origins:
+        parsed = urlsplit(origin)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError(f"Origem CORS inválida: {origin!r}. Informe somente esquema e host, sem caminho.")
+        if parsed.scheme == "http" and parsed.hostname.lower() not in {"localhost", "127.0.0.1", "::1"}:
+            raise ValueError("Origens CORS HTTP são permitidas somente para desenvolvimento local; use HTTPS.")
+        normalized = f"{parsed.scheme}://{parsed.netloc}".lower()
+        if normalized not in validated:
+            validated.append(normalized)
+    return validated
