@@ -27,6 +27,7 @@ def test_cors_origins_deduplicate_normalized_values():
         "http://app.example.com",
         "https://app.example.com/dashboard",
         "https://user:password@app.example.com",
+        "https://app.example.com:porta",
         "",
         ", ,",
     ],
