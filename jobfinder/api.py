@@ -981,6 +981,8 @@ def read_smtp_account(request: Request, db: Session = Depends(get_db)):
 
 @app.put("/api/agent/smtp")
 def save_smtp_account(payload: SmtpAccountUpdate, request: Request, db: Session = Depends(get_db)):
+    if not payload.use_tls:
+        raise HTTPException(422, "TLS é obrigatório para proteger a senha da sua conta SMTP.")
     host = payload.host.strip()
     sender = payload.from_email.strip()
     if not host or any(char.isspace() for char in host) or "://" in host or "/" in host:
