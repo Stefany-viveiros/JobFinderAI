@@ -406,6 +406,28 @@ def test_two_accounts_cannot_read_or_modify_each_others_private_data(client, db,
             "rubric_answers": {},
         }).status_code == 404
 
+        import json
+        from jobfinder.models import CareerEvidence, SkillAssessmentAttempt
+        attempt = db.get(SkillAssessmentAttempt, assessment_id)
+        criteria = json.loads(attempt.rubric_json)
+        submitted = client.post(f"/api/market/assessments/{assessment_id}/submit", json={
+            "response_text": "Implementei a solução e documentei as decisões técnicas do desafio.",
+            "evidence_url": "",
+            "rubric_answers": {item["id"]: True for item in criteria},
+        })
+        assert submitted.status_code == 200
+        assert submitted.json()["evidence"]["verification_level"] == "self_assessed"
+        ledger_items = client.get("/api/career-evidence?active_only=true").json()["items"]
+        challenge_evidence = next(
+            item for item in ledger_items
+            if item["source_type"] == "self_assessment" and item["source_id"] == assessment_id
+        )
+        assert challenge_evidence["verification_level"] == "self_assessed"
+        assert db.query(CareerEvidence).filter(
+            CareerEvidence.user_id == test_user.id,
+            CareerEvidence.source_key == f"challenge_attempt:{assessment_id}",
+        ).count() == 1
+
         db.add(NotificationLog(
             user_id=test_user.id,
             task_id=None,
