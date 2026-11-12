@@ -388,3 +388,15 @@ A validação é feita em bancos efêmeros do CI; não equivale a um ensaio com 
 - A saída omite usuário/senha da URL e não imprime SQL nem dados pessoais. O argumento `--require-multitenant` executa também o gate de schema do produto quando as verificações básicas passam.
 - Testes adicionados para mascaramento de credenciais e bloqueio quando `DATABASE_URL` está ausente.
 - Validação do CI desta implementação pendente; nenhum staging, Neon, Render ou `main` foi acessado.
+
+
+## Atualização de validação — 12/11/2026 (runner de mercado)
+
+- jobfinder/market_snapshot_runner.py valida a revisão Alembic única e as tabelas necessárias antes de gerar snapshot.
+- O runner agendado não chama init_db(); portanto, não cria tabelas nem aplica migrações automaticamente. Schema divergente ou incompleto interrompe a execução.
+- .github/workflows/market-snapshot.yml restringe a execução ao branch padrão, inclusive quando acionada manualmente. O agendamento diário só gera snapshot quando a janela de 15 dias permitir.
+- CI do commit 9a4dec5 — execução https://github.com/Stefany-viveiros/JobFinderAI/actions/runs/43268397872: SQLite success, PostgreSQL 16 success, build Vite success.
+- Para ativar o agendamento, ainda será necessário configurar MARKET_DATABASE_URL como secret no GitHub Actions do branch padrão. Nenhum secret foi configurado nesta etapa.
+- main, Render e Neon permanecem sem alterações; MULTITENANT_READY continua fechado.
+
+Próximo passo: fechar o checklist de release candidate e, depois, executar validação de staging/cópia controlada com autorização explícita. Configuração de e-mail permanece para a última etapa.
