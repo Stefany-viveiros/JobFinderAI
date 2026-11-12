@@ -2,7 +2,7 @@
 
 **Branch:** `feature/proof-to-opportunity-engine`  
 **Último commit de implementação:** `c32a736`  
-**Atualização:** 12/11/2026.  \n**Cobertura geral estimada:** 90% (estimativa de escopo, não métrica automatizada).
+**Atualização:** 12/11/2026.  \n**Cobertura geral estimada:** 92% (estimativa de escopo, não métrica automatizada).
 
 ## Estado de execução
 
@@ -227,3 +227,19 @@ Continuar a auditoria endpoint a endpoint com foco em vínculo cruzado de entida
 - Testes cobrem histórico completo, preservação da evidência original, isolamento entre contas e exclusão efetiva no Career Twin/diagnóstico.
 - CI do commit `9156f41`: SQLite **148 passed, 3 skipped**; PostgreSQL 16 **151 passed**; Vite **success**. Execução: [43221321603](https://github.com/Stefany-viveiros/JobFinderAI/actions/runs/43221321603).
 - Foi adicionado teste de rollback da migração `20261112_0004`; CI do commit `d63be76` está em execução.
+
+## Incremento — SMTP individual cifrado por conta (12/11/2026)
+
+- Nova tabela `smtp_accounts`, com unicidade por usuário e FK para `users.id`; migração Alembic `20261112_0005`.
+- Senhas de SMTP são cifradas com Fernet antes de persistir. A chave fica fora do banco e do repositório, na variável secreta `SMTP_CREDENTIALS_KEY`.
+- Endpoints autenticados: `GET /api/agent/smtp`, `PUT /api/agent/smtp` e `DELETE /api/agent/smtp`. A API nunca devolve senha nem token cifrado.
+- O envio de candidaturas em modo multiusuário consulta somente a conexão do proprietário da tentativa. Credenciais globais do servidor não são reutilizadas.
+- O status verifica se a chave de criptografia ainda permite descriptografar a credencial; se não, o envio fica indisponível.
+- A página Agente recebeu formulário de conexão, atualização e remoção. O SMTP administrativo de lembretes continua separado.
+- Hostnames SMTP são restritos a provedores conhecidos ou a uma allowlist administrativa `SMTP_ALLOWED_HOSTS`, evitando destinos internos arbitrários.
+- `.env.example` documenta as variáveis e como gerar a chave Fernet. A chave precisa ser configurada como segredo na hospedagem antes de qualquer uso; não houve deploy.
+- CI do commit `7c7d5ff`: SQLite 153 passed / 3 skipped; PostgreSQL 16 156 passed; Vite build aprovado.
+- Teste adicional de isolamento entre duas sessões autenticadas e bloqueio de host não permitido foi acrescentado depois desse CI e está aguardando validação.
+
+**Segurança / decisão:** manter `MULTITENANT_READY=false`. Não usar a chave de produção antes de definir armazenamento seguro, backup e procedimento de rotação; perder a chave torna as senhas armazenadas irrecuperáveis.
+
