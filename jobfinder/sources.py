@@ -493,6 +493,83 @@ def fetch_empregando_brasil():
     return results
 
 
+def fetch_jobicy():
+    """Busca vagas remotas na API pública do Jobicy (últimos sete dias)."""
+    response = requests.get(
+        "https://jobicy.com/api/jobs",
+        params={"count": 200},
+        headers={**HEADERS, "Accept": "application/json"},
+        timeout=TIMEOUT,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if payload.get("success") is False:
+        raise RuntimeError(payload.get("error") or "A API Jobicy informou falha.")
+    results = []
+    for job in payload.get("jobs") or []:
+        url = job.get("url") or ""
+        if not url:
+            continue
+        job_types = job.get("jobType") or []
+        industries = job.get("jobIndustry") or []
+        if isinstance(job_types, str):
+            job_types = [job_types]
+        if isinstance(industries, str):
+            industries = [industries]
+        description_html = job.get("jobDescription") or job.get("jobExcerpt") or ""
+        description = BeautifulSoup(description_html, "html.parser").get_text(" ", strip=True)
+        results.append({
+            "source": "Jobicy",
+            "source_id": str(job.get("id") or _digest(url)),
+            "title": job.get("jobTitle") or "Vaga",
+            "company": job.get("companyName") or "Empresa não informada",
+            "description": description,
+            "location": job.get("jobGeo") or "Remoto",
+            "modality": "Remoto",
+            "job_type": ", ".join(str(value) for value in job_types) or "Não informado",
+            "published_at": job.get("pubDate") or "",
+            "url": url,
+        })
+    return results
+
+
+def fetch_remoteok():
+    """Consome o feed JSON público do Remote OK, preservando a URL canônica."""
+    response = requests.get(
+        "https://remoteok.com/api",
+        headers={**HEADERS, "Accept": "application/json"},
+        timeout=TIMEOUT,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if not isinstance(payload, list):
+        raise ValueError("Formato inesperado no feed Remote OK.")
+    results = []
+    for job in payload:
+        if not isinstance(job, dict) or not job.get("id"):
+            # O primeiro elemento do feed pode conter metadados/aviso legal.
+            continue
+        url = job.get("url") or ""
+        if not url:
+            continue
+        tags = job.get("tags") or []
+        description_html = job.get("description") or ""
+        description = BeautifulSoup(description_html, "html.parser").get_text(" ", strip=True)
+        results.append({
+            "source": "Remote OK",
+            "source_id": str(job["id"]),
+            "title": job.get("position") or job.get("title") or "Vaga",
+            "company": job.get("company") or "Empresa não informada",
+            "description": description,
+            "location": job.get("location") or "Remoto",
+            "modality": "Remoto",
+            "job_type": ", ".join(str(tag) for tag in tags) or "Não informado",
+            "published_at": job.get("date") or "",
+            "url": url,
+        })
+    return results
+
+
 SOURCES = {
     "Remotive": fetch_remotive,
     "Arbeitnow": fetch_arbeitnow,
@@ -500,6 +577,8 @@ SOURCES = {
     "Nerdin": fetch_nerdin,
     "Empregare": fetch_empregare,
     "Empregando Brasil": fetch_empregando_brasil,
+    "Jobicy": fetch_jobicy,
+    "Remote OK": fetch_remoteok,
 }
 
 
@@ -518,6 +597,10 @@ SOURCE_INFO = {
                    "note": "API pública de vagas ativas; candidatura segue no link canônico do portal."},
     "Empregando Brasil": {"mode": "api", "search_api": True, "apply_api": False,
                           "note": "Feed XML público para parceiros, atualizado a cada 12 horas; candidatura no anunciante."},
+    "Jobicy": {"mode": "api", "search_api": True, "apply_api": False,
+                "note": "API JSON pública de vagas remotas dos últimos sete dias; exige crédito à Jobicy e link canônico."},
+    "Remote OK": {"mode": "api", "search_api": True, "apply_api": False,
+                  "note": "Feed JSON público de vagas remotas; exige crédito à fonte e link para o anúncio original."},
     "Indeed": {"mode": "link_only", "search_api": False, "apply_api": False,
                "note": "Sem API pública de busca/candidatura (só parceiros aprovados) e os termos proíbem "
                        "raspagem. Use os links de busca e cadastre a vaga manualmente."},
