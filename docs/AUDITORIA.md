@@ -185,4 +185,4 @@ O incremento de privacidade do upload foi implementado em `jobfinder/api.py` e `
 - `POST /api/career-evidence/{evidence_id}/review` permite confirmar a origem ou marcar uma menção como não relevante, com observação opcional.
 - `GET /api/career-evidence/{evidence_id}/reviews` retorna a trilha completa em ordem cronológica e aplica titularidade por conta.
 - A UI do Career Twin permite registrar observações e consultar o histórico. Decisões `dismissed` deixam de alimentar o mapa e o diagnóstico, sem apagar a fonte original.
-- CI do commit `9156f41`: SQLite 148 passed / 3 skipped; PostgreSQL 16 151 passed; build Vite aprovado. Teste adicional de rollback da migração `20261112_0004` foi adicionado e está em validação.
+- CI do commit `9156f41`: SQLite 148 passed / 3 skipped; PostgreSQL 16 151 passed; build Vite aprovado. Teste adicional de rollback da migração `20261112_0004` também passou no commit `d63be76`: SQLite 149 passed / 3 skipped; PostgreSQL 16 152 passed; build Vite aprovado.
