@@ -22,8 +22,8 @@ from .models import MarketAnalysisRun
 
 REQUIRED_MARKET_TABLES = {
     "jobs",
-    "skills",
-    "job_skills",
+    "market_skills",
+    "job_market_skills",
     "job_skill_extractions",
     "market_analysis_runs",
     "market_skill_metrics",
