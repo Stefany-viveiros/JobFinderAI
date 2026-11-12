@@ -177,3 +177,12 @@ A inspeção foi realizada por leitura dos arquivos da branch no GitHub. O ambie
 **Decisão:** antes de iniciar em modo multiusuário, verificar tabelas privadas, colunas `user_id`, chaves estrangeiras para `users.id`, ausência de linhas sem proprietário e constraints de unicidade por conta para candidaturas, vínculos de vagas, perfil e configurações do agente. A verificação é executada no startup quando `MULTITENANT_READY=true`.
 
 **Consequências:** bancos com dados legados sem proprietário permanecem bloqueados até procedimento explícito, auditável e respaldado. A coluna pode continuar nullable durante a transição para preservar compatibilidade, mas nenhuma linha sem dono pode existir quando o gate for habilitado. Não há atribuição automática de dados.
+
+
+## 20. Rollback de migrações com preservação de dados
+
+**Contexto:** testar somente upgrade não demonstra que um rollback seja seguro. A migração de histórico não pode apagar eventos; a migração de unicidade por usuário não pode restaurar a constraint global quando duas contas possuem a mesma vaga.
+
+**Decisão:** testar em schemas PostgreSQL efêmeros tanto o upgrade quanto os caminhos de downgrade. A migração de eventos deve recusar rollback com histórico e permitir remover a tabela apenas quando vazia. A migração de candidaturas deve recusar a restauração da unicidade global se houver mais de uma candidatura para o mesmo job_id, preservando registros e constraint composta.
+
+**Consequências:** o rollback é uma operação condicionada ao estado real dos dados, não um botão sempre disponível. Os testes não usam nem alteram o banco de produção.
