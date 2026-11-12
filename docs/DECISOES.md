@@ -195,3 +195,12 @@ A inspeção foi realizada por leitura dos arquivos da branch no GitHub. O ambie
 **Decisão:** centralizar `APP_ENV`, `SESSION_HOURS` e `COOKIE_SECURE` na configuração da aplicação. Aceitar apenas ambientes conhecidos, duração de 1 a 720 horas e booleano estrito; exigir cookie seguro em staging e production.
 
 **Consequências:** configuração insegura ou malformada interrompe o startup em vez de degradar silenciosamente. Desenvolvimento local pode usar HTTP e cookie não seguro, mas a configuração de hospedagem deve manter HTTPS e `COOKIE_SECURE=true`.
+
+
+## 22. Bloqueio de agendadores legados sem identidade de conta
+
+**Contexto:** os runners de agente e lembretes foram concebidos para um perfil único/global. Executá-los em modo multiusuário sem identidade explícita poderia consultar configurações legadas, iniciar coletas sem escopo ou acionar operações globais.
+
+**Decisão:** ambos os entrypoints devem verificar `MULTITENANT_READY` antes de inicializar o banco. Se o gate estiver ativo, retornam status bloqueado e registram o motivo. Não tentar adaptar silenciosamente o runner global para todas as contas.
+
+**Consequências:** automação SaaS exige um scheduler novo que itere usuários elegíveis e execute cada tarefa com `user_id`, limites e configurações individuais. Até lá, os agendadores globais permanecem desativados.
