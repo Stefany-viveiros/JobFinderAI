@@ -29,3 +29,66 @@ def test_matching_includes_technologies_from_structured_projects_and_education()
     )
     assert score > 0
     assert any("react" in item or "postgresql" in item for item in matched)
+
+
+
+def test_requirement_diagnosis_separates_required_desirable_and_evidence_origins():
+    from jobfinder.matching import diagnose_job_requirements
+
+    completed_project = SimpleNamespace(
+        id=17,
+        name="API de catálogo",
+        description="Serviço desenvolvido com React e PostgreSQL.",
+        technologies="React, PostgreSQL",
+        status="Concluído",
+    )
+    profile_data = profile(
+        technologies="Python",
+        skills="",
+        keywords="",
+        portfolio_projects=[completed_project],
+        experiences=[],
+        courses=[],
+        certifications_items=[],
+        educations=[],
+        experience="",
+        projects="",
+        certifications="",
+    )
+    result = diagnose_job_requirements(
+        "Python é obrigatório. React é desejável. Docker é necessário para a função.",
+        profile_data,
+    )
+    by_name = {item["name"]: item for item in result["requirements"]}
+
+    assert by_name["python"]["requirement_type"] == "mandatory"
+    assert by_name["python"]["status"] == "declared"
+    assert by_name["react"]["requirement_type"] == "desirable"
+    assert by_name["react"]["status"] == "evidenced"
+    assert by_name["react"]["evidence"][0]["source_type"] == "completed_project"
+    assert by_name["react"]["evidence"][0]["source_id"] == 17
+    assert by_name["docker"]["requirement_type"] == "mandatory"
+    assert by_name["docker"]["status"] == "not_identified"
+    assert "não significa ausência de conhecimento" in result["notice"]
+
+
+def test_requirement_diagnosis_does_not_confuse_java_and_javascript():
+    from jobfinder.matching import diagnose_job_requirements
+
+    result = diagnose_job_requirements(
+        "JavaScript é obrigatório para esta oportunidade.",
+        profile(technologies="Java", skills="", keywords=""),
+    )
+    assert len(result["requirements"]) == 1
+    assert result["requirements"][0]["name"] == "javascript"
+    assert result["requirements"][0]["status"] == "not_identified"
+
+
+def test_requirement_classifier_marks_conflicting_language_as_ambiguous():
+    from jobfinder.matching import classify_job_requirements
+
+    result = classify_job_requirements(
+        "Python é obrigatório e também listado como desejável nesta vaga."
+    )
+    assert result[0]["name"] == "python"
+    assert result[0]["requirement_type"] == "ambiguous"

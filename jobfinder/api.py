@@ -23,7 +23,7 @@ from .db import init_db, SessionLocal, validate_multitenant_schema
 from .models import (
     Job, JobMatch, Application, Task, Profile, NotificationLog, ApplicationAttempt,
     Education, Experience, Course, Certification, PortfolioProject,
-    MarketAnalysisRun, MarketSkillMetric, MarketSkillPair, Skill, DevelopmentPlanItem,
+    MarketAnalysisRun, MarketSkillMetric, MarketSkillPair, Skill, DevelopmentPlanItem, SkillAssessmentAttempt,
 )
 from .service import get_profile, save_jobs, refresh_scores, create_task, complete_task, STATUSES, collect_and_save_ranked, collect_for_user, refresh_user_scores
 from .sources import SOURCES, SOURCE_INFO, LINK_ONLY_SOURCES, collect_selected, external_search_links
@@ -37,6 +37,7 @@ from .market_service import (create_market_snapshot, index_unprocessed_jobs, bui
     list_development_plan, create_development_item, update_development_item, DEVELOPMENT_STATUSES,
     create_skill_assessment, submit_skill_assessment, list_skill_assessments)
 from .career_twin import build_career_twin
+from .matching import diagnose_job_requirements
 
 app = FastAPI(title="JobFinder AI API", version="1.1.0", description="API do JobFinder AI")
 cors_origins = [
@@ -659,6 +660,49 @@ def create_job(payload: JobCreate, request: Request, db: Session = Depends(get_d
     )
     return {"message": message, "job": job_dict(existing, db=db, user_id=request.state.user_id)}
 
+
+
+
+@app.get("/api/jobs/{job_id}/diagnosis")
+def diagnose_job(job_id: int, request: Request, db: Session = Depends(get_db)):
+    """Diagnóstico de requisitos restrito às vagas que pertencem ao painel da conta."""
+    user_id = request.state.user_id
+    row = db.execute(
+        select(Job, JobMatch)
+        .join(JobMatch, JobMatch.job_id == Job.id)
+        .where(Job.id == job_id, JobMatch.user_id == user_id, JobMatch.is_archived.is_(False))
+    ).first()
+    if row is None:
+        raise HTTPException(404, "Oportunidade não encontrada no seu painel.")
+    job, match = row
+    profile = get_profile(db, user_id)
+    assessed_names = set(db.scalars(
+        select(Skill.canonical_name)
+        .join(SkillAssessmentAttempt, SkillAssessmentAttempt.skill_id == Skill.id)
+        .where(
+            SkillAssessmentAttempt.user_id == user_id,
+            SkillAssessmentAttempt.status == "self_reviewed",
+        )
+    ).all())
+    diagnosis = diagnose_job_requirements(
+        job.description or "", profile, self_assessed_skill_names=assessed_names
+    )
+    return {
+        "job": {
+            "id": job.id,
+            "title": job.title,
+            "company": job.company,
+            "level": job.level,
+            "source": job.source,
+        },
+        "compatibility": {
+            "score": round(match.compatibility or 0),
+            "label": "Triagem heurística explicável; não representa probabilidade de contratação.",
+            "matched": [x for x in (match.match_reasons or "").split("\\n") if x],
+            "to_review": [x for x in (match.missing_reasons or "").split("\\n") if x],
+        },
+        **diagnosis,
+    }
 
 @app.post("/api/jobs/collect")
 def collect_jobs(payload: dict, request: Request, db: Session = Depends(get_db)):

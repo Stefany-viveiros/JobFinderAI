@@ -555,3 +555,32 @@ input[type="checkbox"], input[type="radio"] {
 .resume-ai-consent strong{font-size:12px;font-weight:700}
 .resume-ai-consent small{font-size:11px;line-height:1.55;color:#737990}
 @media(max-width:640px){.resume-ai-consent{padding:10px 12px}}
+
+.job-requirement-panel{margin-top:18px;padding:16px;border:1px solid #e6e8f0;border-radius:12px;background:#fbfcff}
+.job-requirement-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:12px}
+.job-requirement-heading strong{font-size:13px;color:#30374f}
+.job-requirement-heading p,.job-requirement-notice{margin:4px 0 0;font-size:11px;line-height:1.55;color:#777f96}
+.job-requirement-heading>span{font-size:11px;color:#6257c8;font-weight:700;white-space:nowrap}
+.job-requirement-list{display:grid;gap:9px}
+.job-requirement-item{padding:12px;background:#fff;border:1px solid #eceef4;border-radius:10px}
+.job-requirement-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.job-requirement-top>strong{font-size:13px;color:#30374f}
+.job-requirement-top>div{display:flex;gap:6px;flex-wrap:wrap}
+.requirement-type,.requirement-status{display:inline-flex;align-items:center;padding:4px 7px;border-radius:999px;font-size:10px;font-weight:700}
+.requirement-type.mandatory{background:#fff0eb;color:#a44b2a}
+.requirement-type.desirable{background:#eef6ff;color:#3f6f9c}
+.requirement-type.unspecified{background:#f0f1f5;color:#666d81}
+.requirement-type.ambiguous{background:#fff7df;color:#927329}
+.requirement-status.evidenced{background:#e9f6ef;color:#36744e}
+.requirement-status.declared{background:#f0edff;color:#6253ad}
+.requirement-status.in-development,.requirement-status.self-assessed{background:#fff5e5;color:#926b2e}
+.requirement-status.not-identified,.requirement-status.ambiguous{background:#f0f1f5;color:#666d81}
+.job-requirement-evidence{display:grid;gap:5px;margin:10px 0 0;padding-left:17px}
+.job-requirement-evidence li{font-size:11px;color:#535b73}
+.job-requirement-evidence li strong{display:block;color:#444c63}
+.job-requirement-evidence li span{display:block;margin-top:2px;line-height:1.45;color:#7b8298}
+.job-requirement-item>p{margin:9px 0 0;font-size:11px;line-height:1.55;color:#666e84}
+.job-requirement-state,.job-requirement-error{font-size:12px;line-height:1.6;color:#727991}
+.job-requirement-error{color:#a44242}
+.job-requirement-notice{margin-top:12px}
+@media(max-width:640px){.job-requirement-heading{flex-direction:column}.job-requirement-top{flex-direction:column}.job-requirement-top>div{justify-content:flex-start}}

@@ -274,14 +274,61 @@ function JobsPage({ jobs, query, setQuery, minScore, setMinScore, favoriteOnly, 
 function JobRow({ job, compact = false, onFavorite }) { return <div className="recent-job"><div className="company-avatar">{initials(job.company)}</div><div className="recent-job-copy"><strong>{job.title}</strong><span>{job.company} <i>·</i> {job.location || 'Local não informado'}</span></div><div className={`score-mini ${job.compatibility >= 70 ? 'score-good' : job.compatibility >= 40 ? 'score-mid' : 'score-low'}`}>{job.compatibility}%</div>{onFavorite && <button className={`tiny-star ${job.is_favorite ? 'selected' : ''}`} onClick={onFavorite} title="Favoritar"><Star size={16} fill={job.is_favorite ? 'currentColor' : 'none'}/></button>}</div> }
 function JobCard({ job, onFavorite, onApply, onPrepare }) {
   const [expanded, setExpanded] = useState(false)
-  const reasons = (job.match_reasons || '').split('\n').filter(Boolean)
-  const missing = (job.missing_reasons || '').split('\n').filter(Boolean)
+  const [diagnosis, setDiagnosis] = useState(null)
+  const [diagnosisLoading, setDiagnosisLoading] = useState(false)
+  const [diagnosisError, setDiagnosisError] = useState('')
+  const reasons = (job.match_reasons || '').split('\\n').filter(Boolean)
+  const missing = (job.missing_reasons || '').split('\\n').filter(Boolean)
+
+  async function toggleDetails() {
+    const next = !expanded
+    setExpanded(next)
+    if (!next || diagnosis || diagnosisLoading) return
+    setDiagnosisLoading(true)
+    setDiagnosisError('')
+    try {
+      setDiagnosis(await api(`/jobs/${job.id}/diagnosis`))
+    } catch (error) {
+      setDiagnosisError(error.message || 'Não foi possível carregar o diagnóstico.')
+    } finally {
+      setDiagnosisLoading(false)
+    }
+  }
+
+  const requirementTypeLabel = {
+    mandatory: 'Obrigatório',
+    desirable: 'Desejável',
+    unspecified: 'Não especificado',
+    ambiguous: 'Ambíguo',
+  }
+  const statusClass = status => ({
+    evidenced: 'evidenced',
+    declared: 'declared',
+    in_development: 'in-development',
+    self_assessed: 'self-assessed',
+    not_identified: 'not-identified',
+    ambiguous: 'ambiguous',
+  }[status] || 'not-identified')
+
   return <article className="job-card"><div className="job-card-main"><div className="company-avatar job-company-avatar">{initials(job.company)}</div><div className="job-title-wrap"><div className="job-title-line"><h3>{job.title}</h3>{job.is_favorite && <span className="saved-badge"><Star size={12} fill="currentColor"/> Salva</span>}</div><div className="job-company-line">{job.company} <span>·</span> {job.location || 'Local não informado'}</div><div className="job-tags"><span><BriefcaseBusiness size={13}/>{job.job_type || 'Tipo não informado'}</span><span><Activity size={13}/>{job.modality || 'Modalidade não informada'}</span><span className="source-tag">{job.source}</span>{job.level && job.level !== 'outro' && <span className="level-tag">{job.level === 'estagio' ? 'Estágio' : 'Júnior'}</span>}{job.latest_attempt && <AttemptPill status={job.latest_attempt.status}/>}</div></div><div className="compatibility-block"><div className={`compatibility-ring ${job.compatibility >= 70 ? 'ring-good' : job.compatibility >= 40 ? 'ring-mid' : 'ring-low'}`}><strong>{job.compatibility}%</strong></div><span>compatibilidade</span></div></div>
     <div className="score-track"><div style={{ width: `${job.compatibility}%` }} className={job.compatibility >= 70 ? 'fill-good' : job.compatibility >= 40 ? 'fill-mid' : 'fill-low'}/></div>
-    {expanded && <div className="job-details"><div className="description-text">{job.description ? <p>{job.description.replace(/<[^>]*>/g, ' ').slice(0, 6000)}</p> : <p className="muted">Descrição não fornecida pela fonte.</p>}</div><div className="match-columns"><div><strong className="match-title good"><CheckCircle2 size={15}/> Critérios encontrados</strong>{reasons.length ? <ul>{reasons.map((r,i) => <li key={i}>{r}</li>)}</ul> : <p className="muted small">Nenhum critério identificado.</p>}</div><div><strong className="match-title warn"><CircleHelp size={15}/> Pontos a verificar</strong>{missing.length ? <ul>{missing.map((r,i) => <li key={i}>{r}</li>)}</ul> : <p className="muted small">Nenhum alerta calculado.</p>}</div></div></div>}
-    <div className="job-card-actions"><button className="text-action" onClick={() => setExpanded(!expanded)}>{expanded ? 'Ocultar detalhes' : 'Ver detalhes'} <ChevronDown size={14} className={expanded ? 'rotate-180' : ''}/></button><div className="job-action-right"><button className={`icon-btn favorite-action ${job.is_favorite ? 'selected' : ''}`} onClick={onFavorite} title={job.is_favorite ? 'Remover dos favoritos' : 'Favoritar'}><Star size={17} fill={job.is_favorite ? 'currentColor' : 'none'}/></button>{job.application ? <span className="application-status"><Check size={14}/>{job.application.status}</span> : <>{!job.latest_attempt && <button className="btn btn-secondary btn-sm" onClick={onPrepare}><Bot size={14}/> Preparar candidatura</button>}<button className="btn btn-secondary btn-sm" onClick={onApply} title="Use somente depois de enviar no site da vaga"><Check size={14}/> Já enviei</button></>}<a href={job.url} target="_blank" rel="noreferrer" className="btn btn-primary btn-sm">Abrir vaga <ExternalLink size={14}/></a></div></div>
+    {expanded && <div className="job-details" id={`job-details-${job.id}`}><div className="description-text">{job.description ? <p>{job.description.replace(/<[^>]*>/g, ' ').slice(0, 6000)}</p> : <p className="muted">Descrição não fornecida pela fonte.</p>}</div><div className="match-columns"><div><strong className="match-title good"><CheckCircle2 size={15}/> Critérios encontrados</strong>{reasons.length ? <ul>{reasons.map((r,i) => <li key={i}>{r}</li>)}</ul> : <p className="muted small">Nenhum critério identificado.</p>}</div><div><strong className="match-title warn"><CircleHelp size={15}/> Pontos a verificar</strong>{missing.length ? <ul>{missing.map((r,i) => <li key={i}>{r}</li>)}</ul> : <p className="muted small">Nenhum alerta calculado.</p>}</div></div>
+      <section className="job-requirement-panel" aria-live="polite">
+        <div className="job-requirement-heading"><div><strong>Diagnóstico por requisito</strong><p>Origem das competências e classificação extraída da descrição da vaga.</p></div><span>Score heurístico: {diagnosis?.compatibility?.score ?? job.compatibility}%</span></div>
+        {diagnosisLoading && <p className="job-requirement-state">Analisando requisitos e evidências do seu perfil...</p>}
+        {diagnosisError && <p className="job-requirement-error" role="alert">{diagnosisError}</p>}
+        {diagnosis && <>{diagnosis.requirements?.length ? <div className="job-requirement-list">{diagnosis.requirements.map(item => <article className="job-requirement-item" key={item.name}>
+          <div className="job-requirement-top"><strong>{item.name}</strong><div><span className={`requirement-type ${item.requirement_type}`}>{requirementTypeLabel[item.requirement_type] || 'Não especificado'}</span><span className={`requirement-status ${statusClass(item.status)}`}>{item.status_label}</span></div></div>
+          {item.evidence?.length > 0 && <ul className="job-requirement-evidence">{item.evidence.map((evidence,index) => <li key={`${item.name}-${evidence.source_type}-${evidence.source_id ?? index}`}><strong>{evidence.source_label}</strong><span>{evidence.excerpt}</span></li>)}</ul>}
+          <p>{item.recommendation}</p>
+        </article>)}</div> : <p className="job-requirement-state">A descrição disponível não contém tecnologias reconhecidas pela taxonomia atual. Isso não significa que a vaga não tenha requisitos.</p>}
+        <p className="job-requirement-notice">{diagnosis.notice}</p></>}
+      </section>
+    </div>}
+    <div className="job-card-actions"><button className="text-action" onClick={toggleDetails} aria-expanded={expanded} aria-controls={`job-details-${job.id}`}>{expanded ? 'Ocultar detalhes' : 'Ver detalhes'} <ChevronDown size={14} className={expanded ? 'rotate-180' : ''}/></button><div className="job-action-right"><button className={`icon-btn favorite-action ${job.is_favorite ? 'selected' : ''}`} onClick={onFavorite} title={job.is_favorite ? 'Remover dos favoritos' : 'Favoritar'}><Star size={17} fill={job.is_favorite ? 'currentColor' : 'none'}/></button>{job.application ? <span className="application-status"><Check size={14}/>{job.application.status}</span> : <>{!job.latest_attempt && <button className="btn btn-secondary btn-sm" onClick={onPrepare}><Bot size={14}/> Preparar candidatura</button>}<button className="btn btn-secondary btn-sm" onClick={onApply} title="Use somente depois de enviar no site da vaga"><Check size={14}/> Já enviei</button></>}<a href={job.url} target="_blank" rel="noreferrer" className="btn btn-primary btn-sm">Abrir vaga <ExternalLink size={14}/></a></div></div>
   </article>
 }
+
 function ApplicationsPage({ applications, onEdit }) {
   const [filter, setFilter] = useState('Todas')
   const shown = useMemo(() => applications.filter(a => filter === 'Todas' || a.status === filter), [applications, filter])

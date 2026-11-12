@@ -638,3 +638,45 @@ def test_authenticated_writes_require_csrf_token(client):
         "min_score": 80,
     })
     assert response.status_code == 403
+
+
+
+def test_job_diagnosis_is_scoped_to_the_authenticated_users_job_list(client, db, test_user, ready_profile):
+    from fastapi.testclient import TestClient
+    from jobfinder.api import password_hasher
+    from jobfinder.models import User
+
+    job = make_job(
+        db,
+        description="Python é obrigatório. React é desejável.",
+        compatibility=82,
+    )
+    primary = client.get(f"/api/jobs/{job.id}/diagnosis")
+    assert primary.status_code == 200
+    payload = primary.json()
+    assert payload["compatibility"]["score"] == 82
+    assert payload["compatibility"]["label"].startswith("Triagem heurística")
+    by_name = {item["name"]: item for item in payload["requirements"]}
+    assert by_name["python"]["requirement_type"] == "mandatory"
+    assert by_name["react"]["requirement_type"] == "desirable"
+
+    second_user = User(
+        email="job-diagnosis-other@example.com",
+        email_normalized="job-diagnosis-other@example.com",
+        full_name="Outra Conta",
+        password_hash=password_hasher.hash("SenhaSeguraOutraConta123!"),
+        role="user",
+        is_active=True,
+    )
+    db.add(second_user)
+    db.commit()
+
+    with TestClient(api_module.app, base_url="https://testserver") as second:
+        login = second.post("/api/auth/login", json={
+            "email": second_user.email,
+            "password": "SenhaSeguraOutraConta123!",
+        })
+        assert login.status_code == 200
+        session = second.get("/api/auth/me")
+        second.headers.update({"X-CSRF-Token": session.json()["csrf_token"]})
+        assert second.get(f"/api/jobs/{job.id}/diagnosis").status_code == 404
