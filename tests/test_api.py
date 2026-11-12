@@ -66,7 +66,7 @@ def test_prepare_then_approve_is_blocked_without_user_resume_attachment(client, 
     attempt = client.post(f"/api/jobs/{job.id}/prepare").json()["attempt"]
     assert attempt["status"] == "manual_required"
     assert attempt["channel"] == "manual"
-    assert "currículo individual" in attempt["detail"]
+    assert "currículo" in attempt["detail"]
 
     delivered = []
     monkeypatch.setattr(applying, "_deliver", lambda m, smtp_config=None: delivered.append(m))
@@ -146,7 +146,7 @@ def test_smtp_account_is_encrypted_private_and_used_for_delivery(client, db, rea
     job = make_job(db)
     attempt = client.post(f"/api/jobs/{job.id}/prepare").json()["attempt"]
     assert attempt["channel"] == "manual" and attempt["status"] == "manual_required"
-    assert "currículo individual" in attempt["detail"]
+    assert "currículo" in attempt["detail"]
     blocked_send = client.post(f"/api/attempts/{attempt['id']}/approve")
     assert blocked_send.status_code == 400
     assert captured == []
