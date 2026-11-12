@@ -161,3 +161,12 @@ O incremento de privacidade do upload foi implementado em `jobfinder/api.py` e `
 - `render.yaml` declara `APP_ENV=production`, `COOKIE_SECURE=true` e `SESSION_HOURS=24`; `.env.example` demonstra configuração local separada.
 - CI do commit `e12d575`: SQLite 141 passed / 2 skipped; PostgreSQL 16 143 passed; build Vite aprovado.
 - Alteração apenas no repositório; sem deploy e sem alteração de variáveis no serviço hospedado.
+
+
+## Atualização — 12/11/2026: runners agendados legados
+
+- Identificado que `agent_runner.main()` chamava `init_db()` e executava o agente sem identidade de conta. Agora bloqueia antes do banco quando `MULTITENANT_READY=true`.
+- Identificado que `reminder_runner.main()` inicializava o banco antes de chegar ao bloqueio existente em `send_daily_reminder`. Agora também bloqueia antes de `init_db` e `SessionLocal`.
+- Testes verificam explicitamente que nenhum dos runners inicializa o banco ou abre sessão no modo multiusuário.
+- CI do commit `f4f5f6f`: SQLite 143 passed / 2 skipped; PostgreSQL 16 145 passed; build Vite aprovado.
+- Agendamento individual por conta, com limites e SMTP individual, permanece pendente. Os runners globais não devem ser ativados no SaaS.
