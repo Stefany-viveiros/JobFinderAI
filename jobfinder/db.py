@@ -78,29 +78,69 @@ def _missing_columns():
 
 
 def validate_multitenant_schema() -> None:
-    """Impede liberar o SaaS se candidaturas ainda tiverem unicidade global por vaga."""
+    """Valida propriedade, FKs e unicidade antes de liberar o workspace multiusuário."""
     inspector = inspect(engine)
-    if not inspector.has_table("applications"):
-        raise RuntimeError("Schema SaaS inválido: tabela applications ausente.")
-
-    unique_sets = {
-        tuple(sorted(item.get("column_names") or ()))
-        for item in inspector.get_unique_constraints("applications")
-    }
-    unique_sets.update(
-        tuple(sorted(index.get("column_names") or ()))
-        for index in inspector.get_indexes("applications")
-        if index.get("unique")
+    user_scoped_tables = (
+        "user_sessions", "password_reset_tokens", "profile", "job_matches",
+        "applications", "application_events", "tasks", "notification_log",
+        "agent_settings", "application_attempts", "development_plan_items",
+        "skill_assessment_attempts",
     )
-    if ("job_id", "user_id") not in unique_sets:
-        raise RuntimeError(
-            "Schema SaaS inválido: falta unicidade composta (user_id, job_id) em applications."
+
+    for table in user_scoped_tables:
+        if not inspector.has_table(table):
+            raise RuntimeError(f"Schema SaaS inválido: tabela {table} ausente.")
+        columns = {column["name"] for column in inspector.get_columns(table)}
+        if "user_id" not in columns:
+            raise RuntimeError(f"Schema SaaS inválido: coluna {table}.user_id ausente.")
+        owner_fk_exists = any(
+            fk.get("constrained_columns") == ["user_id"]
+            and fk.get("referred_table") == "users"
+            and fk.get("referred_columns") == ["id"]
+            for fk in inspector.get_foreign_keys(table)
         )
-    if ("job_id",) in unique_sets:
-        raise RuntimeError(
-            "Schema SaaS inválido: existe unicidade global antiga em applications.job_id. "
-            "Migre a constraint antes de ativar MULTITENANT_READY."
+        if not owner_fk_exists:
+            raise RuntimeError(
+                f"Schema SaaS inválido: {table}.user_id precisa referenciar users.id."
+            )
+        with engine.connect() as conn:
+            unowned = conn.execute(
+                text(f'SELECT COUNT(*) FROM "{table}" WHERE user_id IS NULL')
+            ).scalar_one()
+        if unowned:
+            raise RuntimeError(
+                f"Schema SaaS inválido: {table} contém {unowned} registro(s) sem proprietário. "
+                "Resolva os dados legados por procedimento explícito antes de liberar o acesso."
+            )
+
+    def unique_sets(table: str) -> set[tuple[str, ...]]:
+        result = {
+            tuple(sorted(item.get("column_names") or ()))
+            for item in inspector.get_unique_constraints(table)
+        }
+        result.update(
+            tuple(sorted(index.get("column_names") or ()))
+            for index in inspector.get_indexes(table)
+            if index.get("unique")
         )
+        return result
+
+    for table in ("applications", "job_matches"):
+        constraints = unique_sets(table)
+        if ("job_id", "user_id") not in constraints:
+            raise RuntimeError(
+                f"Schema SaaS inválido: falta unicidade composta (user_id, job_id) em {table}."
+            )
+        if ("job_id",) in constraints:
+            raise RuntimeError(
+                f"Schema SaaS inválido: existe unicidade global antiga em {table}.job_id."
+            )
+
+    for table in ("profile", "agent_settings"):
+        if ("user_id",) not in unique_sets(table):
+            raise RuntimeError(
+                f"Schema SaaS inválido: falta unicidade por usuário em {table}.user_id."
+            )
 
 
 def init_db():
