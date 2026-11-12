@@ -1003,3 +1003,20 @@ def test_multitenant_schema_validator_fails_closed_on_legacy_unowned_rows(db):
     db.delete(legacy_task)
     db.commit()
     validate_multitenant_schema()
+
+
+def test_cors_middleware_allows_only_configured_origins(client):
+    allowed = client.options("/api/auth/login", headers={
+        "Origin": "http://localhost:5173",
+        "Access-Control-Request-Method": "POST",
+    })
+    assert allowed.status_code == 200
+    assert allowed.headers.get("access-control-allow-origin") == "http://localhost:5173"
+    assert allowed.headers.get("access-control-allow-credentials") == "true"
+
+    denied = client.options("/api/auth/login", headers={
+        "Origin": "https://untrusted.example",
+        "Access-Control-Request-Method": "POST",
+    })
+    assert denied.status_code == 400
+    assert denied.headers.get("access-control-allow-origin") is None
