@@ -658,3 +658,28 @@ input[type="checkbox"], input[type="radio"] {
     align-items: stretch;
   }
 }
+
+
+.career-review-history {
+  margin: 10px 0 4px;
+  padding: 10px 12px 10px 30px;
+  border-left: 2px solid var(--border-color, #d9dce3);
+  display: grid;
+  gap: 10px;
+}
+.career-review-history li {
+  padding-left: 3px;
+}
+.career-review-history li strong,
+.career-review-history li span,
+.career-review-history li small {
+  display: block;
+}
+.career-review-history li span {
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+}
+.career-review-history li small {
+  margin-top: 3px;
+  opacity: .72;
+}
