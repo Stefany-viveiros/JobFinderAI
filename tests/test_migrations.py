@@ -553,6 +553,60 @@ def test_smtp_accounts_migration_is_account_scoped_and_refuses_data_loss(tmp_pat
     engine.dispose()
 
 
+
+def test_user_resume_migration_is_private_and_refuses_data_loss(tmp_path, monkeypatch):
+    database = tmp_path / "user-resumes.db"
+    engine = sa.create_engine(f"sqlite:///{database}")
+    metadata = sa.MetaData()
+    sa.Table("users", metadata, sa.Column("id", sa.Integer, primary_key=True))
+    sa.Table(
+        "applications", metadata,
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("user_id", sa.Integer, nullable=True),
+        sa.Column("job_id", sa.Integer, nullable=False),
+        sa.UniqueConstraint("user_id", "job_id", name="uq_user_application_job"),
+    )
+    metadata.create_all(engine)
+
+    config_path = Path(__file__).resolve().parents[1] / "alembic.ini"
+    config = Config(str(config_path))
+    config.set_main_option("sqlalchemy.url", f"sqlite:///{database}")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    command.upgrade(config, "head")
+
+    inspector = sa.inspect(engine)
+    assert inspector.has_table("user_resumes")
+    columns = {item["name"]: item for item in inspector.get_columns("user_resumes")}
+    assert columns["user_id"]["nullable"] is False
+    assert columns["encrypted_content"]["nullable"] is False
+    assert columns["sha256"]["nullable"] is False
+    unique_sets = {
+        tuple(sorted(item.get("column_names") or ()))
+        for item in inspector.get_unique_constraints("user_resumes")
+    }
+    assert ("user_id",) in unique_sets
+    assert any(
+        fk["constrained_columns"] == ["user_id"] and fk["referred_table"] == "users"
+        for fk in inspector.get_foreign_keys("user_resumes")
+    )
+
+    with engine.begin() as connection:
+        connection.execute(sa.text("INSERT INTO users (id) VALUES (1)"))
+        connection.execute(sa.text(
+            "INSERT INTO user_resumes "
+            "(id, user_id, filename, content_type, encrypted_content, sha256, created_at, updated_at) "
+            "VALUES (1, 1, 'resume.pdf', 'application/pdf', 'ciphertext-only', :digest, "
+            "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+        ), {"digest": "d" * 64})
+
+    with pytest.raises(RuntimeError, match="currículos cifrados por usuário"):
+        command.downgrade(config, "20261112_0005")
+    with engine.connect() as connection:
+        assert connection.execute(sa.text("SELECT COUNT(*) FROM user_resumes")).scalar_one() == 1
+    assert sa.inspect(engine).has_table("user_resumes")
+    engine.dispose()
+
+
 def test_postgresql_smtp_accounts_migration_is_account_scoped_and_preserves_credentials(monkeypatch):
     import os
     from uuid import uuid4
