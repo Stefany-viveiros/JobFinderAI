@@ -136,9 +136,9 @@ def test_legacy_agent_runner_blocks_before_database_when_multitenant(monkeypatch
 
 def test_cancelled_attempt_can_be_prepared_again_by_agent(db, ready_profile, test_user):
     item = {
-        "source": "Nerdin", "title": "Estágio Backend Python", "company": "Reprocessar",
-        "url": "https://a.test/reprocessar",
-        "description": "Python FastAPI Git APIs REST. Envie seu currículo para rh@reprocessar.com",
+        "source": "Remotive", "title": "Estágio Backend Python", "company": "ACME",
+        "url": "https://a.test/1",
+        "description": "Python FastAPI Git APIs REST. Envie seu currículo para vagas@acme.com",
         "location": "Brasil", "modality": "Remoto", "job_type": "Estágio",
     }
     first = run_agent(db, collector=lambda names: ([item], []), user_id=test_user.id)
