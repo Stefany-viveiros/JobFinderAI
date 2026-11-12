@@ -73,3 +73,15 @@ Esses resultados pertencem ao commit-base e não validam alterações posteriore
 5. Integrar plano, desafios e eventos sem executar código.
 6. Evoluir painel de candidaturas e relatório de mercado.
 7. Atualizar documentação, configuração de produção e critérios de aceite sem deploy.
+
+
+## Atualização após auditoria — commit 05ae7fbc
+
+O incremento de privacidade do upload foi implementado em `jobfinder/api.py` e `frontend/src/App.jsx`:
+- A permissão de envio ao Gemini passou a ser explícita por importação e desmarcada por padrão.
+- A extração local é mantida quando não há autorização externa.
+- Há limite persistente de cinco importações por usuário por hora.
+- O backend verifica extensão, tipo MIME quando informado, assinatura inicial PDF/DOCX e máximo de 5 MB.
+- Foram adicionados testes para consentimento, conteúdo DOCX inconsistente e limite por conta.
+
+**CI do commit `05ae7fbc33608f0ad8cd2ab0c869172afb9d718e`:** SQLite 101 passed / 1 skipped; PostgreSQL 16 102 passed; build Vite aprovado. A suíte já continha testes de isolamento entre duas contas; novos testes específicos de tentativa de aprovação/cancelamento cruzado ainda serão adicionados na revisão de autorização.
