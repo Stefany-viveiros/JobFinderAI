@@ -614,7 +614,8 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         "upcoming_tasks": [task_dict(t) for t in upcoming],
         "recent_jobs": [job_dict(j, db=db, user_id=user_id) for j in recent_jobs],
         "profile_name": p.name,
-        "smtp_ready": db.scalar(select(SmtpAccount.id).where(SmtpAccount.user_id == user_id)) is not None,
+        # Lembretes usam o destinatário administrativo local; candidaturas usam SMTP individual.
+        "smtp_ready": bool(settings.smtp_ready and settings.smtp_username and settings.smtp_password),
     }
 
 
