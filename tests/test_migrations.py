@@ -210,4 +210,11 @@ def test_application_history_migration_creates_account_scoped_event_table(tmp_pa
         ))
         count = connection.execute(sa.text("SELECT COUNT(*) FROM application_events")).scalar_one()
         assert count == 1
+
+    # Um rollback com histórico existente deve falhar sem remover a tabela nem os eventos.
+    with pytest.raises(RuntimeError, match="Os dados não serão apagados"):
+        command.downgrade(config, "20261102_0001")
+    with engine.connect() as connection:
+        assert connection.execute(sa.text("SELECT COUNT(*) FROM application_events")).scalar_one() == 1
+    assert sa.inspect(engine).has_table("application_events")
     engine.dispose()

@@ -61,6 +61,15 @@ def downgrade():
     if not inspector.has_table(TABLE):
         return
 
+    # Não apagar eventos históricos em rollback. Se a tabela recebeu dados,
+    # interrompe o downgrade e exige uma migração substituta de preservação.
+    event_count = bind.execute(sa.text(f"SELECT COUNT(*) FROM {TABLE}")).scalar_one()
+    if event_count:
+        raise RuntimeError(
+            "Downgrade interrompido: application_events contém histórico de candidaturas. "
+            "Os dados não serão apagados; crie uma migração de compatibilidade antes de reverter."
+        )
+
     indexes = {
         item.get("name")
         for item in inspector.get_indexes(TABLE)
