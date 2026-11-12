@@ -68,7 +68,7 @@ Os avisos de depreciação registrados pelo CI não foram tratados como falhas. 
 
 ## Pendências reais
 
-- Concluir revisão endpoint a endpoint e de IDOR para todas as rotas privadas, com foco em operações de conta e configurações.
+- Varredura estática de todos os handlers concluída e documentada; faltam testes de integração adicionais nas rotas críticas e validação operacional do schema/dados legados em cópia controlada.
 - Validar upgrades/rollbacks Alembic em cópia controlada de banco e revisar os registros sem `user_id`.
 - Definir agendador recorrente real para snapshots de mercado (por exemplo, job/cron compatível com infraestrutura contratada); não há execução quinzenal automática ativa.
 - Completar análise de candidaturas com métricas de conversão sem inferir resultados inexistentes.
