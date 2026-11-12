@@ -62,7 +62,8 @@ export default function CareerTwinPage({ focusSection = null } = {}) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [filter, setFilter] = useState('all')
-  const [ledger, setLedger] = useState([])\n  const [reviewingId, setReviewingId] = useState(null)
+  const [ledger, setLedger] = useState([])
+  const [reviewingId, setReviewingId] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
