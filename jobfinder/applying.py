@@ -147,9 +147,17 @@ def extract_apply_email(text: str) -> str | None:
     return None
 
 
-def email_channel_available(job) -> tuple[bool, str]:
+def email_channel_available(job, user_id: int | None = None) -> tuple[bool, str]:
     if not extract_apply_email(job.description):
         return False, "A vaga não publica e-mail de candidatura; finalize no site original."
+    # Até existir armazenamento criptografado de credenciais SMTP por conta,
+    # nunca compartilhe o remetente/segredo global do servidor entre usuários SaaS.
+    import os
+    if user_id is not None and os.getenv("MULTITENANT_READY", "false").strip().lower() == "true":
+        return False, (
+            "Envio automático indisponível: configure uma conexão SMTP individual da sua conta. "
+            "Por segurança, credenciais globais do servidor não são compartilhadas."
+        )
     if not settings.smtp_can_send_applications:
         return False, "SMTP não configurado no .env (SMTP_HOST, SMTP_FROM, SMTP_USERNAME, SMTP_PASSWORD)."
     return True, ""
@@ -202,7 +210,7 @@ def prepare_attempt(db, job: Job, profile, user_id: int | None = None) -> Applic
     if existing:
         raise ApplyError("Esta vaga já tem uma candidatura em andamento ou enviada.")
     subject, body = build_cover_letter(job, profile)
-    ok, reason = email_channel_available(job)
+    ok, reason = email_channel_available(job, user_id=user_id)
     if ok:
         attempt = ApplicationAttempt(user_id=user_id, job_id=job.id, status="prepared", channel="email", subject=subject,
                                      message=body, recipient=extract_apply_email(job.description),
@@ -250,6 +258,12 @@ def send_attempt(db, attempt: ApplicationAttempt, daily_limit: int | None = None
         raise ApplyError(f"Candidatura com status '{attempt.status}' não pode ser enviada.")
     if attempt.channel != "email" or not attempt.recipient:
         raise ApplyError("Esta candidatura não tem canal de envio automático; finalize no site original.")
+    import os
+    if user_id is not None and os.getenv("MULTITENANT_READY", "false").strip().lower() == "true":
+        raise ApplyError(
+            "Envio automático bloqueado: configure SMTP individual da sua conta. "
+            "Credenciais globais do servidor não são compartilhadas entre usuários."
+        )
     if not settings.smtp_can_send_applications:
         raise ApplyError("SMTP não configurado no .env.")
     if daily_limit is not None and sent_today_count(db, user_id=user_id) >= daily_limit:
