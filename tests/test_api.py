@@ -1126,3 +1126,72 @@ def test_career_evidence_ledger_versions_profile_sources_and_is_account_scoped(c
     assert db.scalar(
         select(CareerEvidence.id).where(CareerEvidence.user_id == test_user.id)
     ) is not None
+
+def test_career_evidence_review_is_append_only_and_account_scoped(client, db, test_user):
+    from jobfinder.models import CareerEvidence, CareerEvidenceReview
+
+    saved = client.put("/api/profile", json={
+        "portfolio_projects": [{
+            "name": "Projeto de automação",
+            "description": "API construída com Python e FastAPI.",
+            "technologies": "Python, FastAPI",
+            "status": "Em desenvolvimento",
+        }]
+    })
+    assert saved.status_code == 200
+    evidence = next(
+        item for item in client.get("/api/career-evidence?active_only=true").json()["items"]
+        if item["skill_name"] == "Python"
+    )
+    original = db.get(CareerEvidence, evidence["id"])
+    original_excerpt = original.excerpt
+    original_level = original.verification_level
+
+    confirmed = client.post(
+        f"/api/career-evidence/{evidence['id']}/review",
+        json={"decision": "confirmed", "note": "Revisei a origem no projeto."},
+    )
+    assert confirmed.status_code == 200
+    assert confirmed.json()["review"]["decision"] == "confirmed"
+    assert confirmed.json()["review"]["verification_level"] == "self_reported"
+
+    # A segunda decisão é um novo evento; não substitui nem apaga a primeira.
+    dismissed = client.post(
+        f"/api/career-evidence/{evidence['id']}/review",
+        json={"decision": "dismissed", "note": "A menção não representa uso prático."},
+    )
+    assert dismissed.status_code == 200
+    history = db.query(CareerEvidenceReview).filter(
+        CareerEvidenceReview.user_id == test_user.id,
+        CareerEvidenceReview.evidence_id == evidence["id"],
+    ).order_by(CareerEvidenceReview.id).all()
+    assert [item.decision for item in history] == ["confirmed", "dismissed"]
+
+    db.refresh(original)
+    assert original.excerpt == original_excerpt
+    assert original.verification_level == original_level
+    listed = next(
+        item for item in client.get("/api/career-evidence?active_only=true").json()["items"]
+        if item["id"] == evidence["id"]
+    )
+    assert listed["review_decision"] == "dismissed"
+    assert listed["review_note"] == "A menção não representa uso prático."
+
+    second = TestClient(api_module.app, base_url="https://testserver")
+    registration = second.post("/api/auth/register", json={
+        "email": "review-owner-check@example.com",
+        "full_name": "Conta sem acesso",
+        "password": "OutraSenhaSegura123!",
+    })
+    assert registration.status_code == 200
+    session = second.get("/api/auth/me")
+    assert session.status_code == 200
+    second.headers.update({"X-CSRF-Token": session.json()["csrf_token"]})
+    denied = second.post(
+        f"/api/career-evidence/{evidence['id']}/review",
+        json={"decision": "confirmed", "note": ""},
+    )
+    assert denied.status_code == 404
+    assert db.query(CareerEvidenceReview).filter(
+        CareerEvidenceReview.evidence_id == evidence["id"]
+    ).count() == 2
