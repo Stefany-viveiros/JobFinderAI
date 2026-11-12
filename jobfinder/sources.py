@@ -2,6 +2,8 @@
 
 import hashlib
 import re
+import threading
+import time
 from urllib.parse import urljoin
 
 import requests
@@ -9,6 +11,10 @@ from bs4 import BeautifulSoup
 
 
 TIMEOUT = 18
+
+_JOBICY_CACHE_TTL = 60 * 60
+_JOBICY_CACHE = {"expires_at": 0.0, "items": None}
+_JOBICY_CACHE_LOCK = threading.Lock()
 
 HEADERS = {
     "User-Agent": "JobFinderAI/1.0 (personal job-search tool)"
@@ -461,44 +467,47 @@ def fetch_empregando_brasil():
 
 
 def fetch_jobicy():
-    """Busca vagas remotas na API pública do Jobicy (últimos sete dias)."""
-    response = requests.get(
-        "https://jobicy.com/api/jobs",
-        params={"count": 200},
-        headers={**HEADERS, "Accept": "application/json"},
-        timeout=TIMEOUT,
-    )
-    response.raise_for_status()
-    payload = response.json()
-    if payload.get("success") is False:
-        raise RuntimeError(payload.get("error") or "A API Jobicy informou falha.")
-    results = []
-    for job in payload.get("jobs") or []:
-        url = job.get("url") or ""
-        if not url:
-            continue
-        job_types = job.get("jobType") or []
-        industries = job.get("jobIndustry") or []
-        if isinstance(job_types, str):
-            job_types = [job_types]
-        if isinstance(industries, str):
-            industries = [industries]
-        description_html = job.get("jobDescription") or job.get("jobExcerpt") or ""
-        description = BeautifulSoup(description_html, "html.parser").get_text(" ", strip=True)
-        results.append({
-            "source": "Jobicy",
-            "source_id": str(job.get("id") or _digest(url)),
-            "title": job.get("jobTitle") or "Vaga",
-            "company": job.get("companyName") or "Empresa não informada",
-            "description": description,
-            "location": job.get("jobGeo") or "Remoto",
-            "modality": "Remoto",
-            "job_type": ", ".join(str(value) for value in job_types) or "Não informado",
-            "published_at": job.get("pubDate") or "",
-            "url": url,
-        })
-    return results
+    """Busca vagas remotas na API pública do Jobicy (cache local de uma hora)."""
+    now = time.monotonic()
+    with _JOBICY_CACHE_LOCK:
+        if _JOBICY_CACHE["items"] is not None and now < _JOBICY_CACHE["expires_at"]:
+            return [dict(item) for item in _JOBICY_CACHE["items"]]
 
+        response = requests.get(
+            "https://jobicy.com/api/jobs",
+            params={"count": 200},
+            headers={**HEADERS, "Accept": "application/json"},
+            timeout=TIMEOUT,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if payload.get("success") is False:
+            raise RuntimeError(payload.get("error") or "A API Jobicy informou falha.")
+        results = []
+        for job in payload.get("jobs") or []:
+            url = job.get("url") or ""
+            if not url:
+                continue
+            job_types = job.get("jobType") or []
+            if isinstance(job_types, str):
+                job_types = [job_types]
+            description_html = job.get("jobDescription") or job.get("jobExcerpt") or ""
+            description = BeautifulSoup(description_html, "html.parser").get_text(" ", strip=True)
+            results.append({
+                "source": "Jobicy",
+                "source_id": str(job.get("id") or _digest(url)),
+                "title": job.get("jobTitle") or "Vaga",
+                "company": job.get("companyName") or "Empresa não informada",
+                "description": description,
+                "location": job.get("jobGeo") or "Remoto",
+                "modality": "Remoto",
+                "job_type": ", ".join(str(value) for value in job_types) or "Não informado",
+                "published_at": job.get("pubDate") or "",
+                "url": url,
+            })
+        _JOBICY_CACHE["items"] = [dict(item) for item in results]
+        _JOBICY_CACHE["expires_at"] = now + _JOBICY_CACHE_TTL
+        return results
 
 def fetch_remoteok():
     """Consome o feed JSON público do Remote OK, preservando a URL canônica."""
