@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .market import extract_skills
-from .models import CareerEvidence, Profile, Skill, SkillAssessmentAttempt
+from .models import CareerEvidence, CareerEvidenceReview, Profile, Skill, SkillAssessmentAttempt
 
 
 COMPLETED_VALUES = {"concluído", "concluido", "completed", "finalizado"}
@@ -146,6 +146,19 @@ def list_profile_evidence(
     rows = db.scalars(
         stmt.order_by(CareerEvidence.created_at.desc(), CareerEvidence.id.desc()).limit(limit)
     ).all()
+    evidence_ids = [item.id for item in rows]
+    reviews = db.scalars(
+        select(CareerEvidenceReview)
+        .where(
+            CareerEvidenceReview.user_id == user_id,
+            CareerEvidenceReview.evidence_id.in_(evidence_ids),
+        )
+        .order_by(CareerEvidenceReview.created_at.desc(), CareerEvidenceReview.id.desc())
+    ).all() if evidence_ids else []
+    latest_review = {}
+    for review in reviews:
+        latest_review.setdefault(review.evidence_id, review)
+
     return [
         {
             "id": item.id,
@@ -156,7 +169,7 @@ def list_profile_evidence(
             "source_id": item.source_id,
             "source_label": item.source_label,
             "excerpt": item.excerpt,
-            "verification_level": item.verification_level,
+            "verification_level": item.verification_level,\n            "review_decision": latest_review[item.id].decision if item.id in latest_review else "pending",\n            "review_note": latest_review[item.id].note if item.id in latest_review else "",\n            "reviewed_at": latest_review[item.id].created_at.isoformat() if item.id in latest_review and latest_review[item.id].created_at else None,
             "verification_label": "Autodeclarada ou identificada em registro fornecido pela pessoa",
             "is_active": item.is_active,
             "superseded_at": item.superseded_at.isoformat() if item.superseded_at else None,
@@ -225,4 +238,45 @@ def record_self_assessment_evidence(
         "source_type": "self_assessment",
         "verification_level": "self_assessed",
         "notice": "Autoavaliação informada pela própria pessoa; não é validação independente de proficiência.",
+    }
+
+
+
+def review_profile_evidence(
+    db: Session, *, evidence_id: int, user_id: int, decision: str, note: str = ""
+) -> dict:
+    """Anexa uma decisão humana; nunca altera a evidência ou seu nível de validação."""
+    if decision not in {"confirmed", "dismissed"}:
+        raise ValueError("Decisão inválida. Use confirmed ou dismissed.")
+    item = db.scalar(
+        select(CareerEvidence).where(
+            CareerEvidence.id == evidence_id,
+            CareerEvidence.user_id == user_id,
+        )
+    )
+    if item is None:
+        raise LookupError("Evidência não encontrada para esta conta.")
+    if not item.is_active:
+        raise ValueError("Não é possível revisar uma versão anterior da evidência.")
+    clean_note = " ".join((note or "").split())[:1000]
+    review = CareerEvidenceReview(
+        user_id=user_id,
+        evidence_id=item.id,
+        decision=decision,
+        note=clean_note,
+    )
+    db.add(review)
+    db.flush()
+    return {
+        "id": review.id,
+        "evidence_id": item.id,
+        "decision": review.decision,
+        "note": review.note,
+        "created_at": review.created_at.isoformat() if review.created_at else None,
+        "verification_level": item.verification_level,
+        "notice": (
+            "Confirmação humana do registro, não validação independente de proficiência."
+            if decision == "confirmed"
+            else "Registro marcado como não relevante; a evidência original foi preservada."
+        ),
     }
