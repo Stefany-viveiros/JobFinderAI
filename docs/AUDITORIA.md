@@ -170,3 +170,9 @@ O incremento de privacidade do upload foi implementado em `jobfinder/api.py` e `
 - Testes verificam explicitamente que nenhum dos runners inicializa o banco ou abre sessão no modo multiusuário.
 - CI do commit `f4f5f6f`: SQLite 143 passed / 2 skipped; PostgreSQL 16 145 passed; build Vite aprovado.
 - Agendamento individual por conta, com limites e SMTP individual, permanece pendente. Os runners globais não devem ser ativados no SaaS.
+
+
+## Teste de integração CORS — 12/11/2026
+
+- Teste de preflight verifica origem permitida (localhost) com credenciais e origem externa não cadastrada recusada pelo middleware.
+- CI do commit `efab261`: SQLite 144 passed / 2 skipped; PostgreSQL 16 146 passed; build Vite aprovado.
