@@ -92,3 +92,35 @@ def test_requirement_classifier_marks_conflicting_language_as_ambiguous():
     )
     assert result[0]["name"] == "python"
     assert result[0]["requirement_type"] == "ambiguous"
+
+def test_requirement_diagnosis_ignores_human_dismissed_evidence():
+    from jobfinder.matching import diagnose_job_requirements
+
+    project = SimpleNamespace(
+        id=91,
+        name="API",
+        description="Projeto construído com React.",
+        technologies="React",
+        status="Concluído",
+    )
+    result = diagnose_job_requirements(
+        "React é desejável.",
+        profile(
+            technologies="",
+            skills="",
+            keywords="",
+            portfolio_projects=[project],
+            experiences=[],
+            courses=[],
+            certifications_items=[],
+            educations=[],
+            experience="",
+            projects="",
+            certifications="",
+        ),
+        dismissed_evidence_keys={("portfolio_project:91", "react")},
+    )
+    requirement = result["requirements"][0]
+    assert requirement["name"] == "react"
+    assert requirement["status"] == "not_identified"
+    assert requirement["evidence"] == []
