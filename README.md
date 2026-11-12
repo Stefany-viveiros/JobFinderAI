@@ -103,7 +103,7 @@ A área **Inteligência de mercado** analisa competências encontradas nas oport
 - Alterações criam versões novas; versões anteriores não são apagadas.
 - No Career Twin, a pessoa pode confirmar se uma menção corresponde à fonte ou marcá-la como não relevante, com observação própria.
 - O histórico de revisões fica disponível para consulta e é isolado por conta.
-- Marcar uma evidência como não relevante retira aquela origem do mapa de competências do Career Twin. A informação original do perfil permanece intacta.
+- Marcar uma evidência como não relevante retira aquela origem do mapa de competências do Career Twin e do diagnóstico por vaga. A informação original do perfil permanece intacta.
 - Confirmação humana da origem não equivale a avaliação técnica nem certificação de proficiência.
 
 
