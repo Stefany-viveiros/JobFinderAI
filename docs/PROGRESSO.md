@@ -1,7 +1,7 @@
 # Progresso — JobFinder AI Proof-to-Opportunity Engine
 
 **Branch:** `feature/proof-to-opportunity-engine`  
-**Último commit:** `82e63618a4ad778538de1b35c7a5269d0cfc850c`  
+**Último commit:** `efab26137b237ff7799298e6515da4360b2515d8`  
 **Atualização:** 12/11/2026.  \n**Cobertura geral estimada:** 78% (estimativa de escopo, não métrica automatizada).
 
 ## Estado de execução
@@ -188,3 +188,10 @@ Continuar a auditoria endpoint a endpoint com foco em vínculo cruzado de entida
 - CI do commit `f4f5f6f`: SQLite **143 passed, 2 skipped**; PostgreSQL 16 **145 passed**; build Vite **success**.
 
 **Implicação:** não habilitar tarefas agendadas globais no SaaS. Próxima evolução futura é um scheduler que itere contas elegíveis, aplique limites individuais e registre cada execução por usuário, com envio SMTP configurado por conta.
+
+
+## Teste de integração CORS — 12/11/2026
+
+- Além dos testes unitários de parsing, foi adicionado teste de preflight real no middleware FastAPI/Starlette: origem local autorizada recebe CORS com credenciais; origem externa não cadastrada recebe rejeição sem cabeçalho de permissão.
+- CI do commit `efab261`: SQLite **144 passed, 2 skipped**; PostgreSQL 16 **146 passed**; build Vite **success**.
+- O resultado valida o middleware com a configuração padrão dos testes; o domínio real de produção continua dependendo da variável explícita `CORS_ORIGINS` no serviço hospedado.
