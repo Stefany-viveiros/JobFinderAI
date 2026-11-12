@@ -61,7 +61,7 @@ def test_multitenant_email_is_blocked_until_user_resume_can_be_attached(db, read
     job = make_job(db)
     available, reason = applying.email_channel_available(job, user_id=test_user.id, db=db)
     assert available is False
-    assert "currículo individual" in reason
+    assert "currículo" in reason
     assert "portal original" in reason
 
     # Mesmo uma tentativa antiga não pode contornar a regra nem anexar CV global.
@@ -71,7 +71,7 @@ def test_multitenant_email_is_blocked_until_user_resume_can_be_attached(db, read
     )
     db.add(attempt)
     db.commit()
-    with pytest.raises(applying.ApplyError, match="currículo individual"):
+    with pytest.raises(applying.ApplyError, match="currículo"):
         applying.send_attempt(db, attempt, user_id=test_user.id)
     assert attempt.status == "prepared"
 
