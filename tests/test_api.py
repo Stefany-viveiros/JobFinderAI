@@ -1222,3 +1222,51 @@ def test_career_evidence_review_is_append_only_and_account_scoped(client, db, te
     assert db.query(CareerEvidenceReview).filter(
         CareerEvidenceReview.evidence_id == evidence["id"]
     ).count() == 2
+
+def test_multitenant_schema_validator_rejects_cross_account_evidence_reviews(db, test_user):
+    from jobfinder.db import validate_multitenant_schema
+    from jobfinder.models import CareerEvidence, CareerEvidenceReview, User
+    from jobfinder.api import password_hasher
+
+    other = User(
+        email="second-ledger-owner@example.com",
+        email_normalized="second-ledger-owner@example.com",
+        full_name="Outra conta",
+        password_hash=password_hasher.hash("OutraSenhaSegura123!"),
+        role="user",
+        is_active=True,
+    )
+    db.add(other)
+    db.flush()
+    evidence = CareerEvidence(
+        user_id=test_user.id,
+        skill_name="Python",
+        category="language",
+        source_type="self_declared",
+        source_key="legacy:skills",
+        source_id=None,
+        source_label="Habilidades declaradas",
+        excerpt="Python",
+        evidence_hash="d" * 64,
+        verification_level="self_reported",
+        is_active=True,
+    )
+    db.add(evidence)
+    db.flush()
+    review = CareerEvidenceReview(
+        user_id=other.id,
+        evidence_id=evidence.id,
+        decision="confirmed",
+        note="Tentativa de vínculo cruzado",
+    )
+    db.add(review)
+    db.commit()
+
+    with pytest.raises(RuntimeError, match="contas diferentes"):
+        validate_multitenant_schema()
+
+    db.delete(review)
+    db.delete(evidence)
+    db.delete(other)
+    db.commit()
+    validate_multitenant_schema()
