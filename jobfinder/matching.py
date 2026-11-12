@@ -275,7 +275,7 @@ def classify_job_requirements(description: str) -> list[dict]:
     """Extrai tecnologias e classifica obrigatoriedade somente quando o texto dá indício."""
     found = {}
     clean = re.sub(r"<[^>]*>", " ", str(description or ""))
-    for sentence in re.split(r"[.!?;\\n]+", normalize(clean)):
+    for sentence in re.split(r"[.!?;\n]+", normalize(clean)):
         for technology in TECHNOLOGY_TERMS:
             phrase = normalize(technology)
             pattern = r"(?<![a-z0-9])" + re.escape(phrase) + r"(?![a-z0-9])"
