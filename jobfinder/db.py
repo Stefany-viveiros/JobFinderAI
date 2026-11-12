@@ -84,7 +84,7 @@ def validate_multitenant_schema() -> None:
         "user_sessions", "password_reset_tokens", "profile", "job_matches",
         "applications", "application_events", "tasks", "notification_log",
         "agent_settings", "application_attempts", "development_plan_items",
-        "skill_assessment_attempts",
+        "skill_assessment_attempts", "career_evidence", "career_evidence_reviews",
     )
 
     for table in user_scoped_tables:
@@ -124,6 +124,35 @@ def validate_multitenant_schema() -> None:
             if index.get("unique")
         )
         return result
+
+    # O ledger e as revisões são dados pessoais: validar também a relação
+    # entre a conta da revisão e a conta proprietária da evidência.
+    for table in ("career_evidence", "career_evidence_reviews"):
+        columns = {column["name"]: column for column in inspector.get_columns(table)}
+        if columns["user_id"]["nullable"]:
+            raise RuntimeError(
+                f"Schema SaaS inválido: {table}.user_id não pode aceitar NULL."
+            )
+    review_fks = inspector.get_foreign_keys("career_evidence_reviews")
+    if not any(
+        fk.get("constrained_columns") == ["evidence_id"]
+        and fk.get("referred_table") == "career_evidence"
+        and fk.get("referred_columns") == ["id"]
+        for fk in review_fks
+    ):
+        raise RuntimeError(
+            "Schema SaaS inválido: career_evidence_reviews.evidence_id precisa referenciar career_evidence.id."
+        )
+    with engine.connect() as conn:
+        mismatched_reviews = conn.execute(text(
+            "SELECT COUNT(*) FROM career_evidence_reviews r "
+            "JOIN career_evidence e ON e.id = r.evidence_id "
+            "WHERE r.user_id != e.user_id"
+        )).scalar_one()
+    if mismatched_reviews:
+        raise RuntimeError(
+            f"Schema SaaS inválido: {mismatched_reviews} revisão(ões) vinculada(s) a evidências de contas diferentes."
+        )
 
     for table in ("applications", "job_matches"):
         constraints = unique_sets(table)
