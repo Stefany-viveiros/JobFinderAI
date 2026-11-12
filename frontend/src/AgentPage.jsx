@@ -99,9 +99,9 @@ export default function AgentPage({ settings, setSettings, onSave, onRun, runRes
       <div className="panel-heading"><div><h2>Fontes de vagas</h2><p>O que cada plataforma realmente permite</p></div></div>
       <div className="table-wrap"><table className="data-table"><thead><tr><th>Fonte</th><th>Coleta</th><th>Candidatura automática</th><th>Observação</th></tr></thead>
         <tbody>{(sources?.sources || []).map(s => <tr key={s.name}><td><strong>{s.name}</strong></td><td>{MODE_LABEL[s.mode]}</td><td>{s.apply_api ? 'Sim' : 'Não (site original)'}</td><td className="small">{s.note}</td></tr>)}</tbody></table></div>
-      {sources?.external_links?.length > 0 && <div className="external-links"><strong>Buscar manualmente (Indeed e Vagas.com):</strong>
+      {sources?.external_links?.length > 0 && <div className="external-links"><strong>Explorar outros portais de emprego:</strong>
         {sources.external_links.map((l, i) => <a key={i} href={l.url} target="_blank" rel="noreferrer" className="btn btn-secondary btn-sm">{l.source}: {l.query} <ExternalLink size={12}/></a>)}
-        <span className="muted small">Encontrou algo? Use “Adicionar manualmente” em Buscar vagas. Nenhuma página dessas plataformas é raspada.</span></div>}
+        <span className="muted small">Encontrou algo? Use “Adicionar manualmente” em Buscar vagas. Esses atalhos não coletam vagas nem automatizam candidaturas; o agente só importa fontes com integração ativa.</span></div>}
     </div>
   </>
 }
