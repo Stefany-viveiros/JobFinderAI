@@ -84,7 +84,7 @@ def validate_multitenant_schema() -> None:
         "user_sessions", "password_reset_tokens", "profile", "job_matches",
         "applications", "application_events", "tasks", "notification_log",
         "agent_settings", "application_attempts", "development_plan_items",
-        "skill_assessment_attempts", "career_evidence", "career_evidence_reviews",
+        "skill_assessment_attempts", "career_evidence", "career_evidence_reviews", "smtp_accounts",
     )
 
     for table in user_scoped_tables:
@@ -164,6 +164,11 @@ def validate_multitenant_schema() -> None:
             raise RuntimeError(
                 f"Schema SaaS inválido: existe unicidade global antiga em {table}.job_id."
             )
+
+    if ("user_id",) not in unique_sets("smtp_accounts"):
+        raise RuntimeError(
+            "Schema SaaS inválido: falta unicidade por usuário em smtp_accounts.user_id."
+        )
 
     for table in ("profile", "agent_settings"):
         if ("user_id",) not in unique_sets(table):
