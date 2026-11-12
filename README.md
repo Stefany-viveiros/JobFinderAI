@@ -98,6 +98,15 @@ A área **Inteligência de mercado** analisa competências encontradas nas oport
 
 **Importante:** uma competência não identificada no currículo não é considerada automaticamente desconhecida. Menção em curso, projeto ou certificação também não comprova domínio técnico.
 
+### Ledger persistente e revisão de evidências
+- Ao salvar o perfil, o sistema registra competências encontradas com a origem, trecho de contexto, hash e versão histórica.
+- Alterações criam versões novas; versões anteriores não são apagadas.
+- No Career Twin, a pessoa pode confirmar se uma menção corresponde à fonte ou marcá-la como não relevante, com observação própria.
+- O histórico de revisões fica disponível para consulta e é isolado por conta.
+- Marcar uma evidência como não relevante retira aquela origem do mapa de competências do Career Twin. A informação original do perfil permanece intacta.
+- Confirmação humana da origem não equivale a avaliação técnica nem certificação de proficiência.
+
+
 ### Plano de desenvolvimento
 - Adição de competências do Skill Gap a um plano individual.
 - Registro de atividades sugeridas, estimativa de horas, prazo e anotações.
