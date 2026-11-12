@@ -53,7 +53,7 @@ export default function AgentPage({ settings, setSettings, onSave, onRun, runRes
     </div>
 
     <section className="panel agent-settings">
-      <div className="panel-heading"><div><h2>Conexão de e-mail individual</h2><p>{smtp?.configured ? 'Sua conta SMTP está cadastrada. A senha nunca é exibida novamente.' : 'Conecte seu próprio provedor para habilitar envios aprovados.'}</p></div><span className={smtp?.configured ? 'status-pill green' : 'status-pill gray'}><i/>{smtp?.configured ? 'Configurado' : 'Não configurado'}</span></div>
+      <div className="panel-heading"><div><h2>Conexão de e-mail individual</h2><p>{smtp?.configured ? (smtp.ready ? 'Sua conta SMTP está cadastrada. A senha nunca é exibida novamente.' : 'A conta está cadastrada, mas a chave de criptografia do servidor não está disponível.') : 'Conecte seu próprio provedor para habilitar envios aprovados.'}</p></div><span className={smtp?.ready ? 'status-pill green' : 'status-pill gray'}><i/>{smtp?.ready ? 'Pronto para envio' : smtp?.configured ? 'Chave indisponível' : 'Não configurado'}</span></div>
       <div className="form-grid">
         <label className="field"><span>Servidor SMTP</span><input value={smtpForm.host || smtp?.host || ''} onChange={e => updateSmtp('host', e.target.value)} placeholder="smtp.gmail.com" autoComplete="off"/></label>
         <label className="field"><span>Porta</span><input type="number" min="1" max="65535" value={smtpForm.port} onChange={e => updateSmtp('port', Number(e.target.value))}/></label>
