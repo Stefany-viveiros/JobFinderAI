@@ -26,6 +26,11 @@ def client(monkeypatch, test_user):
 
 def test_backend_boots_and_core_routes_respond(client):
     assert client.get("/api/health").json()["status"] == "ok"
+    readiness = client.get("/api/health/ready")
+    assert readiness.status_code == 200
+    assert readiness.json()["status"] == "ready"
+    assert readiness.json()["checks"]["database"] == "ok"
+    assert "RESUME_STORAGE_KEY" not in readiness.text and "SMTP_CREDENTIALS_KEY" not in readiness.text
     for route in ("/api/dashboard", "/api/jobs", "/api/applications", "/api/tasks", "/api/profile",
                   "/api/attempts", "/api/agent/settings", "/api/sources", "/api/notifications"):
         assert client.get(route).status_code == 200, route
