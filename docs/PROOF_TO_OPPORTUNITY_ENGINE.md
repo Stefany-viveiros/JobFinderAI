@@ -231,3 +231,14 @@ Aceite: nenhum código arbitrário executado no processo da API ou com acesso a 
 Iniciar pela Fase A. Antes de alterar modelos ou endpoints, revisar o estado atual de main, o gate MULTITENANT_READY, as migrações Alembic e o escopo por usuário das rotas e serviços de perfil/avaliação.
 
 A primeira implementação será o Career Twin Read Model, sem migração de banco. Só depois dos testes e da validação da interface será considerada a criação do Evidence Ledger persistente.
+
+
+## 12. Implementações incrementais validadas na branch
+
+- O upload de currículo passou a exigir consentimento explícito por operação para enviar texto ao Gemini; a extração local continua padrão.
+- O Career Twin passou a retornar e exibir uma linha do tempo derivada dos registros pertencentes ao usuário autenticado, incluindo metas concluídas e autoavaliações com seus limites.
+- O diagnóstico por vaga relaciona cada tecnologia reconhecida à origem no perfil, classifica requisitos com marcadores textuais e exige vínculo da vaga ao painel do usuário.
+- O Skill Gap informa janela e amostra.
+- A comparação histórica entre snapshots só ocorre quando nível, período, tamanho mínimo e versões do catálogo/extrator são equivalentes.
+
+Todos esses incrementos foram validados em CI com SQLite, PostgreSQL 16 e build Vite. Consulte `docs/PROGRESSO.md` para os commits e quantidades de testes.

@@ -1,56 +1,75 @@
 # Progresso — JobFinder AI Proof-to-Opportunity Engine
 
 **Branch:** `feature/proof-to-opportunity-engine`  
-**Último commit registrado:** `05ae7fbc33608f0ad8cd2ab0c869172afb9d718e`.  
-**Última atualização:** 11/11/2026.
+**Último commit:** `56c067e032ab0314db94ea5245253ff5649f57f9`  
+**Atualização:** 12/11/2026.
 
-## Estado retomável
+## Estado de execução
 
-- [x] Conferir a branch de desenvolvimento e o commit-base.
-- [x] Ler o README, modelos, serviços, rotas de API, frontend, migrations, testes e configuração de deploy.
-- [x] Criar `docs/DECISOES.md` e registrar decisões de segurança.
-- [x] Criar a matriz `docs/AUDITORIA.md`.
-- [x] Concluir endurecimento do endpoint de importação de currículo.
-- [x] Revalidar a suíte SQLite/PostgreSQL e o build no CI para o incremento de privacidade.
-- [ ] Ampliar testes de isolamento e revisar todas as rotas pessoais.
-- [ ] Evoluir Career Twin, diagnóstico por vaga, plano/eventos e inteligência de mercado.
-- [ ] Revisar README, configuração e critérios finais de publicação, sem efetuar deploy.
-
-## Fases e critérios
-
-| Fase | Estado | Critério pendente ou evidência |
+| Fase | Estado | Evidência / pendência |
 |---|---|---|
-| A — Auditoria | Concluída | Matriz salva em `docs/AUDITORIA.md`; código lido no GitHub |
-| B — Privacidade e segurança da importação | Incremento concluído | Consentimento explícito, limite de uso, validação básica de arquivo e CI aprovado; revisão global de autorização segue aberta |
-| C — Career Twin e evidências | Parcial | Serviço e página existentes; falta linha do tempo completa e ligação com eventos |
-| D — Diagnóstico por vaga | Parcial | Skill Gap de mercado existe; falta explicação por requisito obrigatório/desejável |
-| E — Plano e desafios | Parcial | Plano e autoavaliação existem; falta ciclo rastreável de evidência |
-| F — Candidaturas | Parcial | Agente e pipeline existem; falta painel completo com métricas suficientes |
-| G — Inteligência de mercado | Parcial | Snapshots manuais existem; falta relatório quinzenal e comparação equivalente |
-| H — Qualidade e entrega | Parcial | CI SQLite/PostgreSQL/build está configurado; gate multiusuário permanece fechado; sem deploy |
+| A — Auditoria | Concluída | Matriz em `docs/AUDITORIA.md`; frontend, API, modelos, serviços, migrações, testes e deploy revisados na branch |
+| B — Segurança e privacidade | Incrementos concluídos; liberação SaaS pendente | Consentimento explícito para Gemini, upload endurecido, rate limit, CSRF e testes de isolamento; gate continua fechado |
+| C — Career Twin | Incremento concluído | Read model determinístico, evidências por origem, linha do tempo com dados da conta e eventos de plano/desafio; CI aprovado |
+| D — Diagnóstico de oportunidades | Incremento concluído | Endpoint por vaga com classificação de requisitos e rastreabilidade de evidências; não mede proficiência; CI aprovado |
+| E — Desenvolvimento e desafios | Parcial | Plano e autoavaliação existentes; conclusão aparece na linha do tempo, mas não existe ledger de eventos nem runner seguro |
+| F — Candidaturas e agente | Parcial | Agente, aprovação, histórico e controles existentes; revisão completa das fontes externas e métricas de conversão ainda pendentes |
+| G — Inteligência de mercado | Incremento concluído | Snapshot, Skill Gap com contexto de amostra e comparação de dois snapshots equivalentes; agendamento recorrente ainda depende de infraestrutura |
+| H — Qualidade e entrega | Parcial | CI SQLite/PostgreSQL/build aprovado; não foi feito deploy; `MULTITENANT_READY=false` e demonstração somente leitura permanecem |
 
-## Decisões já tomadas
+## Implementações commitadas nesta branch
 
-1. Não criar aplicação nova nem duplicar perfil, Skill Gap, plano ou agente.
-2. Não alterar a `main`, não executar deploy e não acessar o banco de produção.
-3. Manter `MULTITENANT_READY=false` até auditoria completa de rotas, schema e testes de isolamento.
-4. Não atribuir dados legados sem proprietário automaticamente a qualquer conta.
-5. O Career Twin permanece derivado e explicável; menção textual não equivale a proficiência.
-6. A ausência de menção é “não identificada nos registros disponíveis”, nunca “não sabe”.
-7. Desafios permanecem autoavaliação; execução de código não está disponível.
-8. Dados de currículo só podem ser enviados ao Gemini mediante consentimento explícito por importação. Sem consentimento, usar extração local.
-9. Rate limit de importação: cinco envios por usuário por hora, reutilizando o bucket persistente já existente.
+- `73c9255` / `05ae7fb`: consentimento por importação antes de envio do currículo ao Gemini; extração local por padrão; rate limit e validação básica de arquivo.
+- `cc26e06`: documentação inicial de auditoria e atualização do estado.
+- `1ca1a6e`: testes de IDOR em aprovar/cancelar candidatura, gate fail-closed e CSRF.
+- `f3d410a` / `cce41b5`: diagnóstico por requisito da vaga; correção do parser de frases.
+- `a6dc733` / `a49e1dc`: metadados de amostra do Skill Gap e autenticação/CSRF no cliente da página de mercado; build corrigido.
+- `d9c2a9f`: linha do tempo de Career Twin, metas concluídas e autoavaliações.
+- `56c067e`: tendências entre snapshots comparáveis.
 
-## Evidência de qualidade — commit 05ae7fbc
+## Evidências reais do GitHub Actions
 
-GitHub Actions: execução `43140897026` concluída com sucesso.
+| Commit | SQLite | PostgreSQL 16 | Vite |
+|---|---:|---:|---|
+| `05ae7fb` | 101 passaram, 1 ignorado | 102 passaram | Aprovado |
+| `1ca1a6e` | 104 passaram, 1 ignorado | 105 passaram | Aprovado |
+| `cce41b5` | 108 passaram, 1 ignorado | 109 passaram | Aprovado |
+| `a49e1dc` | 109 passaram, 1 ignorado | 110 passaram | Aprovado |
+| `d9c2a9f` | 109 passaram, 1 ignorado | 110 passaram | Aprovado |
+| `56c067e` | 111 passaram, 1 ignorado | 112 passaram | Aprovado |
 
-- SQLite: 101 testes passaram; 1 ignorado.
-- PostgreSQL 16: 102 testes passaram.
-- Frontend: build de produção Vite aprovado.
+- Upload/consentimento: [CI 43140897026](https://github.com/Stefany-viveiros/JobFinderAI/actions/runs/43140897026).
+- Isolamento/CSRF: [CI 43141623537](https://github.com/Stefany-viveiros/JobFinderAI/actions/runs/43141623537).
+- Diagnóstico por vaga e amostra do Skill Gap: [CI 43143439053](https://github.com/Stefany-viveiros/JobFinderAI/actions/runs/43143439053).
+- Linha do tempo do Career Twin: [CI 43144640122](https://github.com/Stefany-viveiros/JobFinderAI/actions/runs/43144640122).
+- Tendências de mercado: [CI 43145152234](https://github.com/Stefany-viveiros/JobFinderAI/actions/runs/43145152234).
 
-O primeiro commit da implementação falhou em dois testes novos devido a escapes incorretos na assinatura ZIP do DOCX e na expectativa de quebra de linha. O código foi corrigido no commit `05ae7fbc`; a execução seguinte passou integralmente. Os avisos de depreciação das bibliotecas/frameworks permanecem registrados no log e não foram tratados como falhas.
+Os avisos de depreciação registrados pelo CI não foram tratados como falhas. Algumas execuções intermediárias falharam e foram corrigidas antes dos commits validados; não se alteraram testes para mascarar as falhas.
+
+## Decisões de segurança e produto
+
+1. Não alterar `main`, não executar deploy e não acessar banco de produção.
+2. Manter `MULTITENANT_READY=false` até concluir a revisão endpoint a endpoint e validar o schema do banco de destino.
+3. Manter `DEMO_READ_ONLY=true` no Render de demonstração.
+4. Não atribuir dados legados sem proprietário automaticamente a uma conta.
+5. Currículos só são enviados ao Gemini quando a pessoa autoriza explicitamente cada importação.
+6. Ausência de menção significa “não identificada no registro”, nunca ausência de competência.
+7. Evidências textuais, projetos, cursos e certificações não comprovam sozinhos proficiência.
+8. Desafios continuam autoavaliação; não existe execução de código de usuário.
+9. Tendências só com snapshots de mesmo nível, janela, taxonomia e extrator; são observações da amostra local, não previsões.
+10. A coleta usa a data da primeira observação local, não um histórico completo da data original de publicação de cada vaga.
+
+## Pendências reais
+
+- Concluir revisão endpoint a endpoint e de IDOR para todas as rotas privadas, com foco em operações de conta e configurações.
+- Validar upgrades/rollbacks Alembic em cópia controlada de banco e revisar os registros sem `user_id`.
+- Definir agendador recorrente real para snapshots de mercado (por exemplo, job/cron compatível com infraestrutura contratada); não há execução quinzenal automática ativa.
+- Completar análise de candidaturas com métricas de conversão sem inferir resultados inexistentes.
+- Evoluir registro versionado de evidências (ledger), sem duplicar o perfil.
+- Não implementar runner de código até existir isolamento descartável, sem rede e com limites testados.
+- Revisar configuração de e-mail por usuário; o destinatário SMTP global não deve ser liberado no SaaS.
+- Atualizar e validar a configuração de produção somente após aprovação de segurança.
 
 ## Próximo passo exato
 
-Ampliar os testes de IDOR para confirmar que uma segunda conta não consegue aprovar nem cancelar tentativas de candidatura da primeira. Depois continuar a revisão endpoint a endpoint das rotas privadas e registrar qualquer lacuna encontrada antes de avaliar a liberação de `MULTITENANT_READY`.
+Auditar todas as rotas restantes de autenticação, perfil, configurações e candidaturas e acrescentar testes de acesso cruzado onde ainda faltar cobertura. Depois revisar o schema/migrações em ambiente de teste PostgreSQL e só então decidir sobre qualquer mudança de `MULTITENANT_READY`.  

@@ -84,3 +84,30 @@ A inspeção foi realizada por leitura dos arquivos da branch no GitHub. O ambie
 **Decisão:** adotar (b). A autorização externa vem desmarcada por padrão na interface e é transmitida como campo de formulário. O backend só chama Gemini quando a chave existe e `allow_external_ai=true`. Sem consentimento, usa o extrator local. O backend também aplica limite de cinco importações por conta por hora, valida extensão, MIME quando informado, assinatura inicial PDF/DOCX e o limite de 5 MB.
 
 **Consequências:** pessoas que desejarem análise Gemini devem autorizar explicitamente cada solicitação. A limitação de tentativas é persistida na tabela de rate limit existente, sem serviço externo ou nova dependência. A validação de assinatura é uma barreira básica, não uma análise antivírus nem garantia contra arquivos maliciosos; bibliotecas de leitura continuam sujeitas a atualizações de segurança.
+
+
+## 10. Diagnóstico por requisito de oportunidade
+
+**Contexto:** a compatibilidade original retornava score e motivos gerais, sem relacionar cada tecnologia citada na descrição a uma origem concreta no perfil.
+
+**Alternativas:** (a) usar apenas comparação de palavras e score; (b) apresentar um diagnóstico por requisito com origem e trecho, sem inferir proficiência.
+
+**Decisão:** implementar `diagnose_job_requirements` e `GET /api/jobs/{job_id}/diagnosis`. O acesso é permitido somente quando a vaga está vinculada ao JobMatch da conta. A classificação obrigatório/desejável utiliza marcadores explícitos na frase; conflitos são ambíguos e ausência de marcador é não especificado. As origens são retornadas separadamente para experiência, projeto, curso, certificação, formação, campo legado, declaração e autoavaliação.
+
+**Consequências:** uma menção prova apenas que a informação aparece no registro; não é uma validação de proficiência. Descrições livres podem produzir classificação incorreta ou incompleta; a interface mostra aviso e não substitui a leitura humana.
+
+## 11. Linha do tempo do Career Twin
+
+**Contexto:** o serviço mostrava competências e evidências, mas não consolidava a evolução em uma trilha visual.
+
+**Decisão:** construir a linha do tempo como read model derivado de registros existentes: educação, experiências, projetos, cursos, certificações, metas e desafios. Eventos de conclusão e autoavaliação são rotulados separadamente e não são transformados em prova independente. Campos de data ausentes permanecem vazios/“Data não informada”.
+
+**Consequências:** não foi criada tabela duplicada nem um ledger persistente. Alterações passadas de um registro não são reconstituídas. Projetos ainda não têm campo de data próprio no schema.
+
+## 12. Tendências de mercado entre snapshots
+
+**Contexto:** snapshots imutáveis existiam, mas a UI não comparava séries históricas.
+
+**Decisão:** implementar `compare_market_trends` e `GET /api/market/trends`. Apenas snapshots concluídos com período, níveis, mínimo de amostra e versões de taxonomia/extrator equivalentes entram no mesmo grupo. O delta é exibido em pontos percentuais. O endpoint retorna indisponibilidade quando há menos de dois snapshots comparáveis.
+
+**Consequências:** não mistura janelas nem versões incompatíveis. A variação é descritiva, não preditiva. Não há agendador quinzenal ativo; a geração de snapshots segue manual até configurar infraestrutura de execução recorrente.

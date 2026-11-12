@@ -11,9 +11,9 @@
 |---|---|---|---|
 | Currículo PDF/DOCX | Parcial | Consentimento externo por importação, limite de uso e validação do conteúdo no backend | Implementar consentimento explícito, rate limit e validações; preservar revisão manual |
 | Perfil profissional | Parcial | Consolidar objetivos, evidências e trilha temporal em uma visão única | Reaproveitar os registros estruturados existentes e completar a experiência |
-| Career Twin | Parcial | O serviço determinístico já cruza registros e taxonomia; a interface mostra resumo e competências, mas a linha do tempo detalhada é limitada | Evoluir o read model e a interface sem criar cópia do perfil |
-| Skill Gap | Parcial | A comparação principal é snapshot de mercado × registros do perfil; ainda não há diagnóstico completo por requisito de cada vaga | Integrar evidência por requisito, obrigatoriedade, contexto e recomendação |
-| Inteligência de mercado | Parcial | Snapshot manual já existe, com níveis e tamanho de amostra; falta relatório quinzenal automatizado e comparação robusta de períodos equivalentes | Preservar snapshots, evidenciar período e amostra, só comparar janelas equivalentes |
+| Career Twin | Incrementado | Read model determinístico e interface mostram evidências por origem; a linha do tempo agrega formação, experiência, projeto, aprendizado, metas e desafios por conta | Manter derivações explicáveis; ledger persistente e eventos completos de edição ainda não existem |
+| Skill Gap | Incrementado | Snapshot × perfil, metadados de período/amostra e diagnóstico por requisito de vaga com origem da evidência | Ampliar taxonomia/contexto e avaliar obrigatoriedade quando descrições forem ambíguas; ausência de menção não é ausência de conhecimento |
+| Inteligência de mercado | Incrementado | Snapshots, tamanho de amostra, comparabilidade e diferenças em pontos percentuais entre dois snapshots com filtros/versões equivalentes | Ainda falta agendamento quinzenal real e histórico de cada observação/publicação da vaga; tendência não é previsão |
 | Plano de desenvolvimento | Parcial | Itens e status pertencem à conta, mas conclusão não forma ainda um ciclo completo e rastreável até nova evidência | Vincular atividades a evidências e eventos antes de declarar atualização automática do Career Twin |
 | Desafios | Parcial | Desafios e checklist são autoavaliação; não há runner ou revisão humana independente | Manter avaliação automática claramente indisponível; não executar código do usuário |
 | Autenticação | Implementada no núcleo | Revisão adicional de configuração, expiração e operação de e-mail | Preservar Argon2, sessão opaca, cookies e recuperação de senha |
@@ -31,7 +31,7 @@
 ### Segurança
 
 1. O middleware exige sessão e CSRF para operações de escrita nas rotas privadas. O acesso à área autenticada fica bloqueado com HTTP 503 enquanto `MULTITENANT_READY` não estiver explicitamente habilitado; essa proteção não deve ser removida como atalho.
-2. A suíte já possui testes de isolamento com duas contas para perfil, tarefas, candidaturas, tentativas, configurações do agente, plano, desafios, notificações e Career Twin. Ainda é necessário manter essa cobertura para cada nova rota pessoal e ampliar casos de IDOR.
+2. A suíte possui testes de isolamento entre duas contas para perfil, tarefas, candidaturas, tentativas, configurações do agente, plano, desafios, notificações e Career Twin; há também testes negativos para aprovar/cancelar tentativas de outra conta, gate fechado e escrita sem CSRF. Ainda é necessária revisão endpoint a endpoint de todas as rotas pessoais.
 3. Várias entidades privadas possuem `user_id`, mas parte dos campos legados é nullable. Dados sem proprietário não podem ser automaticamente associados à primeira conta.
 4. O catálogo de vagas e as análises de mercado são globais; perfil, score privado, favoritos, candidaturas, tarefas, plano e avaliações são escopados por usuário. Essa fronteira deve permanecer explícita.
 5. Antes deste incremento, o endpoint de importação acionava Gemini apenas pela presença de `GEMINI_API_KEY`, sem consentimento por solicitação, e não possuía rate limit específico.
@@ -43,8 +43,8 @@
 
 1. O Career Twin é um read model derivado; não há ledger persistente de cada evidência nem histórico completo de eventos para reconstruir todas as transições.
 2. A classificação de competência indica origem textual/contextual. Projeto concluído, curso ou certificação não comprovam isoladamente proficiência.
-3. O Skill Gap atual usa snapshot de mercado e perfil; ainda não explica, requisito a requisito, todas as vagas e sua distinção entre obrigatório e desejável.
-4. Snapshots são criados por solicitação manual. A automação quinzenal ainda depende de agendador/serviço de execução e de amostra real.
+3. O Skill Gap compara snapshot e perfil; o endpoint `/api/jobs/{job_id}/diagnosis` agora explica competências identificadas por requisito, incluindo origem, trecho e classificação textual de obrigatoriedade/desejabilidade. A taxonomia não cobre todas as expressões possíveis.
+4. Snapshots são criados por solicitação manual. O endpoint `/api/market/trends` compara dois snapshots concluídos apenas quando período, nível, taxonomia e extrator são equivalentes. A execução quinzenal automática ainda depende de agendador/serviço contínuo configurado.
 5. A avaliação de desafios é autoavaliação; o runner seguro não existe. Não executar código enviado por usuário.
 6. Candidaturas preparadas não equivalem a enviadas. O agente pode enviar por e-mail somente quando o fluxo real e as configurações permitem; demais canais continuam manuais.
 
@@ -52,7 +52,7 @@
 
 1. O README anterior dizia que a aplicação não oferecia autenticação multiusuário, embora a branch já tivesse sessões, middleware e testes de isolamento.
 2. A configuração de demonstração não equivale a um SaaS pronto para receber dados pessoais reais.
-3. A taxonomia determinística tem cobertura limitada aos termos e aliases cadastrados; ausência de menção não implica ausência de conhecimento.
+3. A taxonomia determinística tem cobertura limitada aos termos e aliases cadastrados; ausência de menção não implica ausência de conhecimento. O diagnóstico classifica requisito obrigatório/desejável somente quando há marcadores textuais claros e sinaliza conflitos como ambíguos.
 4. Não foi possível verificar comportamento de fontes externas em tempo real nesta auditoria sem executar as coletas. Testes automatizados não garantem disponibilidade contínua dos provedores.
 
 ## Evidências de qualidade disponíveis no commit-base
@@ -85,3 +85,30 @@ O incremento de privacidade do upload foi implementado em `jobfinder/api.py` e `
 - Foram adicionados testes para consentimento, conteúdo DOCX inconsistente e limite por conta.
 
 **CI do commit `05ae7fbc33608f0ad8cd2ab0c869172afb9d718e`:** SQLite 101 passed / 1 skipped; PostgreSQL 16 102 passed; build Vite aprovado. A suíte já continha testes de isolamento entre duas contas; novos testes específicos de tentativa de aprovação/cancelamento cruzado ainda serão adicionados na revisão de autorização.
+
+
+## Atualização após implementações de 12/11/2026
+
+### Career Twin e diagnóstico por vaga
+
+- `jobfinder/career_twin.py` compõe uma linha do tempo por usuário com educação, experiência, projeto, curso, certificação, metas do plano e desafios/autoavaliações.
+- Eventos de conclusão de meta não são promovidos a competência comprovada.
+- A interface mostra datas ausentes explicitamente; o schema ainda não tem data para projeto, então esses eventos não são posicionados artificialmente no tempo.
+- `GET /api/jobs/{job_id}/diagnosis` exige vínculo da vaga com o JobMatch da conta, relaciona competências à origem textual e apresenta a classificação obrigatório/desejável com aviso de ambiguidade.
+
+### Inteligência de mercado
+
+- O Skill Gap informa período, nível e quantidade de vagas, além do mínimo configurado e suficiência da amostra.
+- `GET /api/market/trends` compara os dois snapshots concluídos mais recentes do mesmo recorte, janela e versões de taxonomia/extrator.
+- O frontend exibe delta em pontos percentuais e sinaliza amostra insuficiente.
+- A página inclui cookies de sessão e CSRF para chamadas de escrita; a consulta de tendência tem fallback visual para indisponibilidade temporária.
+- Não há coleta recorrente quinzenal ativa. Snapshot continua sendo solicitado pelo usuário.
+
+**CI do commit `56c067e032ab0314db94ea5245253ff5649f57f9`:** SQLite 111 passed / 1 skipped; PostgreSQL 16 112 passed; frontend Vite build aprovado. Execução: `43145152234`.
+
+### Limitações que permanecem
+
+- O Career Twin é um read model, não um ledger versionado de evidências; alterações antigas de perfil não podem ser reconstruídas como eventos.
+- Projetos não possuem campos de data no schema; eventos de projeto aparecem com data não informada.
+- Classificação de requisito é baseada em marcadores e frases, não em compreensão semântica completa.
+- Tendências dependem de snapshots manuais e de registros locais de primeira coleta; não equivalem a projeção de mercado.

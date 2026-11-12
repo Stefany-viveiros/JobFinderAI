@@ -262,6 +262,10 @@ O GitHub Actions executa duas verificações em pushes para `main` e branches `f
 ## Documentação adicional
 
 - [Inteligência de mercado, Skill Gap, plano e autoavaliação](docs/MARKET_INTELLIGENCE.md)
+- [Auditoria do repositório](docs/AUDITORIA.md)
+- [Decisões técnicas e de segurança](docs/DECISOES.md)
+- [Progresso de execução](docs/PROGRESSO.md)
+- [Arquitetura Proof-to-Opportunity](docs/PROOF_TO_OPPORTUNITY_ENGINE.md)
 - [Arquitetura proposta para avaliação segura de código](docs/SECURE_CODE_ASSESSMENT.md)
 
 ## Estrutura de diretórios
@@ -306,14 +310,14 @@ O arquivo `jobfinder/app.py` mantém a interface Streamlit anterior como referê
 
 ## Limitações conhecidas
 
-- A aplicação ainda é destinada à execução local; não há deployment público nem autenticação multiusuário nesta versão.
+- O código possui autenticação por sessão, recuperação de senha, CSRF e escopo por conta nas entidades privadas. A rota autenticada do workspace permanece bloqueada por padrão (`MULTITENANT_READY=false`) até concluir a revisão de isolamento, validar o schema no banco de destino e habilitar a variável conscientemente. O manifesto Render mantém a demonstração como somente leitura (`DEMO_READ_ONLY=true`); não é uma autorização para receber dados pessoais reais nem uma declaração de SaaS pronto para produção.
 - O envio automático de candidaturas só ocorre por e-mail quando há contato publicado na vaga e SMTP configurado.
 - A coleta depende de serviços externos e mudanças nos sites podem interromper fontes que leem páginas públicas.
 - A pontuação de compatibilidade é heurística e não prevê contratação.
 - A inteligência de mercado depende das vagas coletadas, da qualidade das descrições e da taxonomia determinística inicial.
 - A ausência de uma competência no texto da vaga ou no currículo não prova que ela não seja exigida ou conhecida.
 - Desafios atuais são autoavaliações; ainda não há execução automatizada e isolada de código.
-- Uma implantação pública exige autenticação, autorização, proteção de dados, configuração de serviços e revisão de segurança.
+- O deploy de demonstração no Render está configurado, mas `autoDeploy=false` e `DEMO_READ_ONLY=true`. Não houve publicação nem migração de dados nesta branch. A liberação pública exige revisão endpoint a endpoint, validação das migrações/schema e configuração segura de sessões, e-mail e banco.
 
 ## Próximos passos
 

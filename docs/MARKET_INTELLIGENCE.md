@@ -150,6 +150,7 @@ Não combinar estágio e júnior silenciosamente: mostrar comparativo lado a lad
 - `POST /api/market/analysis/run`: inicia análise/snapshot com filtros e janela.
 - `GET /api/market/analysis/latest`: metadados e métricas da última análise.
 - `GET /api/market/analysis/history`: lista de snapshots para comparar períodos.
+- `GET /api/market/trends`: compara os dois snapshots concluídos mais recentes com nível, janela, mínimo de amostra e versões de taxonomia/extrator equivalentes.
 - `GET /api/market/skills`: catálogo e categorias.
 - `GET /api/market/skills/{skill_id}`: detalhe, evidências agregadas e vagas relacionadas.
 - `GET /api/market/combinations`: pares de competências mais recorrentes.
@@ -217,7 +218,7 @@ Gráficos e cartões devem manter tipografia legível, percentuais acompanhados 
 4. Criar endpoints e testes de API/cálculo.
 5. Criar a página React e integrar filtros.
 6. Implementar cruzamento com perfil e plano de desenvolvimento (primeira versão publicada na branch).
-7. Adicionar histórico comparável e agendamento após infraestrutura de execução contínua estar definida.
+7. Comparação entre dois snapshots equivalentes implementada; agendamento recorrente permanece dependente de infraestrutura de execução contínua definida.
 
 ## 12. Critérios de aceite da primeira versão
 
@@ -319,3 +320,10 @@ O Skill Gap agora considera também os desafios práticos enviados:
 - Uma nova tentativa enviada atualiza o resultado mais recente exibido, preservando a contagem de tentativas.
 
 A classificação é recalculada a partir dos registros atuais do perfil e dos desafios enviados sempre que o endpoint de Skill Gap é consultado. Rascunhos não alteram a classificação.
+
+
+## 14. Atualização — comparação histórica
+
+A função `compare_market_trends` e o endpoint `GET /api/market/trends` comparam somente os dois snapshots concluídos mais recentes do mesmo recorte: níveis, janela em dias, mínimo de amostra, versão da taxonomia e versão do extrator. O resultado calcula mudança em pontos percentuais e inclui metadados de ambas as amostras.
+
+O frontend mostra altas, quedas e estabilidade observadas, além de um aviso quando uma das amostras fica abaixo do mínimo. Não há agendamento quinzenal ativo nem histórico de observações individuais de uma mesma vaga. Não apresentar esses dados como previsão.

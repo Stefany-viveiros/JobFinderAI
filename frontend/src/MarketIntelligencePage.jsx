@@ -65,7 +65,7 @@ export default function MarketIntelligencePage() {
         const [pairs, profileGap, trendResult] = await Promise.all([
           request(`/market/combinations?run_id=${latest.run.id}&limit=8`),
           request(`/market/profile-gap?run_id=${latest.run.id}`),
-          request('/market/trends?limit=8'),
+          request('/market/trends?limit=8').catch(() => ({ available: false, message: 'Não foi possível comparar o histórico agora.' })),
         ])
         setCombinations(pairs.combinations || [])
         setGap(profileGap.available ? profileGap : null)
@@ -213,7 +213,7 @@ export default function MarketIntelligencePage() {
         request('/market/analysis/latest'),
         request(`/market/combinations?run_id=${result.run_id}&limit=8`),
         request(`/market/profile-gap?run_id=${result.run_id}`),
-        request('/market/trends?limit=8'),
+        request('/market/trends?limit=8').catch(() => ({ available: false, message: 'Não foi possível comparar o histórico agora.' })),
       ])
       setAnalysis(latest.available ? latest : null)
       setCombinations(pairs.combinations || [])
