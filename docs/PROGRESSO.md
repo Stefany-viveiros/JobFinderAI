@@ -1,7 +1,7 @@
 # Progresso — JobFinder AI Proof-to-Opportunity Engine
 
 **Branch:** `feature/proof-to-opportunity-engine`  
-**Último commit:** `b0bce8fb9d3979b2f322f6a4bedca20d730c5487`  
+**Último commit:** `42d66d07f41c45b4a0adb54f6f4e11700cfdb7b7`  
 **Atualização:** 12/11/2026.
 
 ## Estado de execução
