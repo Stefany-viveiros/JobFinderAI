@@ -1,8 +1,8 @@
 # Progresso — JobFinder AI Proof-to-Opportunity Engine
 
 **Branch:** `feature/proof-to-opportunity-engine`  
-**Último commit:** `b55d8d2321fbb8a89f41456425ec5578ff227d60`  
-**Atualização:** 12/11/2026.
+**Último commit:** `1ac6407b02d86bbddc70f3b126af1fc2f63bea5a`  
+**Atualização:** 12/11/2026.  \n**Cobertura geral estimada:** 76% (estimativa de escopo, não métrica automatizada).
 
 ## Estado de execução
 
@@ -152,3 +152,16 @@ Continuar a auditoria endpoint a endpoint com foco em vínculo cruzado de entida
 - CI do commit `82d60c1`: SQLite **121 passed, 2 skipped**; PostgreSQL 16 **123 passed**; build Vite **success**. Os skips do SQLite incluem cenários exclusivos do PostgreSQL. Warnings são avisos; a mensagem de chave duplicada é esperada no teste de unicidade.
 
 **Pendente:** auditoria operacional das configurações de implantação e migrações sobre uma cópia controlada do schema completo; revisar rotinas agendadas/administrativas legadas e validar plano de tratamento de registros sem proprietário. O gate `MULTITENANT_READY=false` continua obrigatório.
+
+
+## Endurecimento de configuração CORS — 12/11/2026
+
+- Adicionado `parse_cors_origins` para validar a lista explícita de origens permitidas.
+- Wildcard `*` é recusado porque a API usa cookies/credenciais; origens remotas exigem HTTPS; HTTP fica restrito a localhost/loopback.
+- Caminhos, query strings, fragmentos, credenciais embutidas e portas inválidas são recusados; origens repetidas são normalizadas.
+- A API falha no startup com mensagem clara quando `CORS_ORIGINS` está inseguro ou malformado, em vez de iniciar com uma política permissiva.
+- Testes unitários cobrem origens válidas, duplicadas e entradas inseguras/inválidas.
+- Commits: `dac4ccf`, `d08c819`, `baf2090`, `791c0d5`, `af66f40`, `1ac6407`.
+- CI do commit `1ac6407`: SQLite **131 passed, 2 skipped**; PostgreSQL 16 **133 passed**; build Vite **success**.
+
+**Próximo passo:** revisar configurações de sessão/cookie e variáveis obrigatórias de produção, depois validar a migração completa e o bootstrap em schema PostgreSQL efêmero. Não alterar o ambiente Render/Neon de demonstração.
