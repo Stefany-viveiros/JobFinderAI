@@ -15,7 +15,7 @@
 | E — Desenvolvimento e desafios | Parcial, com evidências persistentes | Desafios enviados geram evidência `self_assessed` vinculada à tentativa e à competência. Continua sem execução de código ou validação independente; UI deixa essa limitação explícita |
 | F — Candidaturas e agente | Histórico concluído; métricas parciais | Pipeline e política do agente preservados; histórico por evento/conta no backend e frontend. Painel mostra totais, entrevistas, andamento e aprovações; taxa de conversão não é exibida sem base temporal/coorte suficiente. Métricas de retorno e cobertura das fontes ainda pendentes |
 | G — Inteligência de mercado | Incremento concluído | Snapshot, Skill Gap com contexto de amostra e comparação de dois snapshots equivalentes; agendamento recorrente ainda depende de infraestrutura |
-| H — Qualidade e entrega | Parcial, sem deploy | CI anterior verde; revisão do histórico de evidências em validação; navegação modular, upload DOCX endurecido e migrações aditivas. `main`, Render e Neon permanecem intocados |
+| H — Qualidade e entrega | Parcial, sem deploy | CI do código aprovado no commit `c32a736`; documentação atualizada; navegação modular, upload DOCX endurecido e migrações aditivas. `main`, Render e Neon permanecem intocados |
 
 ## Implementações commitadas nesta branch
 
