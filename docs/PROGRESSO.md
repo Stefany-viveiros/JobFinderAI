@@ -1,7 +1,7 @@
 # Progresso — JobFinder AI Proof-to-Opportunity Engine
 
 **Branch:** `feature/proof-to-opportunity-engine`  
-**Último commit:** `72617a251342502fe203624c7eab92186ef0f47f`  
+**Último commit:** `b0bce8fb9d3979b2f322f6a4bedca20d730c5487`  
 **Atualização:** 12/11/2026.
 
 ## Estado de execução
@@ -129,3 +129,14 @@ Continuar a auditoria endpoint a endpoint com foco em vínculo cruzado de entida
 - CI do commit `72617a2`: SQLite **120 passed, 1 skipped**; PostgreSQL 16 **121 passed**; build Vite **success**. Warnings são depreciações já reportadas; a mensagem PostgreSQL de chave duplicada aparece no teste de unicidade e não falhou a suíte.
 
 **Próximo passo:** continuar a revisão de todas as rotas que aceitam IDs globais ou relacionados e verificar as operações de perfil/configuração e o vínculo de entidades legadas. O gate `MULTITENANT_READY=false` permanece obrigatório até encerrar a revisão completa e validar o schema.
+
+
+## Incremento de validação do schema multiusuário — 12/11/2026
+
+- `validate_multitenant_schema` agora verifica a presença de tabelas privadas e colunas `user_id`, FKs para `users.id`, registros sem proprietário e unicidade por conta em `applications`, `job_matches`, `profile` e `agent_settings`.
+- Registros legados com `user_id` nulo fazem a inicialização falhar de forma explícita; não são atribuídos automaticamente a nenhuma conta.
+- Teste de regressão confirma que um schema limpo passa e que a presença de uma tarefa legada sem proprietário bloqueia a validação.
+- Commits: `e28ffa7` (validador) e `b0bce8f` (teste).
+- CI do commit `b0bce8f`: SQLite **121 passed, 1 skipped**; PostgreSQL 16 **122 passed**; build Vite **success**. Warnings são avisos de depreciação; a mensagem de chave duplicada no log PostgreSQL é gerada pelo teste de unicidade e a suíte terminou com sucesso.
+
+**Situação:** o gate continua `MULTITENANT_READY=false`. A validação do schema agora é mais completa, mas isso não substitui a auditoria integral de cada rota nem a resolução operacional dos dados legados em qualquer banco de destino.
