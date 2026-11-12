@@ -362,3 +362,11 @@ A validação é feita em bancos efêmeros do CI; não equivale a um ensaio com 
 - Migração `20261112_0006` e validação do schema multiusuário incluem a tabela de currículos.
 - CI [43249953419](https://github.com/Stefany-viveiros/JobFinderAI/actions/runs/43249953419), commit `9d3b81a`: SQLite **177 passed, 4 skipped**; PostgreSQL 16 **181 passed**; build Vite **success**.
 - A integração real ainda precisa de configuração das chaves no ambiente, migração em staging e teste SMTP com uma conta de teste; nenhum e-mail real foi disparado nesta implementação.
+
+
+
+### Verificação final da sincronização da interface — CI aprovado
+
+- Após o upload ou a remoção do currículo protegido, o Perfil profissional agora atualiza imediatamente o estado de prontidão do Agente; a interface não permanece mostrando um estado SMTP antigo.
+- CI [43250448527](https://github.com/Stefany-viveiros/JobFinderAI/actions/runs/43250448527), commit `ae9fd10`: SQLite **177 passed, 4 skipped**; PostgreSQL 16 **181 passed**; build Vite **success**.
+- A branch de desenvolvimento segue isolada: nenhuma alteração foi publicada em `main`, Render ou Neon.
