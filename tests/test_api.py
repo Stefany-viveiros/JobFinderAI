@@ -901,3 +901,57 @@ def test_account_rate_limit_is_shared_across_client_ips(db):
         scope="resume-import-user", subject="user-43",
         limit=1, window_seconds=3600,
     )
+
+
+def test_job_actions_require_opportunity_linked_to_authenticated_account(client, db, test_user):
+    from jobfinder.models import Job, JobMatch, User
+    from jobfinder.api import password_hasher
+
+    other_user = User(
+        email="job-owner@example.com",
+        email_normalized="job-owner@example.com",
+        full_name="Pessoa proprietária da vaga",
+        password_hash=password_hasher.hash("SenhaDaOutraConta123!"),
+        role="user",
+        is_active=True,
+    )
+    db.add(other_user)
+    db.flush()
+    foreign_job = Job(
+        source="Teste",
+        title="Vaga privada de outra conta",
+        company="Empresa externa",
+        description="Descrição da vaga",
+        location="Remoto",
+        modality="Remoto",
+        job_type="Estágio",
+        url="https://foreign-job.test/private-opportunity",
+        compatibility=95,
+        level="estagio",
+    )
+    db.add(foreign_job)
+    db.flush()
+    db.add(JobMatch(
+        user_id=other_user.id,
+        job_id=foreign_job.id,
+        compatibility=95,
+        is_archived=False,
+    ))
+    db.commit()
+
+    # Conhecer um ID global não concede acesso à oportunidade de outra conta.
+    assert client.post("/api/tasks", json={
+        "title": "Tarefa vinculada indevidamente",
+        "job_id": foreign_job.id,
+        "notify": False,
+    }).status_code == 404
+    assert client.patch(f"/api/jobs/{foreign_job.id}/favorite").status_code == 404
+    assert client.post(f"/api/jobs/{foreign_job.id}/apply", json={
+        "confirmed": True,
+    }).status_code == 404
+    assert client.post(f"/api/jobs/{foreign_job.id}/prepare").status_code == 404
+
+    # Nenhuma operação negada deve criar dados privados para a conta atacante.
+    assert client.get("/api/tasks").json() == []
+    assert client.get("/api/applications").json() == []
+    assert client.get("/api/attempts").json() == []
