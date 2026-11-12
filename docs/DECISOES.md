@@ -212,3 +212,13 @@ A inspeção foi realizada por leitura dos arquivos da branch no GitHub. O ambie
 
 **Consequências:** cada revisão é um novo evento; a evidência e seu `verification_level` não são alterados. “Confirmar origem” significa que a pessoa reconhece a menção/contexto, não que um avaliador independente atestou proficiência. O downgrade da migração `20261112_0004` recusa remover histórico existente. A interface permite observação livre de até 1.000 caracteres e consulta da trilha cronológica.
 **Complemento de segurança — 12/11/2026:** `validate_multitenant_schema()` inclui `career_evidence` e `career_evidence_reviews`, exige `user_id` não nulo e FKs válidas, confirma a FK da revisão para a evidência e rejeita revisões órfãs ou cujo `user_id` difere do proprietário da evidência. O gate permanece fechado por padrão; essa validação não atribui nem corrige automaticamente dados legados.
+
+## 12/11/2026 — credenciais SMTP individuais
+
+- O modo multiusuário não utiliza credenciais SMTP globais para enviar candidaturas.
+- Cada conta tem no máximo uma conexão SMTP própria, cifrada com Fernet antes da persistência. A chave `SMTP_CREDENTIALS_KEY` é segredo de ambiente, nunca é gravada no banco ou versionada.
+- A API não retorna senha nem ciphertext. A ausência ou invalidade da chave torna o envio indisponível.
+- Hostnames são limitados a provedores conhecidos ou à allowlist explícita `SMTP_ALLOWED_HOSTS`; não aceitar hosts arbitrários enviados pelo usuário reduz o risco de SSRF.
+- A configuração SMTP administrativa permanece exclusiva para lembretes locais; ela não é uma alternativa para envio de candidaturas de contas SaaS.
+- Antes de ativar em produção, definir cofre/backup e rotação da chave Fernet, configurar os segredos de ambiente, validar conexão com provedor real e manter egress de rede restrito.
+- A implementação permanece na branch de trabalho; nenhum deploy ou alteração no Neon foi realizado.
