@@ -8,6 +8,7 @@ Regras de integridade:
 import html
 import re
 import smtplib
+import ssl
 from datetime import date, datetime, timedelta, timezone
 from email.message import EmailMessage
 from pathlib import Path
@@ -193,17 +194,28 @@ def email_channel_available(job, user_id: int | None = None, db=None) -> tuple[b
 
 
 def _deliver(msg: EmailMessage, smtp_config: dict | None = None):
-    """Entrega com credenciais da conta; o modo legado usa apenas configuração local."""
+    """Entrega SMTP sempre cifrada: SSL implícito em 465 ou STARTTLS nos demais ports."""
     config = smtp_config or {
         "host": settings.smtp_host, "port": settings.smtp_port,
         "username": settings.smtp_username, "password": settings.smtp_password,
         "use_tls": settings.smtp_use_tls,
     }
-    with smtplib.SMTP(config["host"], config["port"], timeout=25) as server:
-        server.ehlo()
-        if config["use_tls"]:
-            server.starttls()
+    if not config.get("use_tls", False):
+        raise ApplyError("Envio SMTP sem TLS foi bloqueado para proteger suas credenciais.")
+
+    host, port = config["host"], int(config["port"])
+    context = ssl.create_default_context()
+    if port == 465:
+        with smtplib.SMTP_SSL(host, port, timeout=25, context=context) as server:
             server.ehlo()
+            server.login(config["username"], config["password"])
+            server.send_message(msg)
+        return
+
+    with smtplib.SMTP(host, port, timeout=25) as server:
+        server.ehlo()
+        server.starttls(context=context)
+        server.ehlo()
         server.login(config["username"], config["password"])
         server.send_message(msg)
 
