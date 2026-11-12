@@ -53,7 +53,7 @@ def test_apply_endpoint_requires_explicit_confirmation(client, db):
     assert client.post(f"/api/jobs/{job.id}/apply", json={"confirmed": True}).status_code == 409
 
 
-def test_prepare_then_approve_flow_with_failure_then_success(client, db, ready_profile, monkeypatch):
+def test_prepare_then_approve_is_blocked_without_user_resume_attachment(client, db, ready_profile, monkeypatch):
     from cryptography.fernet import Fernet
 
     monkeypatch.setenv("SMTP_CREDENTIALS_KEY", Fernet.generate_key().decode("ascii"))
@@ -64,17 +64,17 @@ def test_prepare_then_approve_flow_with_failure_then_success(client, db, ready_p
     assert client.put("/api/agent/smtp", json=config).status_code == 200
     job = make_job(db)
     attempt = client.post(f"/api/jobs/{job.id}/prepare").json()["attempt"]
-    assert attempt["status"] == "prepared" and "Python" in attempt["message"]
-    monkeypatch.setattr(applying, "_deliver", lambda m, smtp_config=None: (_ for _ in ()).throw(OSError("falhou")))
-    r = client.post(f"/api/attempts/{attempt['id']}/approve").json()
-    assert r["attempt"]["status"] == "failed" and "falhou" in r["message"]
-    assert client.get("/api/dashboard").json()["metrics"]["failed_applications"] == 1
-    sent = []
-    monkeypatch.setattr(applying, "_deliver", lambda m, smtp_config=None: sent.append((m, smtp_config)))
-    r = client.post(f"/api/attempts/{attempt['id']}/approve").json()          # nova tentativa após falha
-    assert r["attempt"]["status"] == "sent"
-    assert sent[0][1]["password"] == "smtp-test-secret"
-    assert client.post(f"/api/attempts/{attempt['id']}/cancel").status_code == 409
+    assert attempt["status"] == "manual_required"
+    assert attempt["channel"] == "manual"
+    assert "currículo individual" in attempt["detail"]
+
+    delivered = []
+    monkeypatch.setattr(applying, "_deliver", lambda m, smtp_config=None: delivered.append(m))
+    response = client.post(f"/api/attempts/{attempt['id']}/approve")
+    assert response.status_code == 400
+    assert "canal de envio automático" in response.json()["detail"]
+    assert delivered == []
+    assert client.get("/api/dashboard").json()["metrics"]["failed_applications"] == 0
 
 
 def test_smtp_account_is_encrypted_private_and_used_for_delivery(client, db, ready_profile, monkeypatch, test_user):
@@ -145,13 +145,11 @@ def test_smtp_account_is_encrypted_private_and_used_for_delivery(client, db, rea
     monkeypatch.setattr(applying, "_deliver", lambda msg, smtp_config=None: captured.append((msg, smtp_config)))
     job = make_job(db)
     attempt = client.post(f"/api/jobs/{job.id}/prepare").json()["attempt"]
-    assert attempt["channel"] == "email" and attempt["status"] == "prepared"
-    sent = client.post(f"/api/attempts/{attempt['id']}/approve")
-    assert sent.status_code == 200
-    assert sent.json()["attempt"]["status"] == "sent"
-    assert captured[0][1]["host"] == "smtp.gmail.com"
-    assert captured[0][1]["password"] == "senha-super-secreta"
-    assert captured[0][0]["From"] == "stefany@example.com"
+    assert attempt["channel"] == "manual" and attempt["status"] == "manual_required"
+    assert "currículo individual" in attempt["detail"]
+    blocked_send = client.post(f"/api/attempts/{attempt['id']}/approve")
+    assert blocked_send.status_code == 400
+    assert captured == []
 
     deleted = client.delete("/api/agent/smtp")
     assert deleted.status_code == 200
