@@ -25,6 +25,11 @@ OPEN_STATUSES = ("prepared", "awaiting_approval", "manual_required")
 SENDABLE_STATUSES = ("prepared", "awaiting_approval", "failed")
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 BLOCKED_LOCAL_PARTS = ("noreply", "no-reply", "donotreply", "do-not-reply", "mailer-daemon", "privacy", "abuse")
+APPLY_CONTEXT_RE = re.compile(
+    r"\\b(candidatura|candidatar|curr[ií]culo|curriculo|selec[aã]o|recrutamento|"
+    r"\\brh\\b|talentos|vagas|trabalhe conosco|apply|careers|career|jobs|hiring)\\b",
+    re.IGNORECASE,
+)
 
 
 class ApplyError(Exception):
@@ -140,12 +145,18 @@ def build_cover_letter(job, profile) -> tuple[str, str]:
 
 # --------------------------------------------------------------- conectores
 def extract_apply_email(text: str) -> str | None:
-    """Primeiro e-mail de contato publicado na descrição da vaga (ignora no-reply e similares)."""
+    """Retorna e-mail somente quando o contexto o identifica como canal de candidatura."""
     clean = html.unescape(re.sub(r"<[^>]+>", " ", str(text or "")))
-    for match in EMAIL_RE.findall(clean):
-        local = match.split("@")[0].lower()
-        if not any(block in local for block in BLOCKED_LOCAL_PARTS):
-            return match
+    for match in EMAIL_RE.finditer(clean):
+        local = match.group(0).split("@")[0].lower()
+        if any(block in local for block in BLOCKED_LOCAL_PARTS):
+            continue
+        # Um endereço genérico de contato/suporte não é autorização para enviar currículo.
+        # Exigimos indicação explícita de recrutamento/candidatura próxima ao endereço.
+        context_start = max(0, match.start() - 140)
+        context = clean[context_start:match.start()]
+        if APPLY_CONTEXT_RE.search(context):
+            return match.group(0)
     return None
 
 
