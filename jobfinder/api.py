@@ -33,7 +33,7 @@ from . import applying
 from .agent import get_agent_settings, run_agent, TARGET_LEVELS
 from .mailer import send_daily_reminder
 from .config import settings, parse_cors_origins
-from .smtp_credentials import encrypt_password, CredentialEncryptionError
+from .smtp_credentials import encrypt_password, decrypt_password, CredentialEncryptionError
 from .resume_parser import parse_resume, extract_resume_text
 from .resume_ai import analyze_resume_with_gemini, ResumeAIError
 from .market_service import (create_market_snapshot, index_unprocessed_jobs, build_profile_gap,
@@ -913,8 +913,14 @@ class SmtpAccountUpdate(BaseModel):
 def smtp_account_dict(account):
     if account is None:
         return {"configured": False}
+    try:
+        decrypt_password(account.encrypted_password)
+        ready = True
+    except CredentialEncryptionError:
+        ready = False
     return {
         "configured": True,
+        "ready": ready,
         "host": account.host,
         "port": account.port,
         "username": account.username,
@@ -990,10 +996,11 @@ class AgentSettingsUpdate(BaseModel):
 def agent_settings_dict(db, user_id=None):
     s = get_agent_settings(db, user_id=user_id)
     p = get_profile(db, user_id=user_id)
+    smtp_account = db.scalar(select(SmtpAccount).where(SmtpAccount.user_id == user_id))
     return {"auto_apply_enabled": s.auto_apply_enabled, "require_approval": s.require_approval,
             "daily_limit": s.daily_limit, "min_score": s.min_score,
             "sent_today": applying.sent_today_count(db, user_id=user_id),
-            "email_ready": db.scalar(select(SmtpAccount.id).where(SmtpAccount.user_id == user_id)) is not None,
+            "email_ready": bool(smtp_account_dict(smtp_account).get("ready", False)),
             "profile_gaps": applying.profile_gaps(p), "profile_ready": not applying.profile_gaps(p)}
 
 
