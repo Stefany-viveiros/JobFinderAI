@@ -1,8 +1,8 @@
 # Progresso — JobFinder AI Proof-to-Opportunity Engine
 
 **Branch:** `feature/proof-to-opportunity-engine`  
-**Último commit:** `0ad521cd61bea8737f8e8967edbd3c6fde8e5584`  
-**Atualização:** 12/11/2026.  \n**Cobertura geral estimada:** 77% (estimativa de escopo, não métrica automatizada).
+**Último commit:** `f4f5f6f1a741b31f0eb42b509950e2579a169ab0`  
+**Atualização:** 12/11/2026.  \n**Cobertura geral estimada:** 78% (estimativa de escopo, não métrica automatizada).
 
 ## Estado de execução
 
@@ -178,3 +178,13 @@ Continuar a auditoria endpoint a endpoint com foco em vínculo cruzado de entida
 - CI do commit `e12d575`: SQLite **141 passed, 2 skipped**; PostgreSQL 16 **143 passed**; build Vite **success**.
 
 **Pendente:** revisão operacional da configuração de produção e ensaio de bootstrap completo do schema em banco efêmero. O manifesto foi ajustado no repositório, mas nenhum deploy foi realizado; `MULTITENANT_READY=false` permanece.
+
+
+## Bloqueio de agendadores globais no modo multiusuário — 12/11/2026
+
+- `jobfinder/agent_runner.py` agora verifica `MULTITENANT_READY` antes de inicializar o banco; quando ativo, retorna e registra bloqueio em log porque o runner legado não recebe identidade de conta.
+- `jobfinder/reminder_runner.py` também bloqueia antes de inicializar o banco ou abrir sessão; o envio individual por conta ainda não está implementado.
+- Foram adicionados testes que substituem `init_db` e `SessionLocal` por falhas, provando que os runners não acessam o banco no modo multiusuário.
+- CI do commit `f4f5f6f`: SQLite **143 passed, 2 skipped**; PostgreSQL 16 **145 passed**; build Vite **success**.
+
+**Implicação:** não habilitar tarefas agendadas globais no SaaS. Próxima evolução futura é um scheduler que itere contas elegíveis, aplique limites individuais e registre cada execução por usuário, com envio SMTP configurado por conta.
