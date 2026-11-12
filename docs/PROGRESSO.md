@@ -370,3 +370,12 @@ A validação é feita em bancos efêmeros do CI; não equivale a um ensaio com 
 - Após o upload ou a remoção do currículo protegido, o Perfil profissional agora atualiza imediatamente o estado de prontidão do Agente; a interface não permanece mostrando um estado SMTP antigo.
 - CI [43250448527](https://github.com/Stefany-viveiros/JobFinderAI/actions/runs/43250448527), commit `ae9fd10`: SQLite **177 passed, 4 skipped**; PostgreSQL 16 **181 passed**; build Vite **success**.
 - A branch de desenvolvimento segue isolada: nenhuma alteração foi publicada em `main`, Render ou Neon.
+
+
+
+### Readiness operacional e proteção de segredos — CI aprovado
+
+- Adicionado `GET /api/health/ready`, separado do health check de liveness. Ele verifica conectividade do banco e validade do schema multiusuário quando habilitado.
+- O endpoint informa apenas estados genéricos das chaves de armazenamento de currículo e credenciais SMTP (`configured` / `missing_or_invalid`); nunca retorna valores, fragmentos ou conteúdo de segredos.
+- O serviço pode continuar disponível para busca e operação manual mesmo quando uma integração opcional não está configurada; o status da integração aparece separadamente.
+- CI [43250875473](https://github.com/Stefany-viveiros/JobFinderAI/actions/runs/43250875473), commit `f2250aa`: SQLite **177 passed, 4 skipped**; PostgreSQL 16 **181 passed**; build Vite **success**.
