@@ -36,6 +36,7 @@ from .resume_ai import analyze_resume_with_gemini, ResumeAIError
 from .market_service import (create_market_snapshot, index_unprocessed_jobs, build_profile_gap,
     list_development_plan, create_development_item, update_development_item, DEVELOPMENT_STATUSES,
     create_skill_assessment, submit_skill_assessment, list_skill_assessments)
+from .career_twin import build_career_twin
 
 app = FastAPI(title="JobFinder AI API", version="1.1.0", description="API do JobFinder AI")
 cors_origins = [
@@ -934,6 +935,12 @@ def remove_task(task_id: int, request: Request, db: Session = Depends(get_db)):
 @app.get("/api/profile")
 def read_profile(request: Request, db: Session = Depends(get_db)):
     return profile_dict(get_profile(db, request.state.user_id))
+
+
+@app.get("/api/career-twin")
+def read_career_twin(request: Request, db: Session = Depends(get_db)):
+    """Retorna a visão consolidada e explicável do perfil da conta autenticada."""
+    return build_career_twin(db, user_id=request.state.user_id)
 
 
 @app.put("/api/profile")
