@@ -935,6 +935,21 @@ def save_smtp_account(payload: SmtpAccountUpdate, request: Request, db: Session 
     sender = payload.from_email.strip()
     if not host or any(char.isspace() for char in host) or "://" in host or "/" in host:
         raise HTTPException(422, "Informe somente o hostname do servidor SMTP, sem protocolo ou caminho.")
+    allowed_smtp_hosts = {
+        "smtp.gmail.com", "smtp.office365.com", "smtp-mail.outlook.com",
+        "smtp.mail.yahoo.com", "smtp.zoho.com", "smtp.zoho.eu",
+    }
+    allowed_smtp_hosts.update(
+        item.strip().lower()
+        for item in os.getenv("SMTP_ALLOWED_HOSTS", "").split(",")
+        if item.strip()
+    )
+    if host.lower() not in allowed_smtp_hosts:
+        raise HTTPException(
+            422,
+            "Servidor SMTP não permitido. Use um provedor suportado ou solicite a inclusão "
+            "do hostname em SMTP_ALLOWED_HOSTS pelo administrador.",
+        )
     if not re.fullmatch(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", sender):
         raise HTTPException(422, "Endereço de remetente inválido.")
     try:
