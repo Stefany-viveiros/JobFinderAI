@@ -73,3 +73,14 @@ A inspeção foi realizada por leitura dos arquivos da branch no GitHub. O ambie
 | Mercado | Snapshot e métricas existentes | Comparação equivalente e relatório quinzenal |
 | Migrações | `init_db` contém alterações aditivas; Alembic configurado | Validar histórico Alembic em SQLite e PostgreSQL |
 | Documentação | README contém trechos desatualizados sobre autenticação e publicação | Atualizar após validação do código e dos testes |
+
+
+## 9. Importação de currículo — privacidade e abuso
+
+**Contexto:** a implementação anterior acionava o Gemini sempre que `GEMINI_API_KEY` estava configurada, sem consentimento específico na importação, e não limitava tentativas desse endpoint.
+
+**Alternativas consideradas:** (a) manter envio automático com base apenas na existência da chave; (b) exigir consentimento por importação e manter extração local como padrão.
+
+**Decisão:** adotar (b). A autorização externa vem desmarcada por padrão na interface e é transmitida como campo de formulário. O backend só chama Gemini quando a chave existe e `allow_external_ai=true`. Sem consentimento, usa o extrator local. O backend também aplica limite de cinco importações por conta por hora, valida extensão, MIME quando informado, assinatura inicial PDF/DOCX e o limite de 5 MB.
+
+**Consequências:** pessoas que desejarem análise Gemini devem autorizar explicitamente cada solicitação. A limitação de tentativas é persistida na tabela de rate limit existente, sem serviço externo ou nova dependência. A validação de assinatura é uma barreira básica, não uma análise antivírus nem garantia contra arquivos maliciosos; bibliotecas de leitura continuam sujeitas a atualizações de segurança.

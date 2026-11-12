@@ -297,6 +297,7 @@ function ProfilePage({ profile, setProfile, onSave, busy }) {
   const [importing, setImporting] = useState(false)
   const [importMessage, setImportMessage] = useState('')
   const [importError, setImportError] = useState('')
+  const [allowExternalAI, setAllowExternalAI] = useState(false)
   const set = (field, value) => setProfile(p => ({ ...p, [field]: value }))
   const updateRecord = (collection, index, field, value) => setProfile(p => ({
     ...p, [collection]: (p[collection] || []).map((item, i) => i === index ? { ...item, [field]: value } : item),
@@ -315,6 +316,7 @@ function ProfilePage({ profile, setProfile, onSave, busy }) {
     if (file.size > 5 * 1024 * 1024) { setImportError('O arquivo deve ter no máximo 5 MB.'); return }
     const form = new FormData()
     form.append('file', file)
+    form.append('allow_external_ai', String(allowExternalAI))
     setImporting(true); setImportError(''); setImportMessage('')
     try {
       const response = await fetch(`${API}/profile/import`, { method: 'POST', body: form, credentials: 'include', headers: csrfToken ? { 'X-CSRF-Token': csrfToken } : {} })
@@ -337,9 +339,13 @@ function ProfilePage({ profile, setProfile, onSave, busy }) {
     <section className="panel resume-import-panel">
       <div className="resume-import-copy"><div className="resume-import-icon"><Sparkles size={19}/></div><div><strong>Preencher com meu currículo</strong><p>Envie PDF ou DOCX. A extração sugere registros separados para você revisar antes de salvar.</p></div></div>
       <label className="btn btn-secondary resume-upload-button">{importing ? <LoaderCircle size={16} className="spin"/> : <UserRound size={16}/>} {importing ? 'Analisando currículo...' : 'Selecionar currículo'}<input type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={importResume} disabled={importing} hidden/></label>
+      <label className="resume-ai-consent">
+        <input type="checkbox" checked={allowExternalAI} onChange={e => setAllowExternalAI(e.target.checked)} disabled={importing}/>
+        <span><strong>Autorizar análise externa com Google Gemini</strong><small>Quando marcada e houver chave configurada no servidor, somente o texto extraído do currículo será enviado ao Google para análise.</small></span>
+      </label>
       {importMessage && <p className="resume-import-success"><CheckCircle2 size={15}/>{importMessage}</p>}
       {importError && <p className="resume-import-error">{importError}</p>}
-      <small>Limite de 5 MB. Com Gemini configurado, o texto extraído é enviado ao Google Gemini para análise. O arquivo original não é armazenado pelo JobFinder AI. Nada é salvo no perfil até você clicar em “Salvar perfil”.</small>
+      <small>Limite de 5 MB. Sem autorização, a extração é feita localmente. O arquivo original não é armazenado pelo JobFinder AI. Nada é salvo no perfil até você revisar e clicar em “Salvar perfil”.</small>
     </section>
     <form className="profile-form" onSubmit={onSave}>
       <div className="profile-header-card"><div className="profile-large-avatar">{initials(profile.name)}</div><div><strong>{profile.name || 'Seu nome'}</strong><span>{profile.course || 'Área profissional'}{profile.institution ? ` · ${profile.institution}` : ''}</span><p>Informações revisáveis utilizadas pelo mecanismo de compatibilidade.</p></div><div className="profile-status"><span className="status-dot"/>Perfil editável</div></div>

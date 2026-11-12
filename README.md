@@ -6,14 +6,14 @@ O JobFinder AI é um projeto de portfólio em evolução que reúne busca de vag
 
 A aplicação evoluiu de uma interface construída com Streamlit para uma arquitetura com **React + Vite no frontend** e **FastAPI no backend**, utilizando Python para a lógica de negócio e SQLite para persistência local.
 
-> **Estado atual:** o projeto está em desenvolvimento e sua execução documentada é local. Ainda não há uma versão pública hospedada para acesso pela internet. A arquitetura de avaliação objetiva de código está documentada como próxima evolução, mas o runner isolado ainda não foi implementado.
+> **Estado atual:** o projeto possui autenticação por sessão, proteção CSRF, rate limiting e estrutura de isolamento por conta em evolução. A API mantém o acesso à área autenticada bloqueado por padrão (`MULTITENANT_READY=false`) até que a revisão de isolamento e do schema seja concluída. A avaliação objetiva de código continua desabilitada: o runner isolado ainda não foi implementado.
 
 
 ## Ambiente de demonstração na nuvem
 
 A configuração inicial para Render + Neon está em [render.yaml](render.yaml). O passo a passo está em [docs/DEPLOYMENT_DEMO.md](docs/DEPLOYMENT_DEMO.md).
 
-**Atenção:** o ambiente público é configurado como somente leitura (`DEMO_READ_ONLY=true`). Não desative essa proteção nem conecte dados pessoais reais enquanto a aplicação não tiver autenticação e autorização por usuário. O banco Neon deve ser novo e exclusivo para a demonstração.
+**Atenção:** o manifesto do Render configura demonstração somente leitura (`DEMO_READ_ONLY=true`). Não desative essa proteção nem conecte dados pessoais reais até concluir a auditoria de isolamento, validar o schema e habilitar `MULTITENANT_READY` conscientemente. Use banco Neon exclusivo para a demonstração.
 
 ## Funcionalidades
 
@@ -146,7 +146,7 @@ A aplicação é organizada em duas partes principais:
 - **Backend:** API FastAPI, responsável pela lógica de negócio, persistência, cálculo de compatibilidade, importação de currículo, inteligência de mercado e coleta de vagas.
 - **Banco de dados:** SQLite na configuração local, com modelos SQLAlchemy.
 
-A versão atual não oferece autenticação multiusuário. A interface utiliza a API local em `http://127.0.0.1:8000/api`; uma implantação pública exige configurar URLs por ambiente, banco de dados apropriado, autenticação, autorização e controles adicionais de segurança.
+A aplicação já possui cadastro, login, sessão opaca, recuperação de senha, proteção CSRF e escopo por usuário nas principais entidades privadas. O middleware mantém as rotas de workspace em modo fail-closed enquanto `MULTITENANT_READY=false`; não habilite essa variável antes de validar a migração e a suíte de isolamento. A interface utiliza a API configurada por `VITE_API_URL` (ou `/api` com proxy).
 
 ## Requisitos
 
@@ -219,8 +219,8 @@ Mantenha os dois terminais abertos enquanto estiver utilizando a aplicação.
 ## Configuração de ambiente
 
 1. Copie `.env.example` para `.env`.
-2. Para análise inteligente de currículo, configure `GEMINI_API_KEY`. Sem essa chave, a importação utiliza o extrator básico.
-3. Para lembretes e envio de candidaturas por e-mail, configure as variáveis SMTP.
+2. Para análise inteligente de currículo, configure `GEMINI_API_KEY`. Sem essa chave, a importação utiliza o extrator básico. Mesmo com a chave configurada, o texto do currículo só será enviado ao Gemini quando a pessoa marcar a autorização explícita na tela de importação.
+3. Para lembretes e envio de candidaturas por e-mail, configure as variáveis SMTP. Os lembretes do usuário permanecem bloqueados até existir configuração individual por conta.
 4. Nunca publique o arquivo `.env`, senhas ou chaves de API no GitHub.
 
 A variável `JOBFINDER_DB_PATH` permite indicar outro caminho para o banco SQLite. Consulte o arquivo [.env.example](.env.example) para ver as opções disponíveis.

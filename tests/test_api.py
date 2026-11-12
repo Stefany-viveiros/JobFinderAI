@@ -1,4 +1,7 @@
+import io
+
 import pytest
+from docx import Document
 from fastapi.testclient import TestClient
 
 from jobfinder import api as api_module
@@ -484,3 +487,81 @@ def test_career_twin_is_isolated_between_accounts(client, db, test_user, ready_p
     assert second_payload["profile"]["name"] == "Segunda Pessoa"
     assert "React" in {item["name"] for item in second_payload["skills"]}
     assert "Python" not in {item["name"] for item in second_payload["skills"]}
+
+
+
+def _build_docx_resume():
+    document = Document()
+    document.add_paragraph("Pessoa de Teste")
+    document.add_paragraph("Desenvolvimento de software com Python, FastAPI e SQL.")
+    output = io.BytesIO()
+    document.save(output)
+    return output.getvalue()
+
+
+def _post_resume_import(client, *, allow_external_ai=None, content=None):
+    data = {}
+    if allow_external_ai is not None:
+        data["allow_external_ai"] = str(allow_external_ai).lower()
+    return client.post(
+        "/api/profile/import",
+        files={
+            "file": (
+                "curriculo.docx",
+                content if content is not None else _build_docx_resume(),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+        data=data,
+    )
+
+
+def test_resume_import_requires_explicit_consent_before_calling_gemini(client, monkeypatch):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(api_module, "settings", SimpleNamespace(gemini_api_key="chave-de-teste"))
+    gemini_calls = []
+    monkeypatch.setattr(
+        api_module, "analyze_resume_with_gemini",
+        lambda text: gemini_calls.append(text) or {"name": "Pessoa analisada"},
+    )
+    monkeypatch.setattr(
+        api_module, "parse_resume",
+        lambda content, filename: {"name": "Pessoa extraída localmente"},
+    )
+
+    local = _post_resume_import(client)
+    assert local.status_code == 200
+    assert local.json()["analysis_mode"] == "basic"
+    assert local.json()["extracted"]["name"] == "Pessoa extraída localmente"
+    assert gemini_calls == []
+
+    external = _post_resume_import(client, allow_external_ai=True)
+    assert external.status_code == 200
+    assert external.json()["analysis_mode"] == "gemini"
+    assert gemini_calls == ["Pessoa de Teste\\nDesenvolvimento de software com Python, FastAPI e SQL."]
+
+
+def test_resume_import_rejects_content_that_does_not_match_docx_extension(client):
+    response = _post_resume_import(client, content=b"isto nao e um arquivo DOCX")
+    assert response.status_code == 400
+    assert "DOCX válido" in response.json()["detail"]
+
+
+def test_resume_import_has_per_account_rate_limit(client, monkeypatch):
+    monkeypatch.setattr(
+        api_module, "extract_resume_text",
+        lambda content, filename: "Texto de currículo suficiente para análise.",
+    )
+    monkeypatch.setattr(
+        api_module, "parse_resume",
+        lambda content, filename: {"name": "Pessoa de Teste"},
+    )
+
+    for _ in range(5):
+        response = _post_resume_import(client)
+        assert response.status_code == 200
+
+    blocked = _post_resume_import(client)
+    assert blocked.status_code == 429
+    assert int(blocked.headers["Retry-After"]) > 0

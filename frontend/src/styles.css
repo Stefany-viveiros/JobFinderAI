@@ -548,3 +548,10 @@ input[type="checkbox"], input[type="radio"] {
 .career-empty{font-size:12px;padding:22px}
 @media(max-width:1050px){.career-metrics-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.career-hero-symbol{margin-right:12px}}
 @media(max-width:700px){.career-hero{padding:22px 20px;min-height:0}.career-hero-symbol{display:none}.career-skill-grid,.career-bottom-grid{grid-template-columns:1fr}.career-panel{padding:15px}.career-panel-heading{align-items:flex-start}.career-metrics-grid{gap:9px}.career-metric{padding:12px}.career-metric>strong{font-size:21px}.career-skill-heading{flex-direction:column}.career-status{max-width:100%;text-align:left}.career-filter-row{overflow-x:auto;flex-wrap:nowrap;padding-bottom:3px}.career-filter{white-space:nowrap}}
+
+.resume-ai-consent{display:flex;align-items:flex-start;gap:10px;margin:12px 0;padding:12px 14px;border:1px solid #e7e8ef;border-radius:10px;background:#fafbff;color:#343a52;cursor:pointer}
+.resume-ai-consent input{width:16px;height:16px;flex:0 0 auto;margin:2px 0 0;accent-color:#6c63df}
+.resume-ai-consent span{display:grid;gap:4px;font-size:12px;line-height:1.5}
+.resume-ai-consent strong{font-size:12px;font-weight:700}
+.resume-ai-consent small{font-size:11px;line-height:1.55;color:#737990}
+@media(max-width:640px){.resume-ai-consent{padding:10px 12px}}

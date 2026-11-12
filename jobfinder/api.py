@@ -10,7 +10,7 @@ from .auth import SESSION_COOKIE, COOKIE_SECURE, create_session, clear_session_c
 import os
 from typing import Optional
 
-from fastapi import FastAPI, Depends, HTTPException, Query, UploadFile, File, Request, Response
+from fastapi import FastAPI, Depends, HTTPException, Query, UploadFile, File, Form, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
@@ -968,35 +968,69 @@ def update_profile(payload: ProfileUpdate, request: Request, db: Session = Depen
     return {"message": "Perfil salvo e compatibilidades recalculadas.", "profile": profile_dict(p)}
 
 
+MAX_RESUME_BYTES = 5 * 1024 * 1024
+RESUME_IMPORTS_PER_HOUR = 5
+
+
 @app.post("/api/profile/import")
-async def import_resume(file: UploadFile = File(...)):
-    """Extrai sugestões do currículo sem salvar nem sobrescrever o perfil."""
+async def import_resume(
+    request: Request,
+    file: UploadFile = File(...),
+    allow_external_ai: bool = Form(False),
+    db: Session = Depends(get_db),
+):
+    """Extrai sugestões sem salvar o arquivo nem enviar dados externos sem consentimento."""
+    _enforce_rate_limit(
+        db, request, scope="resume-import-user",
+        subject=str(request.state.user_id), limit=RESUME_IMPORTS_PER_HOUR,
+        window_seconds=3600,
+    )
     filename = file.filename or ""
-    suffix = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
-    if suffix not in {"pdf", "docx"}:
+    suffix = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if suffix not in {".pdf", ".docx"}:
         raise HTTPException(400, "Formato não suportado. Envie um arquivo PDF ou DOCX.")
-    content = await file.read(5 * 1024 * 1024 + 1)
-    if len(content) > 5 * 1024 * 1024:
+
+    content_type = (file.content_type or "").split(";", 1)[0].strip().lower()
+    allowed_types = {
+        ".pdf": {"application/pdf", "application/octet-stream"},
+        ".docx": {
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/octet-stream",
+        },
+    }
+    if content_type and content_type not in allowed_types[suffix]:
+        raise HTTPException(415, "O tipo informado não corresponde a PDF ou DOCX.")
+
+    content = await file.read(MAX_RESUME_BYTES + 1)
+    await file.close()
+    if len(content) > MAX_RESUME_BYTES:
         raise HTTPException(413, "O currículo deve ter no máximo 5 MB.")
     if not content:
         raise HTTPException(400, "O arquivo enviado está vazio.")
+    if suffix == ".pdf" and b"%PDF-" not in content[:1024]:
+        raise HTTPException(400, "O conteúdo não parece ser um PDF válido.")
+    if suffix == ".docx" and not content.startswith(b"PK\\x03\\x04"):
+        raise HTTPException(400, "O conteúdo não parece ser um DOCX válido.")
+
     try:
-        # A IA recebe o texto extraído integralmente; o arquivo original não é salvo.
         resume_text = extract_resume_text(content, filename)
-        if settings.gemini_api_key:
+        if settings.gemini_api_key and allow_external_ai:
             extracted = analyze_resume_with_gemini(resume_text)
             analysis_mode = "gemini"
-            message = "Currículo analisado com Gemini. Revise os campos preenchidos e clique em Salvar perfil."
+            message = "Currículo analisado com Gemini mediante sua autorização. Revise os campos e clique em Salvar perfil."
         else:
-            # Mantém compatibilidade para instalações ainda sem a variável de ambiente.
             extracted = parse_resume(content, filename)
             analysis_mode = "basic"
-            message = "Currículo lido pelo extrator básico. Configure GEMINI_API_KEY no servidor para ativar a análise inteligente. Revise antes de salvar."
+            if settings.gemini_api_key:
+                message = "Currículo lido localmente. O Gemini está configurado, mas não foi acionado porque você não autorizou o envio do texto. Revise antes de salvar."
+            else:
+                message = "Currículo lido localmente pelo extrator básico. Revise as informações antes de salvar."
     except ValueError as exc:
         raise HTTPException(422, str(exc))
     except ResumeAIError as exc:
         raise HTTPException(502, str(exc))
-    except Exception as exc:
+    except Exception:
+        # Não registrar exceções que possam conter trechos do currículo ou dados pessoais.
         raise HTTPException(422, "Não foi possível ler este arquivo. Verifique se o PDF/DOCX está íntegro e tente novamente.")
     if not extracted:
         raise HTTPException(422, "Não encontramos informações reconhecíveis. Confira se o PDF permite selecionar/copiar o texto.")
