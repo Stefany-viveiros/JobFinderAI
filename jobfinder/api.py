@@ -20,7 +20,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.orm import Session, joinedload, selectinload, aliased
 
-from .db import init_db, SessionLocal, validate_multitenant_schema
+from .db import init_db, SessionLocal, engine, validate_multitenant_schema
 from .models import (
     Job, JobMatch, Application, Task, Profile, NotificationLog, ApplicationAttempt,
     Education, Experience, Course, Certification, PortfolioProject,
@@ -86,7 +86,7 @@ async def require_authenticated_session(request, call_next):
     """Protege a API inteira; somente health e endpoints de autenticação são públicos."""
     path = request.url.path
     public_paths = {
-        "/api/health", "/api/auth/register", "/api/auth/login",
+        "/api/health", "/api/health/ready", "/api/auth/register", "/api/auth/login",
         "/api/auth/forgot-password", "/api/auth/reset-password",
     }
     if not path.startswith("/api/") or path in public_paths or path == "/api/auth/me":
@@ -564,6 +564,47 @@ def _sync_profile_records(existing, incoming, model, fields):
 @app.get("/api/health")
 def health():
     return {"status": "ok", "service": "JobFinder AI"}
+
+
+@app.get("/api/health/ready")
+def readiness():
+    """Readiness operacional sem revelar valores de segredos ou dados de usuários."""
+    checks = {
+        "database": "ok",
+        "multitenant_schema": "not_required",
+        "resume_storage_key": "not_configured",
+        "smtp_credentials_key": "not_configured",
+    }
+    ready = True
+    try:
+        with engine.connect() as connection:
+            connection.execute(select(1))
+    except Exception:
+        checks["database"] = "unavailable"
+        ready = False
+
+    if os.getenv("MULTITENANT_READY", "false").strip().lower() == "true":
+        try:
+            validate_multitenant_schema()
+            checks["multitenant_schema"] = "ok"
+        except Exception:
+            checks["multitenant_schema"] = "invalid"
+            ready = False
+
+    try:
+        encrypt_resume(b"readiness-probe")
+        checks["resume_storage_key"] = "configured"
+    except ResumeStorageError:
+        checks["resume_storage_key"] = "missing_or_invalid"
+
+    try:
+        encrypt_password("readiness-probe")
+        checks["smtp_credentials_key"] = "configured"
+    except CredentialEncryptionError:
+        checks["smtp_credentials_key"] = "missing_or_invalid"
+
+    payload = {"status": "ready" if ready else "not_ready", "checks": checks}
+    return JSONResponse(status_code=200 if ready else 503, content=payload)
 
 
 def count_attempts_channel(db, channel, user_id=None):
