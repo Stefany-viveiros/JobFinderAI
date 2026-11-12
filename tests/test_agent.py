@@ -135,18 +135,17 @@ def test_legacy_agent_runner_blocks_before_database_when_multitenant(monkeypatch
 
 
 def test_cancelled_attempt_can_be_prepared_again_by_agent(db, ready_profile, test_user):
-    item = {
-        "source": "Remotive", "title": "Estágio Backend Python", "company": "ACME",
-        "url": "https://a.test/1",
-        "description": "Python FastAPI Git APIs REST. Envie seu currículo para vagas@acme.com",
-        "location": "Brasil", "modality": "Remoto", "job_type": "Estágio",
-    }
-    first = run_agent(db, collector=lambda names: ([item], []), user_id=test_user.id)
+    # Reutiliza o cenário completo já validado do pipeline: uma vaga por e-mail
+    # e outra manual. O teste isola somente a transição cancelada -> nova tentativa.
+    first = run_agent(db, collector=feed(), user_id=test_user.id)
     assert first["awaiting_approval"] == 1
-    attempt = db.scalar(select(ApplicationAttempt))
+    attempt = db.scalar(select(ApplicationAttempt).where(ApplicationAttempt.channel == "email"))
+    assert attempt is not None
     applying.cancel_attempt(db, attempt)
 
     second = run_agent(db, collect=False, user_id=test_user.id)
     assert second["awaiting_approval"] == 1
     all_attempts = db.scalars(select(ApplicationAttempt).order_by(ApplicationAttempt.id)).all()
-    assert [row.status for row in all_attempts] == ["cancelled", "awaiting_approval"]
+    assert sorted(row.status for row in all_attempts) == [
+        "awaiting_approval", "cancelled", "manual_required"
+    ]
