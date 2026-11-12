@@ -173,3 +173,37 @@ def test_remotive_is_directory_only_due_to_redistribution_restrictions():
     assert sources.SOURCE_INFO["Remotive"]["mode"] == "link_only"
     assert sources.SOURCE_INFO["Remotive"]["search_api"] is False
     assert any(item["source"] == "Remotive" for item in sources.external_search_links(["python"]))
+
+
+@pytest.mark.parametrize(
+    "url, expected",
+    [
+        ("https://empresa.com/vaga/123", True),
+        ("http://empresa.com/vaga/123", True),
+        ("javascript:alert(1)", False),
+        ("data:text/html,<script>alert(1)</script>", False),
+        ("file:///etc/passwd", False),
+        ("https://usuario:senha@empresa.com/vaga", False),
+        ("https:///sem-host", False),
+        ("https://empresa.com/vaga com espaço", False),
+        (" https://empresa.com/vaga", False),
+        ("", False),
+        (None, False),
+    ],
+)
+def test_external_job_urls_only_allow_safe_web_links(url, expected):
+    assert sources._is_safe_job_url(url) is expected
+
+
+def test_arbeitnow_discards_unsafe_job_urls(monkeypatch):
+    payload = {
+        "data": [
+            {"slug": "safe", "url": "https://empresa.com/vaga", "title": "Estágio"},
+            {"slug": "unsafe", "url": "javascript:alert(1)", "title": "Estágio"},
+            {"slug": "credentials", "url": "https://user:pass@empresa.com/vaga", "title": "Estágio"},
+        ]
+    }
+    monkeypatch.setattr(requests, "get", lambda *a, **k: FakeResponse(payload))
+    jobs = sources.fetch_arbeitnow()
+    assert len(jobs) == 1
+    assert jobs[0]["url"] == "https://empresa.com/vaga"
