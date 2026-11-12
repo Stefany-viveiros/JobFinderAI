@@ -30,7 +30,7 @@ from .sources import SOURCES, SOURCE_INFO, LINK_ONLY_SOURCES, collect_selected, 
 from . import applying
 from .agent import get_agent_settings, run_agent, TARGET_LEVELS
 from .mailer import send_daily_reminder
-from .config import settings
+from .config import settings, parse_cors_origins
 from .resume_parser import parse_resume, extract_resume_text
 from .resume_ai import analyze_resume_with_gemini, ResumeAIError
 from .market_service import (create_market_snapshot, index_unprocessed_jobs, build_profile_gap,
@@ -41,7 +41,7 @@ from .matching import diagnose_job_requirements
 
 app = FastAPI(title="JobFinder AI API", version="1.1.0", description="API do JobFinder AI")
 try:
-    cors_origins = settings_cors_origins = __import__("jobfinder.config", fromlist=["parse_cors_origins"]).parse_cors_origins(
+    cors_origins = parse_cors_origins(
         os.getenv("CORS_ORIGINS") or "http://localhost:5173,http://127.0.0.1:5173"
     )
 except ValueError as exc:
