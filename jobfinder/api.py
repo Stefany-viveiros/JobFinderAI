@@ -36,7 +36,7 @@ from .config import settings, parse_cors_origins
 from .smtp_credentials import encrypt_password, decrypt_password, CredentialEncryptionError
 from .resume_parser import parse_resume, extract_resume_text
 from .resume_ai import analyze_resume_with_gemini, ResumeAIError
-from .resume_storage import encrypt_resume, safe_filename, resume_content_type, ResumeStorageError
+from .resume_storage import encrypt_resume, decrypt_resume, digest_resume, safe_filename, resume_content_type, ResumeStorageError
 from .market_service import (create_market_snapshot, index_unprocessed_jobs, build_profile_gap,
     list_development_plan, create_development_item, update_development_item, DEVELOPMENT_STATUSES,
     create_skill_assessment, submit_skill_assessment, list_skill_assessments, compare_market_trends)
@@ -998,16 +998,28 @@ def agent_settings_dict(db, user_id=None):
     s = get_agent_settings(db, user_id=user_id)
     p = get_profile(db, user_id=user_id)
     smtp_account = db.scalar(select(SmtpAccount).where(SmtpAccount.user_id == user_id))
+    smtp_ready = bool(smtp_account_dict(smtp_account).get("ready", False))
+    multitenant = os.getenv("MULTITENANT_READY", "false").strip().lower() == "true"
+    resume_ready = False
+    if user_id is not None:
+        resume = db.scalar(select(UserResume).where(UserResume.user_id == user_id))
+        if resume is not None:
+            try:
+                content = decrypt_resume(resume.encrypted_content)
+                resume_ready = bool(content) and digest_resume(content) == resume.sha256
+            except ResumeStorageError:
+                resume_ready = False
+    email_ready = smtp_ready and (resume_ready if multitenant else True)
+    if multitenant and not smtp_ready:
+        email_block_reason = "Conecte uma conta SMTP individual para habilitar envios."
+    elif multitenant and not resume_ready:
+        email_block_reason = "Guarde seu currículo com armazenamento cifrado no Perfil profissional para habilitar envios."
+    else:
+        email_block_reason = ""
     return {"auto_apply_enabled": s.auto_apply_enabled, "require_approval": s.require_approval,
             "daily_limit": s.daily_limit, "min_score": s.min_score,
             "sent_today": applying.sent_today_count(db, user_id=user_id),
-            "email_ready": bool(smtp_account_dict(smtp_account).get("ready", False)) and
-                           os.getenv("MULTITENANT_READY", "false").strip().lower() != "true",
-            "email_block_reason": (
-                "O envio por e-mail ficará disponível quando o currículo individual puder ser armazenado "
-                "e anexado com segurança. Até lá, finalize no portal original."
-                if os.getenv("MULTITENANT_READY", "false").strip().lower() == "true" else ""
-            ),
+            "email_ready": email_ready, "email_block_reason": email_block_reason,
             "profile_gaps": applying.profile_gaps(p), "profile_ready": not applying.profile_gaps(p)}
 
 
