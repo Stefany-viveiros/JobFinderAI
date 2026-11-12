@@ -1,7 +1,7 @@
 # Progresso — JobFinder AI Proof-to-Opportunity Engine
 
 **Branch:** `feature/proof-to-opportunity-engine`  
-**Último commit:** `56c067e032ab0314db94ea5245253ff5649f57f9`  
+**Último commit:** `e15e0c250d37a19b561815c1560c331011bac438`  
 **Atualização:** 12/11/2026.
 
 ## Estado de execução
@@ -13,9 +13,9 @@
 | C — Career Twin | Incremento concluído | Read model determinístico, evidências por origem, linha do tempo com dados da conta e eventos de plano/desafio; CI aprovado |
 | D — Diagnóstico de oportunidades | Incremento concluído | Endpoint por vaga com classificação de requisitos e rastreabilidade de evidências; não mede proficiência; CI aprovado |
 | E — Desenvolvimento e desafios | Parcial | Plano e autoavaliação existentes; conclusão aparece na linha do tempo, mas não existe ledger de eventos nem runner seguro |
-| F — Candidaturas e agente | Parcial | Agente, aprovação, histórico e controles existentes; revisão completa das fontes externas e métricas de conversão ainda pendentes |
+| F — Candidaturas e agente | Incremento de histórico concluído; métricas parciais | Pipeline preservado; histórico por evento/conta no backend e frontend; migração aditiva e isolamento testado; métricas de conversão e cobertura das fontes pendentes |
 | G — Inteligência de mercado | Incremento concluído | Snapshot, Skill Gap com contexto de amostra e comparação de dois snapshots equivalentes; agendamento recorrente ainda depende de infraestrutura |
-| H — Qualidade e entrega | Parcial | CI SQLite/PostgreSQL/build aprovado; não foi feito deploy; `MULTITENANT_READY=false` e demonstração somente leitura permanecem |
+| H — Qualidade e entrega | Parcial | CI SQLite/PostgreSQL/build aprovado; upload DOCX endurecido; downgrade de histórico preserva dados; não houve deploy; gates continuam fechados |
 
 ## Implementações commitadas nesta branch
 
@@ -26,6 +26,10 @@
 - `a6dc733` / `a49e1dc`: metadados de amostra do Skill Gap e autenticação/CSRF no cliente da página de mercado; build corrigido.
 - `d9c2a9f`: linha do tempo de Career Twin, metas concluídas e autoavaliações.
 - `56c067e`: tendências entre snapshots comparáveis.
+- `c5c00a0`: limites de expansão de DOCX antes da leitura.
+- `9bd6a19`: bloqueio também no runner de lembretes SMTP globais.
+- `145655c`: histórico de mudanças de etapa de candidatura e migração Alembic aditiva.
+- `e15e0c2`: downgrade da migração de histórico não apaga eventos existentes.
 
 ## Evidências reais do GitHub Actions
 
@@ -43,6 +47,9 @@
 - Diagnóstico por vaga e amostra do Skill Gap: [CI 43143439053](https://github.com/Stefany-viveiros/JobFinderAI/actions/runs/43143439053).
 - Linha do tempo do Career Twin: [CI 43144640122](https://github.com/Stefany-viveiros/JobFinderAI/actions/runs/43144640122).
 - Tendências de mercado: [CI 43145152234](https://github.com/Stefany-viveiros/JobFinderAI/actions/runs/43145152234).
+- DOCX e limites ZIP: [CI 43146427900](https://github.com/Stefany-viveiros/JobFinderAI/actions/runs/43146427900).
+- Bloqueio do lembrete global: [CI 43146092761](https://github.com/Stefany-viveiros/JobFinderAI/actions/runs/43146092761).
+- Histórico de candidaturas: [CI 43147354689](https://github.com/Stefany-viveiros/JobFinderAI/actions/runs/43147354689).
 
 Os avisos de depreciação registrados pelo CI não foram tratados como falhas. Algumas execuções intermediárias falharam e foram corrigidas antes dos commits validados; não se alteraram testes para mascarar as falhas.
 
@@ -73,3 +80,20 @@ Os avisos de depreciação registrados pelo CI não foram tratados como falhas. 
 ## Próximo passo exato
 
 Auditar todas as rotas restantes de autenticação, perfil, configurações e candidaturas e acrescentar testes de acesso cruzado onde ainda faltar cobertura. Depois revisar o schema/migrações em ambiente de teste PostgreSQL e só então decidir sobre qualquer mudança de `MULTITENANT_READY`.  
+
+
+## Incrementos recentes de segurança e candidaturas — 12/11/2026
+
+- `jobfinder/resume_parser.py`: limita entradas ZIP, tamanho descompactado por entrada e total, valida componentes DOCX e recusa taxa de compressão excessiva. O upload continua limitado a 5 MB.
+- `jobfinder/mailer.py`: bloqueia o lembrete global também quando o runner é chamado diretamente em modo multiusuário.
+- `ApplicationEvent`: registra a sequência de status e a origem (SMTP, confirmação manual ou atualização manual) com `user_id`.
+- `GET /api/applications/{application_id}/history`: confirma que a candidatura pertence à conta e retorna somente eventos da mesma conta.
+- `frontend/src/App.jsx`: painel de candidaturas permite abrir histórico, com estados de carregamento, erro e vazio.
+- `20261112_0002`: migração aditiva. O downgrade interrompe se houver eventos, sem apagar dados.
+
+**CI do histórico — commit `145655c`:** SQLite 117 passed / 1 skipped; PostgreSQL 16 118 passed; build Vite aprovado.  
+**Validação do downgrade seguro — commit `e15e0c2`:** aguardando execução CI desta revisão.
+
+## Próximo passo exato
+
+Continuar a auditoria endpoint a endpoint com foco em vínculo cruzado de entidades (por exemplo, tarefas associadas a vagas globais, operações de candidatura sobre vagas não vinculadas à conta, e qualquer rota que receba IDs de registros privados). Adicionar testes de IDOR negativos onde necessário. Depois executar testes de migração e rollback em PostgreSQL efêmero, sem tocar no banco de produção.

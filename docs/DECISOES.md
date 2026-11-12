@@ -1,6 +1,6 @@
 # Decisões técnicas — JobFinder AI
 
-Atualizado em: 11/11/2026  
+Atualizado em: 12/11/2026  
 Branch de trabalho: `feature/proof-to-opportunity-engine`
 
 Este documento registra decisões de segurança e produto tomadas durante a finalização do MVP. Nenhuma decisão autoriza deploy, alteração na `main` ou acesso ao banco de produção.
@@ -111,3 +111,30 @@ A inspeção foi realizada por leitura dos arquivos da branch no GitHub. O ambie
 **Decisão:** implementar `compare_market_trends` e `GET /api/market/trends`. Apenas snapshots concluídos com período, níveis, mínimo de amostra e versões de taxonomia/extrator equivalentes entram no mesmo grupo. O delta é exibido em pontos percentuais. O endpoint retorna indisponibilidade quando há menos de dois snapshots comparáveis.
 
 **Consequências:** não mistura janelas nem versões incompatíveis. A variação é descritiva, não preditiva. Não há agendador quinzenal ativo; a geração de snapshots segue manual até configurar infraestrutura de execução recorrente.
+
+
+## 13. Histórico das etapas de candidatura
+
+**Contexto:** o modelo `Application` mantinha apenas a etapa atual e a data de atualização, sem permitir reconstruir a sequência de entrevista, teste técnico, aprovação ou encerramento.
+
+**Alternativas:** (a) inferir o histórico a partir de `updated_at` e notas; (b) criar uma tabela aditiva de eventos, sem fabricar eventos anteriores.
+
+**Decisão:** criar `ApplicationEvent` e a migração Alembic `20261112_0002`. O backend registra a etapa inicial quando uma candidatura é criada após o recurso, as transições feitas pela pessoa usuária e a origem do envio por SMTP ou confirmação manual. O endpoint `GET /api/applications/{application_id}/history` valida primeiro a titularidade da candidatura e filtra novamente por `user_id`. A tela de Candidaturas permite abrir a linha do tempo.
+
+**Consequências:** os registros históricos existentes permanecem intocados; não são reconstruídos por inferência. Eventos são imutáveis pela API. A migração é aditiva; downgrade só remove uma tabela vazia e se recusa a continuar quando há eventos.
+
+## 14. Proteção do runner de lembretes global
+
+**Contexto:** a rota HTTP de notificações já estava bloqueada no modo multiusuário, mas o script legado do Agendador chamava diretamente `send_daily_reminder`, que consultava tarefas globais e usava `SMTP_TO` compartilhado.
+
+**Decisão:** bloquear o serviço de envio também quando `MULTITENANT_READY=true`, antes de consultar tarefas ou abrir conexão SMTP.
+
+**Consequências:** o agendador local permanece disponível no modo individual; no modo multiusuário, lembretes só poderão ser liberados após configuração e envio individual por conta.
+
+## 15. Limites de arquivo DOCX
+
+**Contexto:** o tamanho comprimido do upload não limita o volume que um pacote ZIP pode expandir durante a leitura.
+
+**Decisão:** validar o pacote DOCX antes de chamar a biblioteca de documentos: número de entradas, nomes duplicados, presença dos componentes essenciais, criptografia, tamanho de cada entrada, volume total descompactado e taxa de compressão.
+
+**Consequências:** essa é uma defesa de consumo de recursos, não um antivírus ou sandbox. O limite binário de upload permanece 5 MB; o texto extraído continua limitado a 60 mil caracteres.

@@ -1,6 +1,6 @@
 # Auditoria do repositório — JobFinder AI
 
-**Data:** 11/11/2026  
+**Data:** 12/11/2026  
 **Branch auditada:** `feature/proof-to-opportunity-engine`  
 **Commit-base:** `62559f48982616686923b4e396acfb9aa8d7cf02`  
 **Escopo:** leitura do código da branch no GitHub; sem acesso ao banco real, sem deploy e sem alteração da `main`.
@@ -9,7 +9,7 @@
 
 | Funcionalidade | Situação atual | O que falta | Ação |
 |---|---|---|---|
-| Currículo PDF/DOCX | Parcial | Consentimento externo por importação, limite de uso e validação do conteúdo no backend | Implementar consentimento explícito, rate limit e validações; preservar revisão manual |
+| Currículo PDF/DOCX | Incrementado | Consentimento explícito para Gemini, extração local padrão, cinco importações/hora, limite 5 MB, validação de assinatura/estrutura e barreira contra DOCX ZIP expansivo | Manter atualização de bibliotecas e considerar antivírus/limite de CPU em infraestrutura; não tratar validação básica como antivírus |
 | Perfil profissional | Parcial | Consolidar objetivos, evidências e trilha temporal em uma visão única | Reaproveitar os registros estruturados existentes e completar a experiência |
 | Career Twin | Incrementado | Read model determinístico e interface mostram evidências por origem; a linha do tempo agrega formação, experiência, projeto, aprendizado, metas e desafios por conta | Manter derivações explicáveis; ledger persistente e eventos completos de edição ainda não existem |
 | Skill Gap | Incrementado | Snapshot × perfil, metadados de período/amostra e diagnóstico por requisito de vaga com origem da evidência | Ampliar taxonomia/contexto e avaliar obrigatoriedade quando descrições forem ambíguas; ausência de menção não é ausência de conhecimento |
@@ -18,7 +18,7 @@
 | Desafios | Parcial | Desafios e checklist são autoavaliação; não há runner ou revisão humana independente | Manter avaliação automática claramente indisponível; não executar código do usuário |
 | Autenticação | Implementada no núcleo | Revisão adicional de configuração, expiração e operação de e-mail | Preservar Argon2, sessão opaca, cookies e recuperação de senha |
 | Multiusuário | Parcial, fail-closed | Campos de propriedade e consultas escopadas existem; há testes com duas contas; dados legados podem permanecer sem proprietário e o gate bloqueia acesso por padrão | Não habilitar `MULTITENANT_READY` antes de auditoria endpoint a endpoint e schema válido |
-| Candidaturas | Parcial | Pipeline e histórico existem; envio real depende de canal externo e métricas ainda precisam de regras de suficiência | Preservar aprovação, limite diário, compatibilidade mínima e confirmação real |
+| Candidaturas | Incrementado | Pipeline, aprovação, limite diário, compatibilidade mínima e histórico imutável de mudanças de etapa por conta; migração Alembic aditiva | Completar métricas de conversão com amostra suficiente; histórico só conta a partir da ativação e não recupera etapas anteriores |
 | Agente de candidaturas | Implementado com limites | Envio automático só é real para e-mail/SMTP elegível; plataformas externas exigem ação manual | Não ampliar automação além de canais permitidos; registrar falhas reais |
 | Fontes de vagas | Parcial | Remotive, Arbeitnow, OkEmprego e Nerdin têm coleta; Indeed e Vagas.com são links de busca/manual | Monitorar erros e deduplicação; não simular coleta indisponível |
 | Deploy | Parcial | Render + Neon configurados como demonstração; não liberar workspace antes do gate de segurança | Manter read-only, sem deploy ou acesso a banco de produção nesta tarefa |
@@ -37,7 +37,8 @@
 5. Antes deste incremento, o endpoint de importação acionava Gemini apenas pela presença de `GEMINI_API_KEY`, sem consentimento por solicitação, e não possuía rate limit específico.
 6. O upload já limitava leitura a 5 MB e não persistia o arquivo original. Ainda faltavam validação de assinatura/MIME e limite de tentativas. A validação de assinatura adicionada é defesa básica, não antivírus.
 7. A autenticação usa Argon2, token de sessão aleatório com hash persistido, cookie HttpOnly e token CSRF. O cookie seguro e o HTTPS precisam permanecer alinhados à configuração de produção.
-8. O envio de lembretes usa destinatário SMTP legado global e está bloqueado no SaaS para evitar envio entre contas. Não habilitar esse fluxo antes da configuração por usuário.
+8. O envio de lembretes usa destinatário SMTP legado global e está bloqueado tanto na rota HTTP quanto no runner do Agendador quando `MULTITENANT_READY=true`. Não habilitar esse fluxo antes da configuração por usuário.
+9. A migração de histórico de candidaturas é aditiva; o downgrade recusa apagar a tabela quando existem eventos, preservando os dados.
 
 ### Integridade do produto
 
@@ -112,3 +113,15 @@ O incremento de privacidade do upload foi implementado em `jobfinder/api.py` e `
 - Projetos não possuem campos de data no schema; eventos de projeto aparecem com data não informada.
 - Classificação de requisito é baseada em marcadores e frases, não em compreensão semântica completa.
 - Tendências dependem de snapshots manuais e de registros locais de primeira coleta; não equivalem a projeção de mercado.
+
+
+## Atualização de segurança e candidaturas — 12/11/2026
+
+- O serviço de lembrete legado agora também bloqueia execução direta do Agendador do Windows quando `MULTITENANT_READY=true`; a proteção não depende apenas da rota HTTP.
+- O parser DOCX valida estrutura ZIP, quantidade de entradas, tamanho máximo de cada entrada, tamanho total descompactado e taxa de compressão antes de abrir o documento.
+- `application_events` registra mudanças de etapa da candidatura com `user_id`, candidatura, status anterior/novo, origem, anotação e data.
+- O endpoint de histórico verifica a propriedade da candidatura e filtra também cada evento pela conta autenticada.
+- O downgrade da revisão `20261112_0002` interrompe quando existem eventos e não elimina o histórico.
+- O frontend permite consultar o histórico no painel de candidaturas e informa que eventos antigos não são reconstruídos.
+
+**CI do commit `145655c856ca9cd7c4d4ef60cfecff69164fb4ce`:** SQLite 117 passed / 1 skipped; PostgreSQL 16 118 passed; build Vite aprovado. Execução: `43147354689`.

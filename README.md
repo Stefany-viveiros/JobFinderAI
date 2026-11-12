@@ -35,11 +35,12 @@ A pontuação é uma heurística explicável para apoiar a triagem. Não represe
 ### Importação de currículo
 - Envio de currículo em PDF ou DOCX, com limite de 5 MB.
 - Extração de informações para sugerir preenchimento de formação, experiências, cursos, certificações e projetos.
-- Análise inteligente com Gemini quando a variável `GEMINI_API_KEY` está configurada.
-- Extrator básico como alternativa quando a chave não está configurada.
+- Análise inteligente com Gemini somente quando a pessoa autoriza explicitamente o envio do conteúdo naquela importação e `GEMINI_API_KEY` está configurada.
+- Extração local como padrão quando não há consentimento ou chave configurada.
+- Validação de estrutura PDF/DOCX e limite de 5 MB; no DOCX, limites adicionais de entradas, tamanho descompactado e taxa de compressão.
 - Revisão dos dados extraídos antes de salvar o perfil.
 
-**Privacidade e controle:** o arquivo original não é salvo pelo endpoint de importação. A extração não sobrescreve o perfil automaticamente; a pessoa usuária revisa os campos e decide quando salvar. A análise com Gemini envia o texto extraído ao serviço do Google, portanto configure a chave e avalie as políticas do provedor antes de utilizar currículos com dados pessoais.
+**Privacidade e controle:** o arquivo original não é salvo pelo endpoint de importação. A extração não sobrescreve o perfil automaticamente; a pessoa usuária revisa os campos e decide quando salvar. Sem autorização explícita por solicitação, o currículo é processado localmente. Quando autorizada, a análise Gemini envia o texto extraído ao serviço do Google; a chave permanece no servidor e o limite é de cinco importações por conta por hora.
 
 Endpoint: `POST /api/profile/import`.
 
@@ -49,6 +50,9 @@ Endpoint: `POST /api/profile/import`.
 - Pipeline para acompanhar as etapas dos processos seletivos.
 - Registro de datas, informações de recrutadores e anotações.
 - Indicadores de acompanhamento, incluindo vagas, candidaturas, entrevistas e novas oportunidades.
+- Histórico de mudanças de etapa com origem, estado anterior, novo estado, data e anotação.
+- O histórico começa na ativação do recurso; etapas anteriores não são inventadas retroativamente.
+- Endpoint: `GET /api/applications/{application_id}/history`.
 
 ### Agente de candidaturas
 Fluxo: **buscar → normalizar → eliminar duplicatas → filtrar estágio/júnior de tecnologia → avaliar compatibilidade → preparar → (aprovar) → enviar → registrar o resultado real**.
