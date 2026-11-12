@@ -450,3 +450,21 @@ class CareerEvidenceReview(Base):
     decision: Mapped[str] = mapped_column(String(24), nullable=False)
     note: Mapped[str] = mapped_column(Text, nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+
+class SmtpAccount(Base):
+    """Conexão SMTP individual; a senha é persistida somente cifrada."""
+    __tablename__ = "smtp_accounts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True
+    )
+    host: Mapped[str] = mapped_column(String(255), nullable=False)
+    port: Mapped[int] = mapped_column(Integer, nullable=False, default=587)
+    username: Mapped[str] = mapped_column(String(320), nullable=False)
+    encrypted_password: Mapped[str] = mapped_column(Text, nullable=False)
+    from_email: Mapped[str] = mapped_column(String(320), nullable=False)
+    use_tls: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
