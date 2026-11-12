@@ -93,6 +93,10 @@ def validate_multitenant_schema() -> None:
         columns = {column["name"] for column in inspector.get_columns(table)}
         if "user_id" not in columns:
             raise RuntimeError(f"Schema SaaS inválido: coluna {table}.user_id ausente.")
+        if columns["user_id"]["nullable"]:
+            raise RuntimeError(
+                f"Schema SaaS inválido: {table}.user_id não pode aceitar NULL."
+            )
         owner_fk_exists = any(
             fk.get("constrained_columns") == ["user_id"]
             and fk.get("referred_table") == "users"
@@ -152,6 +156,20 @@ def validate_multitenant_schema() -> None:
     if mismatched_reviews:
         raise RuntimeError(
             f"Schema SaaS inválido: {mismatched_reviews} revisão(ões) sem evidência correspondente ou vinculada(s) a outra conta."
+        )
+
+    # O histórico de candidatura também é privado: não basta o evento
+    # pertencer a um usuário válido; ele precisa pertencer ao dono da candidatura.
+    with engine.connect() as conn:
+        mismatched_application_events = conn.execute(text(
+            "SELECT COUNT(*) FROM application_events ev "
+            "LEFT JOIN applications a ON a.id = ev.application_id "
+            "WHERE a.id IS NULL OR ev.user_id != a.user_id"
+        )).scalar_one()
+    if mismatched_application_events:
+        raise RuntimeError(
+            f"Schema SaaS inválido: {mismatched_application_events} evento(s) de candidatura "
+            "sem candidatura correspondente ou vinculados a outra conta."
         )
 
     for table in ("applications", "job_matches"):
