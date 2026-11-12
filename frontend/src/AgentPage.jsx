@@ -39,7 +39,7 @@ export default function AgentPage({ settings, setSettings, onSave, onRun, runRes
       <div className="heading-actions"><button className="btn btn-primary" onClick={onRun} disabled={busy}>{busy ? <LoaderCircle size={16} className="spin"/> : <Play size={16}/>} Executar agente agora</button></div></div>
 
     {!settings.profile_ready && <div className="agent-alert"><CircleHelp size={16}/> Perfil incompleto: faltam {settings.profile_gaps?.join(', ')}. O agente coleta vagas, mas só prepara candidaturas com seus dados reais preenchidos em “Perfil profissional”.</div>}
-    {!settings.email_ready && <div className="agent-alert"><CircleHelp size={16}/> Envio por e-mail indisponível: configure sua conexão SMTP individual abaixo. Sem isso, toda candidatura será preparada para finalização manual no site da vaga.</div>}
+    {!settings.email_ready && <div className="agent-alert"><CircleHelp size={16}/> {settings.email_block_reason || 'Envio por e-mail indisponível: configure sua conexão SMTP individual abaixo. Sem isso, toda candidatura será preparada para finalização manual no site da vaga.'}</div>}
     {noApproval && settings.auto_apply_enabled && <div className="agent-alert warn"><CircleHelp size={16}/> Aprovação desativada com envio automático ligado: o agente enviará e-mails sem revisão, até o limite diário.</div>}
 
     <div className="panel agent-settings">
