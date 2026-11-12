@@ -1,3 +1,4 @@
+import pytest
 from jobfinder import applying
 from jobfinder.agent import get_agent_settings, run_agent
 from jobfinder.models import ApplicationAttempt
