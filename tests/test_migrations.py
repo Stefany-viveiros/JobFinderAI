@@ -551,3 +551,76 @@ def test_smtp_accounts_migration_is_account_scoped_and_refuses_data_loss(tmp_pat
         assert connection.execute(sa.text("SELECT COUNT(*) FROM smtp_accounts")).scalar_one() == 1
     assert sa.inspect(engine).has_table("smtp_accounts")
     engine.dispose()
+
+
+def test_postgresql_smtp_accounts_migration_is_account_scoped_and_preserves_credentials(monkeypatch):
+    import os
+    from uuid import uuid4
+    from sqlalchemy.engine import make_url
+
+    postgres_url = os.getenv("TEST_POSTGRES_URL")
+    if not postgres_url:
+        pytest.skip("TEST_POSTGRES_URL não configurada; teste executado no CI com PostgreSQL.")
+    admin_engine = sa.create_engine(postgres_url)
+    schema = f"jobfinder_smtp_{uuid4().hex}"
+    with admin_engine.begin() as connection:
+        connection.execute(sa.text(f'CREATE SCHEMA "{schema}"'))
+    scoped_url = make_url(postgres_url).set(
+        query={"options": f"-csearch_path={schema}"}
+    )
+    engine = sa.create_engine(scoped_url)
+    try:
+        metadata = sa.MetaData()
+        sa.Table("users", metadata, sa.Column("id", sa.Integer, primary_key=True))
+        sa.Table(
+            "applications", metadata,
+            sa.Column("id", sa.Integer, primary_key=True),
+            sa.Column("user_id", sa.Integer, nullable=True),
+            sa.Column("job_id", sa.Integer, nullable=False),
+            sa.UniqueConstraint("user_id", "job_id", name="uq_user_application_job"),
+        )
+        metadata.create_all(engine)
+
+        config_path = Path(__file__).resolve().parents[1] / "alembic.ini"
+        config = Config(str(config_path))
+        config.set_main_option("sqlalchemy.url", str(scoped_url).replace("%", "%%"))
+        monkeypatch.setenv("DATABASE_URL", str(scoped_url))
+        command.upgrade(config, "head")
+
+        inspector = sa.inspect(engine)
+        assert inspector.has_table("smtp_accounts")
+        unique_sets = {
+            tuple(sorted(item.get("column_names") or ()))
+            for item in inspector.get_unique_constraints("smtp_accounts")
+        }
+        assert ("user_id",) in unique_sets
+        assert any(
+            fk["constrained_columns"] == ["user_id"]
+            and fk["referred_table"] == "users"
+            for fk in inspector.get_foreign_keys("smtp_accounts")
+        )
+        with engine.begin() as connection:
+            connection.execute(sa.text("INSERT INTO users (id) VALUES (1), (2)"))
+            connection.execute(sa.text(
+                "INSERT INTO smtp_accounts "
+                "(id, user_id, host, port, username, encrypted_password, from_email, use_tls, created_at, updated_at) "
+                "VALUES (1, 1, 'smtp.example.test', 587, 'user@example.test', 'ciphertext-only', "
+                "'user@example.test', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            ))
+        with pytest.raises(IntegrityError):
+            with engine.begin() as connection:
+                connection.execute(sa.text(
+                    "INSERT INTO smtp_accounts "
+                    "(id, user_id, host, port, username, encrypted_password, from_email, use_tls, created_at, updated_at) "
+                    "VALUES (2, 1, 'smtp.example.test', 587, 'other@example.test', 'ciphertext-only', "
+                    "'other@example.test', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                ))
+        with pytest.raises(RuntimeError, match="os dados não serão apagados"):
+            command.downgrade(config, "20261112_0004")
+        with engine.connect() as connection:
+            assert connection.execute(sa.text("SELECT COUNT(*) FROM smtp_accounts")).scalar_one() == 1
+    finally:
+        engine.dispose()
+        with admin_engine.begin() as connection:
+            connection.execute(sa.text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+        admin_engine.dispose()
