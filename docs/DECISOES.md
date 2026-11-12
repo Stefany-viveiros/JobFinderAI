@@ -138,3 +138,24 @@ A inspeção foi realizada por leitura dos arquivos da branch no GitHub. O ambie
 **Decisão:** validar o pacote DOCX antes de chamar a biblioteca de documentos: número de entradas, nomes duplicados, presença dos componentes essenciais, criptografia, tamanho de cada entrada, volume total descompactado e taxa de compressão.
 
 **Consequências:** essa é uma defesa de consumo de recursos, não um antivírus ou sandbox. O limite binário de upload permanece 5 MB; o texto extraído continua limitado a 60 mil caracteres.
+
+
+## 16. Autoavaliação vinculada ao plano e avaliação automática indisponível
+
+**Contexto:** o Career Twin apresentava a autoavaliação de um desafio, mas não deixava visível a meta do plano relacionada; a interface também precisava comunicar claramente a ausência de runner.
+
+**Alternativas:** (a) apresentar a autoavaliação como validação; (b) manter a classificação de autoavaliação, relacionar a meta quando houver vínculo e declarar a indisponibilidade de execução automática.
+
+**Decisão:** incluir `plan_item_id` na evidência derivada do desafio e no detalhe do evento da linha do tempo. A interface mostra a meta vinculada. A página de desafios informa que avaliação automática de código não está disponível e que os arquivos/códigos enviados não são executados.
+
+**Consequências:** a relação é rastreável quando o desafio foi criado a partir de uma meta. Não cria evidência independente, não atribui proficiência e não executa código do usuário. O ledger persistente e a validação por avaliador permanecem pendentes.
+
+## 17. Navegação por módulos sem duplicação de telas
+
+**Contexto:** as capacidades de Career Twin, Skill Gap, desafios e plano já existiam em duas páginas React principais, mas a navegação não refletia os módulos do produto.
+
+**Alternativas:** (a) criar páginas independentes com novos estados e chamadas duplicadas; (b) expor atalhos para as seções dos componentes existentes.
+
+**Decisão:** reorganizar o menu lateral e reutilizar `CareerTwinPage` e `MarketIntelligencePage`, com rolagem para as seções de competências, diagnóstico, desafios e plano.
+
+**Consequências:** reduz duplicação e preserva APIs e estados atuais. Os módulos Competências/Diagnóstico/Desafios/Plano são pontos de entrada para seções existentes, não subsistemas independentes. O painel de candidaturas mostra contagens reais, mas não estima conversão sem amostra/coorte suficiente.

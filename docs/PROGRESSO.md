@@ -1,7 +1,7 @@
 # Progresso — JobFinder AI Proof-to-Opportunity Engine
 
 **Branch:** `feature/proof-to-opportunity-engine`  
-**Último commit:** `e15e0c250d37a19b561815c1560c331011bac438`  
+**Último commit:** `e61097bdd895b9881681b486703b591a4eb04527`  
 **Atualização:** 12/11/2026.
 
 ## Estado de execução
@@ -12,10 +12,10 @@
 | B — Segurança e privacidade | Incrementos concluídos; liberação SaaS pendente | Consentimento explícito para Gemini, upload endurecido, rate limit, CSRF e testes de isolamento; gate continua fechado |
 | C — Career Twin | Incremento concluído | Read model determinístico, evidências por origem, linha do tempo com dados da conta e eventos de plano/desafio; CI aprovado |
 | D — Diagnóstico de oportunidades | Incremento concluído | Endpoint por vaga com classificação de requisitos e rastreabilidade de evidências; não mede proficiência; CI aprovado |
-| E — Desenvolvimento e desafios | Parcial | Plano e autoavaliação existentes; conclusão aparece na linha do tempo, mas não existe ledger de eventos nem runner seguro |
-| F — Candidaturas e agente | Incremento de histórico concluído; métricas parciais | Pipeline preservado; histórico por evento/conta no backend e frontend; migração aditiva e isolamento testado; métricas de conversão e cobertura das fontes pendentes |
+| E — Desenvolvimento e desafios | Parcial, com UX reforçada | Autoavaliação agora referencia a meta do plano na evidência e na linha do tempo; interface informa explicitamente que avaliação automática/runner de código não está disponível. Ledger persistente e validação independente seguem pendentes |
+| F — Candidaturas e agente | Histórico concluído; métricas parciais | Pipeline e política do agente preservados; histórico por evento/conta no backend e frontend. Painel mostra totais, entrevistas, andamento e aprovações; taxa de conversão não é exibida sem base temporal/coorte suficiente. Métricas de retorno e cobertura das fontes ainda pendentes |
 | G — Inteligência de mercado | Incremento concluído | Snapshot, Skill Gap com contexto de amostra e comparação de dois snapshots equivalentes; agendamento recorrente ainda depende de infraestrutura |
-| H — Qualidade e entrega | Parcial | CI SQLite/PostgreSQL/build aprovado; upload DOCX endurecido; downgrade de histórico preserva dados; não houve deploy; gates continuam fechados |
+| H — Qualidade e entrega | Parcial, CI verde | CI SQLite/PostgreSQL/build aprovado na revisão atual; navegação modular ligada às telas existentes; upload DOCX endurecido; downgrade de histórico preserva dados. Não houve deploy; gates continuam fechados |
 
 ## Implementações commitadas nesta branch
 
@@ -97,3 +97,23 @@ Auditar todas as rotas restantes de autenticação, perfil, configurações e ca
 ## Próximo passo exato
 
 Continuar a auditoria endpoint a endpoint com foco em vínculo cruzado de entidades (por exemplo, tarefas associadas a vagas globais, operações de candidatura sobre vagas não vinculadas à conta, e qualquer rota que receba IDs de registros privados). Adicionar testes de IDOR negativos onde necessário. Depois executar testes de migração e rollback em PostgreSQL efêmero, sem tocar no banco de produção.
+
+
+## Atualização de 12/11/2026 — navegação, desafios e validação final desta rodada
+
+- Navegação lateral reorganizada para: Visão geral, Oportunidades, Agente, Candidaturas, Meu Career Twin, Competências, Diagnóstico, Desafios, Mercado, Plano, Tarefas e Configurações. Os itens reaproveitam os componentes existentes; não criam telas com dados fictícios.
+- Atalhos Competências e Diagnóstico rolam até as seções existentes correspondentes.
+- A autoavaliação de desafio passa a carregar o identificador da meta vinculada na evidência do Career Twin e no evento da linha do tempo.
+- A página de desafios informa que avaliação automática de código não está disponível e que código enviado não é executado no servidor.
+- A área de candidaturas mantém contagens observáveis (total, entrevistas, andamento e aprovadas). Não foi adicionada taxa de conversão porque os dados atuais não sustentam uma coorte temporal confiável.
+- Commits desta rodada: `ab4390e` (isolamento do diagnóstico por conta), `b1f52ed` (vínculo desafio/meta e transparência do runner), `df711fd` (navegação modular), `7f03180` (correção do menu) e `e61097b` (âncora do diagnóstico).
+- CI do commit `e61097b`: SQLite **119 passed, 1 skipped**; PostgreSQL 16 **120 passed**; build de produção Vite **success**. Warnings reportados são avisos, não falhas.
+
+## Pendências para liberação de uso multiusuário/produção
+
+- Revisão endpoint a endpoint ainda não é considerada encerrada; manter `MULTITENANT_READY=false`.
+- Não executar deploy nem alterar banco de produção nesta entrega.
+- Antes de ativar multiusuário: auditar rotas privadas remanescentes, revisar dados legados sem proprietário e validar migrações em cópia controlada.
+- A automação quinzenal de mercado ainda exige agendador externo; o botão/manual e comparação de snapshots existentes não equivalem a agendamento ativo.
+- O ledger persistente de evidências e a validação independente de desafios continuam fora do escopo concluído; não há execução de código de usuário.
+- A taxa de conversão de candidaturas permanece oculta até existir base de candidaturas suficientemente madura e comparável.
