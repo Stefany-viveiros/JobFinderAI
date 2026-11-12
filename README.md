@@ -94,6 +94,8 @@ A área **Inteligência de mercado** analisa competências encontradas nas oport
 
 **Como interpretar os dados:** a análise usa a data `created_at` do banco, que representa quando a vaga foi observada pela primeira vez localmente, e não necessariamente sua data original de publicação. A extração inicial é determinística, baseada em nomes e aliases conhecidos. Ausência de uma competência na descrição não significa que ela não seja exigida. Frequência observada não é, isoladamente, uma recomendação definitiva de estudo.
 
+**Atualização recorrente:** o workflow `.github/workflows/market-snapshot.yml` verifica diariamente se já passaram 15 dias desde o último snapshot comparável. Para ativá-lo após integrar a branch padrão, configure o segredo GitHub Actions `MARKET_DATABASE_URL` com um banco autorizado. O runner é idempotente e não acessa dados pessoais de perfis.
+
 ### Skill Gap — mercado × perfil
 - Cruza competências observadas nas vagas com formação, experiências, projetos, cursos, certificações e informações declaradas no perfil.
 - Diferencia evidências profissionais, prática em projetos, cursos, certificações, formação, itens em estudo e competências não identificadas.
