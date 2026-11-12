@@ -1389,9 +1389,10 @@ def test_multitenant_schema_validator_rejects_cross_account_application_events(d
     )
     db.add(other)
     db.flush()
+    job = make_job(db)
     application = Application(
         user_id=test_user.id,
-        job_id=987654,
+        job_id=job.id,
         status="Candidatura enviada",
     )
     db.add(application)
