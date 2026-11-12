@@ -1,7 +1,7 @@
 # Progresso — JobFinder AI Proof-to-Opportunity Engine
 
 **Branch:** `feature/proof-to-opportunity-engine`  
-**Último commit:** `f4f5f6f1a741b31f0eb42b509950e2579a169ab0`  
+**Último commit:** `82e63618a4ad778538de1b35c7a5269d0cfc850c`  
 **Atualização:** 12/11/2026.  \n**Cobertura geral estimada:** 78% (estimativa de escopo, não métrica automatizada).
 
 ## Estado de execução
