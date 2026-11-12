@@ -1,8 +1,8 @@
 # Progresso — JobFinder AI Proof-to-Opportunity Engine
 
 **Branch:** `feature/proof-to-opportunity-engine`  
-**Último commit de implementação:** `1d14ed8`  
-**Atualização:** 12/11/2026.  \n**Cobertura geral estimada:** 85% (estimativa de escopo, não métrica automatizada).
+**Último commit de implementação:** `d63be76`  
+**Atualização:** 12/11/2026.  \n**Cobertura geral estimada:** 88% (estimativa de escopo, não métrica automatizada).
 
 ## Estado de execução
 
@@ -10,7 +10,7 @@
 |---|---|---|
 | A — Auditoria | Concluída | Matriz em `docs/AUDITORIA.md`; frontend, API, modelos, serviços, migrações, testes e deploy revisados na branch |
 | B — Segurança e privacidade | Incrementos concluídos; liberação SaaS pendente | Consentimento explícito para Gemini, upload endurecido, rate limit, CSRF e testes de isolamento; gate continua fechado |
-| C — Career Twin | Incremento concluído | Read model, linha do tempo e Ledger persistente versionado; revisão humana com observação, histórico append-only e consulta isolada por conta. CI da revisão atual em validação |
+| C — Career Twin | Incremento concluído | Read model, linha do tempo e Ledger persistente versionado; revisão humana com observação, histórico append-only, exclusão de evidência irrelevante do Career Twin/diagnóstico e consulta isolada por conta. CI funcional aprovado; teste de rollback da migração em validação |
 | D — Diagnóstico de oportunidades | Incremento concluído | Endpoint por vaga com classificação de requisitos e rastreabilidade de evidências; não mede proficiência; CI aprovado |
 | E — Desenvolvimento e desafios | Parcial, com evidências persistentes | Desafios enviados geram evidência `self_assessed` vinculada à tentativa e à competência. Continua sem execução de código ou validação independente; UI deixa essa limitação explícita |
 | F — Candidaturas e agente | Histórico concluído; métricas parciais | Pipeline e política do agente preservados; histórico por evento/conta no backend e frontend. Painel mostra totais, entrevistas, andamento e aprovações; taxa de conversão não é exibida sem base temporal/coorte suficiente. Métricas de retorno e cobertura das fontes ainda pendentes |
@@ -222,5 +222,8 @@ Continuar a auditoria endpoint a endpoint com foco em vínculo cruzado de entida
 - `POST /api/career-evidence/{evidence_id}/review` registra decisões `confirmed` e `dismissed` em eventos append-only, com observação opcional de até 1.000 caracteres.
 - `GET /api/career-evidence/{evidence_id}/reviews` devolve o histórico completo em ordem cronológica e retorna 404 para evidências de outra conta.
 - `GET /api/career-evidence` continua apresentando a decisão mais recente, sem alterar `verification_level` ou a evidência original.
+- A decisão `dismissed` remove a origem do mapa de competências e do diagnóstico por vaga; autoavaliações descartadas deixam de contar como autoavaliadas quando não há outra tentativa ativa relevante.
 - O Career Twin permite adicionar observação, confirmar a origem ou marcar a menção como não relevante e consultar todas as revisões.
-- Testes cobrem histórico completo, preservação da evidência original e isolamento entre contas. A CI do commit `1d14ed8` ainda precisa concluir SQLite, PostgreSQL 16 e Vite antes de declarar a etapa validada.
+- Testes cobrem histórico completo, preservação da evidência original, isolamento entre contas e exclusão efetiva no Career Twin/diagnóstico.
+- CI do commit `9156f41`: SQLite **148 passed, 3 skipped**; PostgreSQL 16 **151 passed**; Vite **success**. Execução: [43221321603](https://github.com/Stefany-viveiros/JobFinderAI/actions/runs/43221321603).
+- Foi adicionado teste de rollback da migração `20261112_0004`; CI do commit `d63be76` está em execução.
