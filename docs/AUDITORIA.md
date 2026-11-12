@@ -125,3 +125,12 @@ O incremento de privacidade do upload foi implementado em `jobfinder/api.py` e `
 - O frontend permite consultar o histórico no painel de candidaturas e informa que eventos antigos não são reconstruídos.
 
 **CI do commit `145655c856ca9cd7c4d4ef60cfecff69164fb4ce`:** SQLite 117 passed / 1 skipped; PostgreSQL 16 118 passed; build Vite aprovado. Execução: `43147354689`.
+
+
+## Atualização — 12/11/2026: autorização por oportunidade e schema
+
+- Ações sobre vagas globais agora exigem vínculo ativo em `JobMatch` para a conta: favoritar, preparar candidatura, confirmar candidatura e associar tarefa.
+- O teste de duas contas cobre tentativas negativas e ausência de efeitos colaterais.
+- O validador de startup agora verifica as tabelas privadas, FKs de propriedade, linhas sem proprietário e unicidade composta por conta.
+- CI validado no commit `b0bce8f`: SQLite 121 passed / 1 skipped; PostgreSQL 16 122 passed; build Vite aprovado.
+- Ainda não se declara a auditoria integral concluída. Permanecem a revisão de rotas/configurações e a validação operacional de migrações/dados legados em cópia controlada. `MULTITENANT_READY=false` continua obrigatório.
