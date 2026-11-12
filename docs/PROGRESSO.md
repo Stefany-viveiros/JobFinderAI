@@ -327,3 +327,16 @@ A validação é feita em bancos efêmeros do CI; não equivale a um ensaio com 
 - Nenhum segredo foi adicionado ao repositório. Nenhuma alteração foi feita em `main`, Render ou Neon.
 
 **Próxima frente:** melhorar a transparência operacional do catálogo (fonte automática, link externo ou integração dependente de credenciais) e continuar a validação de release candidate. A cobertura geral permanece estimada em **93%** até resolver os bloqueios operacionais: configuração SMTP real, validação em cópia controlada do banco de destino, agendamento com segredo e integração segura de execução de desafios.
+
+
+
+## Segurança do envio e transparência SMTP — 12/11/2026
+
+- Revisão do fluxo de candidatura identificou que o importador de currículo extrai os dados para o perfil, mas não mantém um arquivo individual seguro para anexar ao e-mail. O uso de `CV_PATH` global em ambiente multiusuário poderia anexar o currículo de outra pessoa.
+- Para impedir vazamento de dados, o envio por e-mail em modo multiusuário agora falha de forma segura até existir armazenamento individual cifrado e vínculo do arquivo ao usuário. Tentativas antigas também são bloqueadas na camada de envio.
+- Enquanto isso, vagas com contato por e-mail são direcionadas à finalização manual no portal original; o status não é marcado como enviado e nenhum e-mail é disparado.
+- A API e a interface distinguem “SMTP conectado” de “envio de candidatura liberado”; a tela explica que a conexão SMTP não libera o envio sem o anexo individual seguro.
+- Testes cobrem a tentativa multiusuário com SMTP configurado, verificam o bloqueio e garantem que o transporte de e-mail não é chamado. Testes antigos que esperavam envio sem currículo foram atualizados para validar o comportamento seguro.
+- O workflow de CI agora cancela execuções antigas da mesma branch para priorizar a validação do commit mais recente.
+- Commits desta frente: `878e175`, `3bd9925`, `6ce9da6`, `93728d0`, `0af8960`, `3661427`, `bc2df7f` e `367b246`.
+- **Bloqueio restante para liberar envio multiusuário:** implementar upload/armazenamento cifrado por usuário, retenção/remoção do arquivo, validação do tipo real e anexação do arquivo correspondente à conta autenticada. Não usar currículo global como alternativa.
