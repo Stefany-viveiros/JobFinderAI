@@ -305,3 +305,13 @@ A validação é feita em bancos efêmeros do CI; não equivale a um ensaio com 
 - Commits desta etapa: `1260de5` (Empregare/Empregando Brasil), `72f9a76` (testes), `4a3c9e4` (Jobicy/Remote OK), `a990a04` (testes) e `cfdc5ff` (seletor inicial).
 - Referências técnicas consultadas: documentação pública Empregare; feed e termos de distribuição Empregando Brasil; API pública Jobicy; FAQ/API pública Remote OK.
 - A API Adzuna permanece candidata a conector opcional dependente de `app_id/app_key`; não foi ativada sem credenciais e validação dos termos de uso.
+
+
+### Ajuste de conformidade das fontes — 12/11/2026
+
+- Revisão dos termos da API Remotive identificou restrição explícita a encaminhar listagens para sites de terceiros e exigência de atribuição/link. Como o JobFinder AI é uma plataforma própria, removemos a coleta e deixamos Remotive apenas como atalho para o portal original até obter autorização escrita.
+- Catálogo atual: **7 conectores de coleta** (Arbeitnow, OkEmprego, Nerdin, Empregare, Empregando Brasil, Jobicy e Remote OK) e **22 atalhos externos** para portais sem integração de coleta autorizada/configurada.
+- Jobicy e Remote OK mantêm atribuição de origem e URL canônica. O feed Empregando Brasil é usado conforme a seção pública de distribuição para parceiros; Empregare expõe endpoint de busca de vagas ativas sem autenticação.
+- CI de conectores Empregare/Empregando Brasil — [run 43243369094](https://github.com/Stefany-viveiros/JobFinderAI/actions/runs/43243369094): SQLite **168 passed, 4 skipped**; PostgreSQL 16 **172 passed**; Vite **success**.
+- CI de Jobicy/Remote OK — [run 43243557583](https://github.com/Stefany-viveiros/JobFinderAI/actions/runs/43243557583): SQLite **170 passed, 4 skipped**; PostgreSQL 16 **174 passed**; Vite **success**.
+- Commits de conformidade Remotive: `6a0d787`, `62d3f5f`, `81265a3` e `5912102`. O CI desses commits está em execução no momento desta atualização.
