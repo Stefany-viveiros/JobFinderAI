@@ -134,7 +134,7 @@ def test_legacy_agent_runner_blocks_before_database_when_multitenant(monkeypatch
 
 
 
-def test_cancelled_attempt_can_be_prepared_again_by_agent(db, ready_profile, test_user):
+def test_cancelled_attempt_can_be_prepared_again_by_agent(db, ready_profile, smtp_on, test_user):
     # Reutiliza o cenário completo já validado do pipeline: uma vaga por e-mail
     # e outra manual. O teste isola somente a transição cancelada -> nova tentativa.
     first = run_agent(db, collector=feed(), user_id=test_user.id)
