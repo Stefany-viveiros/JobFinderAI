@@ -440,6 +440,9 @@ function ProfilePage({ profile, setProfile, onSave, busy }) {
   const [importMessage, setImportMessage] = useState('')
   const [importError, setImportError] = useState('')
   const [allowExternalAI, setAllowExternalAI] = useState(false)
+  const [storeResumeForApplications, setStoreResumeForApplications] = useState(false)
+  const [storedResume, setStoredResume] = useState(null)
+  useEffect(() => { api('/profile/resume').then(setStoredResume).catch(() => setStoredResume({ configured: false })) }, [])
   const set = (field, value) => setProfile(p => ({ ...p, [field]: value }))
   const updateRecord = (collection, index, field, value) => setProfile(p => ({
     ...p, [collection]: (p[collection] || []).map((item, i) => i === index ? { ...item, [field]: value } : item),
@@ -459,6 +462,7 @@ function ProfilePage({ profile, setProfile, onSave, busy }) {
     const form = new FormData()
     form.append('file', file)
     form.append('allow_external_ai', String(allowExternalAI))
+    form.append('store_for_applications', String(storeResumeForApplications))
     setImporting(true); setImportError(''); setImportMessage('')
     try {
       const response = await fetch(`${API}/profile/import`, { method: 'POST', body: form, credentials: 'include', headers: csrfToken ? { 'X-CSRF-Token': csrfToken } : {} })
@@ -472,6 +476,9 @@ function ProfilePage({ profile, setProfile, onSave, busy }) {
         }
         return next
       })
+      if (body.resume_storage_saved) {
+        setStoredResume({ configured: true, filename: file.name, updated_at: new Date().toISOString() })
+      }
       setImportMessage(body.message || 'Informações extraídas. Revise os registros e clique em “Salvar perfil”.')
     } catch (error) { setImportError(error.message || 'Não foi possível importar o currículo.') }
     finally { setImporting(false) }
@@ -485,9 +492,14 @@ function ProfilePage({ profile, setProfile, onSave, busy }) {
         <input type="checkbox" checked={allowExternalAI} onChange={e => setAllowExternalAI(e.target.checked)} disabled={importing}/>
         <span><strong>Autorizar análise externa com Google Gemini</strong><small>Quando marcada e houver chave configurada no servidor, somente o texto extraído do currículo será enviado ao Google para análise.</small></span>
       </label>
+      <label className="resume-ai-consent">
+        <input type="checkbox" checked={storeResumeForApplications} onChange={e => setStoreResumeForApplications(e.target.checked)} disabled={importing}/>
+        <span><strong>Guardar o arquivo cifrado para candidaturas por e-mail</strong><small>Opcional. O PDF/DOCX será cifrado com uma chave exclusiva do armazenamento e vinculado somente à sua conta. Você pode removê-lo quando quiser.</small></span>
+      </label>
+      {storedResume?.configured && <div className="resume-import-success"><CheckCircle2 size={15}/>Currículo protegido: {storedResume.filename}<button type="button" className="text-action" onClick={async () => { try { await api('/profile/resume', { method: 'DELETE' }); setStoredResume({ configured: false }); setImportMessage('Arquivo de currículo removido com sucesso.'); } catch (error) { setImportError(error.message || 'Não foi possível remover o arquivo.'); } }}>Remover arquivo</button></div>}
       {importMessage && <p className="resume-import-success"><CheckCircle2 size={15}/>{importMessage}</p>}
       {importError && <p className="resume-import-error">{importError}</p>}
-      <small>Limite de 5 MB. Sem autorização, a extração é feita localmente. O arquivo original não é armazenado pelo JobFinder AI. Nada é salvo no perfil até você revisar e clicar em “Salvar perfil”.</small>
+      <small>Limite de 5 MB. Sem autorização, a extração é feita localmente. O arquivo original só é armazenado se você marcar a opção de armazenamento cifrado. Nada é salvo no perfil até você revisar e clicar em “Salvar perfil”.</small>
     </section>
     <form className="profile-form" onSubmit={onSave}>
       <div className="profile-header-card"><div className="profile-large-avatar">{initials(profile.name)}</div><div><strong>{profile.name || 'Seu nome'}</strong><span>{profile.course || 'Área profissional'}{profile.institution ? ` · ${profile.institution}` : ''}</span><p>Informações revisáveis utilizadas pelo mecanismo de compatibilidade.</p></div><div className="profile-status"><span className="status-dot"/>Perfil editável</div></div>
