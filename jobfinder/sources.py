@@ -4,7 +4,7 @@ import hashlib
 import re
 import threading
 import time
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 import requests
 from bs4 import BeautifulSoup
@@ -19,6 +19,24 @@ _JOBICY_CACHE_LOCK = threading.Lock()
 HEADERS = {
     "User-Agent": "JobFinderAI/1.0 (personal job-search tool)"
 }
+
+
+def _is_safe_job_url(value: str) -> bool:
+    """Aceita apenas URLs web absolutas, sem credenciais ou caracteres de controle."""
+    if not isinstance(value, str) or not value or value != value.strip():
+        return False
+    if any(ord(char) < 32 or char.isspace() for char in value):
+        return False
+    try:
+        parsed = urlsplit(value)
+        return (
+            parsed.scheme.lower() in {"http", "https"}
+            and bool(parsed.hostname)
+            and parsed.username is None
+            and parsed.password is None
+        )
+    except ValueError:
+        return False
 
 
 def _digest(url: str) -> str:
@@ -38,7 +56,7 @@ def fetch_arbeitnow():
 
     for job in items:
         url = job.get("url") or ""
-        if not url:
+        if not _is_safe_job_url(url):
             continue
 
         remote = bool(job.get("remote"))
@@ -99,7 +117,7 @@ def fetch_okemprego():
             for job in jobs:
                 url = job.get("url") or ""
 
-                if not url or url in seen:
+                if not _is_safe_job_url(url) or url in seen:
                     continue
 
                 seen.add(url)
@@ -240,7 +258,7 @@ def fetch_nerdin():
 
         job_url = urljoin(base_url, relative_url)
 
-        if job_url in seen:
+        if not _is_safe_job_url(job_url) or job_url in seen:
             continue
 
         seen.add(job_url)
@@ -358,7 +376,7 @@ def fetch_empregare():
                 if not raw_url:
                     continue
                 url = urljoin("https://www.empregare.com/", raw_url)
-                if url in seen:
+                if not _is_safe_job_url(url) or url in seen:
                     continue
                 seen.add(url)
 
@@ -442,7 +460,7 @@ def fetch_empregando_brasil():
             continue
         job_id = _xml_child_text(element, "id")
         url = _xml_child_text(element, "url")
-        if not url or url in seen:
+        if not _is_safe_job_url(url) or url in seen:
             continue
         seen.add(url)
         city = _xml_child_text(element, "city")
@@ -486,7 +504,7 @@ def fetch_jobicy():
         results = []
         for job in payload.get("jobs") or []:
             url = job.get("url") or ""
-            if not url:
+            if not _is_safe_job_url(url):
                 continue
             job_types = job.get("jobType") or []
             if isinstance(job_types, str):
@@ -526,7 +544,7 @@ def fetch_remoteok():
             # O primeiro elemento do feed pode conter metadados/aviso legal.
             continue
         url = job.get("url") or ""
-        if not url:
+        if not _is_safe_job_url(url):
             continue
         tags = job.get("tags") or []
         description_html = job.get("description") or ""
