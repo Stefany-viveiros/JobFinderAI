@@ -63,6 +63,9 @@ Fluxo: **buscar → normalizar → eliminar duplicatas → filtrar estágio/jún
 - **Histórico**: tentativas registradas em `application_attempts`, com estados como `prepared`, `awaiting_approval`, `manual_required`, `sent`, `failed` ou `cancelled`.
 - **Integridade**: uma candidatura só é marcada como enviada quando o servidor SMTP aceita a mensagem ou quando a própria pessoa confirma o envio manual.
 - **Envio automático**: disponível somente por e-mail quando a descrição da vaga contém um endereço de contato e o SMTP está configurado. Nas demais situações, o agente prepara o texto e orienta a finalização no site original.
+- **SMTP individual no modo multiusuário**: cada conta pode cadastrar seu próprio host, porta, usuário, remetente e senha de aplicativo pela página Agente. A senha é cifrada com Fernet no banco e nunca é devolvida pela API; exige a variável secreta `SMTP_CREDENTIALS_KEY` no ambiente do servidor.
+- **Destinos SMTP**: provedores conhecidos são permitidos por padrão; servidores corporativos adicionais precisam ser explicitamente autorizados em `SMTP_ALLOWED_HOSTS`, reduzindo a possibilidade de usar o servidor da aplicação como proxy para endereços internos.
+- **Separação**: SMTP individual é usado para candidaturas; a configuração administrativa `SMTP_TO` continua restrita aos lembretes locais e não é compartilhada com contas do SaaS.
 - **Conteúdo**: o texto utiliza somente informações cadastradas no perfil. O sistema não deve inventar experiências ou competências.
 - Execução agendada opcional: `python -m jobfinder.agent_runner`.
 
