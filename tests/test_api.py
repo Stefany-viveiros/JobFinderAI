@@ -1262,7 +1262,7 @@ def test_multitenant_schema_validator_rejects_cross_account_evidence_reviews(db,
     db.add(review)
     db.commit()
 
-    with pytest.raises(RuntimeError, match="contas diferentes"):
+    with pytest.raises(RuntimeError, match="outra conta"):
         validate_multitenant_schema()
 
     db.delete(review)
