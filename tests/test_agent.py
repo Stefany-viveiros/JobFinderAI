@@ -102,3 +102,16 @@ def test_agent_does_not_prepare_job_with_unconfirmed_mandatory_technology(db, re
 def test_default_agent_threshold_is_80(db, test_user):
     cfg = get_agent_settings(db, user_id=test_user.id)
     assert cfg.min_score == 80
+
+
+
+def test_legacy_agent_runner_blocks_before_database_when_multitenant(monkeypatch):
+    from jobfinder import agent_runner
+
+    monkeypatch.setenv("MULTITENANT_READY", "true")
+    monkeypatch.setattr(agent_runner, "init_db", lambda: pytest.fail("não deve inicializar o banco"))
+    monkeypatch.setattr(agent_runner, "run_agent", lambda *args, **kwargs: pytest.fail("não deve executar o agente global"))
+
+    result = agent_runner.main()
+    assert result["status"] == "blocked"
+    assert "execução individual por conta" in result["detail"]
