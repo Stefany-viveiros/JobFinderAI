@@ -37,6 +37,7 @@ from .market_service import (create_market_snapshot, index_unprocessed_jobs, bui
     list_development_plan, create_development_item, update_development_item, DEVELOPMENT_STATUSES,
     create_skill_assessment, submit_skill_assessment, list_skill_assessments, compare_market_trends)
 from .career_twin import build_career_twin
+from .evidence_ledger import sync_profile_evidence, list_profile_evidence
 from .matching import diagnose_job_requirements
 
 app = FastAPI(title="JobFinder AI API", version="1.1.0", description="API do JobFinder AI")
@@ -1071,6 +1072,21 @@ def read_career_twin(request: Request, db: Session = Depends(get_db)):
     return build_career_twin(db, user_id=request.state.user_id)
 
 
+@app.get("/api/career-evidence")
+def read_career_evidence(
+    request: Request,
+    active_only: bool = Query(False),
+    limit: int = Query(200, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    """Retorna o histórico de evidências exclusivamente da conta autenticada."""
+    return {
+        "items": list_profile_evidence(
+            db, user_id=request.state.user_id, active_only=active_only, limit=limit
+        )
+    }
+
+
 @app.put("/api/profile")
 def update_profile(payload: ProfileUpdate, request: Request, db: Session = Depends(get_db)):
     p = get_profile(db, request.state.user_id)
@@ -1090,10 +1106,15 @@ def update_profile(payload: ProfileUpdate, request: Request, db: Session = Depen
         if key.startswith("weight_"):
             value = max(0, min(100, value))
         setattr(p, key, value)
+    ledger_sync = sync_profile_evidence(db, p, user_id=request.state.user_id)
     db.commit()
     refresh_user_scores(db, request.state.user_id)
     db.refresh(p)
-    return {"message": "Perfil salvo e compatibilidades recalculadas.", "profile": profile_dict(p)}
+    return {
+        "message": "Perfil salvo, evidências atualizadas e compatibilidades recalculadas.",
+        "profile": profile_dict(p),
+        "evidence_sync": ledger_sync,
+    }
 
 
 MAX_RESUME_BYTES = 5 * 1024 * 1024
