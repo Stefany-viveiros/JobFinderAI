@@ -265,3 +265,10 @@ Continuar a auditoria endpoint a endpoint com foco em vínculo cruzado de entida
 - Nova execução de CI para os testes de migração SMTP: [43239908898](https://github.com/Stefany-viveiros/JobFinderAI/actions/runs/43239908898) (em andamento no momento desta atualização).
 
 A validação é feita em bancos efêmeros do CI; não equivale a um ensaio com cópia do banco real de destino. Neon e Render continuam sem alterações.
+
+
+## Resultado dos testes de migração SMTP — 12/11/2026
+
+- CI `43239908898`: SQLite, PostgreSQL 16 e build Vite aprovados para os testes dedicados da migração SMTP. O downgrade com credenciais existentes foi comprovadamente bloqueado sem remover a linha.
+- CI `43239840762`: SQLite, PostgreSQL 16 e build Vite também aprovados para a primeira revisão dos testes de migração SMTP.
+- Próximo incremento: validação de URL de evidência dos desafios. O serviço passa a aceitar somente HTTPS válido, sem credenciais embutidas, e mantém a regra de que nenhum código enviado é executado. Testes negativos cobrem `javascript:`, `data:`, HTTP, URL com usuário/senha e espaços; CI em andamento.
