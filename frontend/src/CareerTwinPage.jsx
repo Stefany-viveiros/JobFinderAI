@@ -175,7 +175,7 @@ export default function CareerTwinPage({ focusSection = null } = {}) {
               <button className="btn btn-secondary btn-sm" disabled={reviewingId === item.id || item.review_decision === 'confirmed'} onClick={() => reviewEvidence(item, 'confirmed')}>
                 {reviewingId === item.id ? 'Salvando…' : 'Confirmar origem'}
               </button>
-              <button className="btn btn-ghost btn-sm" disabled={reviewingId === item.id || item.review_decision === 'dismissed'} onClick={() => reviewEvidence(item, 'dismissed')}>
+              <button className="btn btn-secondary btn-sm" disabled={reviewingId === item.id || item.review_decision === 'dismissed'} onClick={() => reviewEvidence(item, 'dismissed')}>
                 Marcar não relevante
               </button>
             </div>}
