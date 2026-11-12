@@ -270,7 +270,7 @@ def test_collect_rejects_link_only_sources_and_reports_filters(client, monkeypat
     items = [{"source": "Arbeitnow", "title": "Estágio Dev Web", "company": "A", "url": "https://a.test/1", "description": "x"},
              {"source": "Arbeitnow", "title": "Chef de Cozinha", "company": "B", "url": "https://a.test/2", "description": "y"}]
     monkeypatch.setattr(api_module, "collect_selected", lambda names: (items, ["Nerdin: Timeout"]))
-    r = client.post("/api/jobs/collect", json={"sources": ["Arbeitnow"]}).json()
+    r = client.post("/api/jobs/collect", json={"sources": ["Arbeitnow"], "only_target": False}).json()
     assert (r["saved"], r["filtered_out"], r["errors"]) == (1, 1, ["Nerdin: Timeout"])
 
 
