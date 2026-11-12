@@ -37,7 +37,7 @@ from .market_service import (create_market_snapshot, index_unprocessed_jobs, bui
     list_development_plan, create_development_item, update_development_item, DEVELOPMENT_STATUSES,
     create_skill_assessment, submit_skill_assessment, list_skill_assessments, compare_market_trends)
 from .career_twin import build_career_twin
-from .evidence_ledger import sync_profile_evidence, list_profile_evidence
+from .evidence_ledger import sync_profile_evidence, list_profile_evidence, record_self_assessment_evidence
 from .matching import diagnose_job_requirements
 
 app = FastAPI(title="JobFinder AI API", version="1.1.0", description="API do JobFinder AI")
@@ -1356,7 +1356,11 @@ def start_market_assessment(payload: SkillAssessmentCreate, request: Request, db
 def submit_market_assessment(attempt_id: int, payload: SkillAssessmentSubmit, request: Request, db: Session = Depends(get_db)):
     try:
         attempt = submit_skill_assessment(db, attempt_id, **payload.model_dump(), user_id=request.state.user_id)
-        return {"message": "Autoavaliação registrada.", "attempt": attempt}
+        evidence = record_self_assessment_evidence(
+            db, attempt_id=attempt_id, user_id=request.state.user_id
+        )
+        db.commit()
+        return {"message": "Autoavaliação registrada.", "attempt": attempt, "evidence": evidence}
     except ValueError as exc:
         raise HTTPException(404 if "não encontrado" in str(exc) else 400, str(exc))
 
