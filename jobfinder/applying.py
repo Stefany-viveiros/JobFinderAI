@@ -276,26 +276,12 @@ def send_attempt(db, attempt: ApplicationAttempt, daily_limit: int | None = None
     import os
     smtp_config = None
     if os.getenv("MULTITENANT_READY", "false").strip().lower() == "true":
-        if user_id is None:
-            raise ApplyError("Envio SMTP exige identidade autenticada.")
-        account = db.scalar(select(SmtpAccount).where(SmtpAccount.user_id == user_id))
-        if account is None:
-            raise ApplyError("Configure sua conexão SMTP individual antes de aprovar o envio.")
-        try:
-            smtp_password = decrypt_password(account.encrypted_password)
-        except CredentialEncryptionError as exc:
-            raise ApplyError(str(exc)) from exc
-        smtp_config = {
-            "host": account.host, "port": account.port, "username": account.username,
-            "password": smtp_password, "use_tls": account.use_tls,
-        }
         # Defesa em profundidade: tentativas antigas ou criadas antes da regra
         # também não podem enviar sem um anexo de currículo por usuário.
         raise ApplyError(
             "Envio por e-mail bloqueado: o currículo individual ainda não possui "
             "armazenamento seguro para anexo. Finalize a candidatura no portal original."
         )
-        sender_email = account.from_email
     else:
         if not settings.smtp_can_send_applications:
             raise ApplyError("SMTP não configurado no .env.")
