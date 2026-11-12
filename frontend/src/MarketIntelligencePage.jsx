@@ -349,7 +349,7 @@ export default function MarketIntelligencePage({ focusSection = null } = {}) {
           </section>
         </div>
 
-        <section className="panel market-panel market-gap-panel">
+        <section className="panel market-panel market-gap-panel" id="market-diagnosis">
           <div className="panel-heading">
             <div><h2>Skill Gap: mercado × seu perfil</h2><p>O que as vagas pedem e quais evidências já aparecem no seu perfil profissional.</p></div>
             <span className="market-count">{gap ? `${gap.total_skills} competências` : 'Perfil não analisado'}</span>
