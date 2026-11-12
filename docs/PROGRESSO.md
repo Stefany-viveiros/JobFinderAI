@@ -1,7 +1,7 @@
 # Progresso — JobFinder AI Proof-to-Opportunity Engine
 
 **Branch:** `feature/proof-to-opportunity-engine`  
-**Último commit:** `42d66d07f41c45b4a0adb54f6f4e11700cfdb7b7`  
+**Último commit:** `82d60c1ef43fbc35a18900d41bab53aa0452f7cf`  
 **Atualização:** 12/11/2026.
 
 ## Estado de execução
@@ -140,3 +140,15 @@ Continuar a auditoria endpoint a endpoint com foco em vínculo cruzado de entida
 - CI do commit `b0bce8f`: SQLite **121 passed, 1 skipped**; PostgreSQL 16 **122 passed**; build Vite **success**. Warnings são avisos de depreciação; a mensagem de chave duplicada no log PostgreSQL é gerada pelo teste de unicidade e a suíte terminou com sucesso.
 
 **Situação:** o gate continua `MULTITENANT_READY=false`. A validação do schema agora é mais completa, mas isso não substitui a auditoria integral de cada rota nem a resolução operacional dos dados legados em qualquer banco de destino.
+
+
+## Continuação da auditoria de autorização e migrações — 12/11/2026
+
+- Revisadas as rotas privadas e as operações com IDs: candidaturas, tentativas, tarefas, metas e avaliações usam escopo por usuário; diagnóstico, favorito, preparação/envio e tarefa associada exigem vínculo ativo da oportunidade; o histórico de candidaturas verifica propriedade da candidatura e dos eventos.
+- Os endpoints de snapshots, histórico, tendências e combinações de mercado leem dados agregados de vagas públicas e taxonomia, sem dados pessoais de perfil. Permanecem atrás do middleware de sessão; não são endpoints públicos anônimos.
+- O sincronizador de registros estruturados do perfil usa apenas a coleção pertencente ao perfil autenticado. Teste de regressão agora simula tentativa de alterar formação de outra conta com ID conhecido e comprova que o registro original não muda.
+- Adicionado teste PostgreSQL para upgrade da migração de histórico de candidaturas, validação de FKs e rollback: o downgrade recusa apagar eventos existentes e, após remoção controlada do evento no schema efêmero, reverte a tabela vazia.
+- Adicionado teste PostgreSQL para impedir downgrade da unicidade por usuário quando duas contas já se candidataram à mesma vaga; confirma que os registros e a constraint composta permanecem após a recusa.
+- CI do commit `82d60c1`: SQLite **121 passed, 2 skipped**; PostgreSQL 16 **123 passed**; build Vite **success**. Os skips do SQLite incluem cenários exclusivos do PostgreSQL. Warnings são avisos; a mensagem de chave duplicada é esperada no teste de unicidade.
+
+**Pendente:** auditoria operacional das configurações de implantação e migrações sobre uma cópia controlada do schema completo; revisar rotinas agendadas/administrativas legadas e validar plano de tratamento de registros sem proprietário. O gate `MULTITENANT_READY=false` continua obrigatório.
