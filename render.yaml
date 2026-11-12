@@ -13,6 +13,8 @@ services:
     envVars:
       - key: DATABASE_URL
         sync: false
+      - key: SMTP_CREDENTIALS_KEY
+        sync: false
       - key: CORS_ORIGINS
         value: https://jobfinder-ai-web-imux.onrender.com
       - key: DEMO_READ_ONLY
