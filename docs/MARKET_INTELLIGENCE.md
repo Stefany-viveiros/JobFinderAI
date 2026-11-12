@@ -327,3 +327,13 @@ A classificação é recalculada a partir dos registros atuais do perfil e dos d
 A função `compare_market_trends` e o endpoint `GET /api/market/trends` comparam somente os dois snapshots concluídos mais recentes do mesmo recorte: níveis, janela em dias, mínimo de amostra, versão da taxonomia e versão do extrator. O resultado calcula mudança em pontos percentuais e inclui metadados de ambas as amostras.
 
 O frontend mostra altas, quedas e estabilidade observadas, além de um aviso quando uma das amostras fica abaixo do mínimo. Não há agendamento quinzenal ativo nem histórico de observações individuais de uma mesma vaga. Não apresentar esses dados como previsão.
+
+## 13. Agendamento recorrente de snapshots
+
+- `jobfinder.market_snapshot_runner` verifica diariamente o último snapshot concluído de nível `both`, janela de 30 dias, taxonomia e extrator atuais.
+- Um snapshot novo só é criado quando não existe snapshot comparável nos últimos 15 dias; se taxonomia/extrator mudarem, uma nova execução é permitida imediatamente.
+- O workflow `.github/workflows/market-snapshot.yml` executa diariamente às 09:15 UTC e também permite disparo manual.
+- A concorrência do workflow impede duas execuções simultâneas do mesmo job.
+- O workflow precisa do segredo GitHub Actions `MARKET_DATABASE_URL`; sem ele, o runner interrompe com erro explícito. O segredo não está no repositório.
+- O agendamento automático só passa a funcionar após o workflow chegar à branch padrão e o segredo ser configurado. Nesta branch de desenvolvimento não houve execução contra Neon/produção.
+- O runner processa apenas vagas públicas já coletadas; não consulta dados pessoais de perfis nem envia currículos.
