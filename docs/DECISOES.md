@@ -186,3 +186,12 @@ A inspeção foi realizada por leitura dos arquivos da branch no GitHub. O ambie
 **Decisão:** testar em schemas PostgreSQL efêmeros tanto o upgrade quanto os caminhos de downgrade. A migração de eventos deve recusar rollback com histórico e permitir remover a tabela apenas quando vazia. A migração de candidaturas deve recusar a restauração da unicidade global se houver mais de uma candidatura para o mesmo job_id, preservando registros e constraint composta.
 
 **Consequências:** o rollback é uma operação condicionada ao estado real dos dados, não um botão sempre disponível. Os testes não usam nem alteram o banco de produção.
+
+
+## 21. Configuração fail-closed de sessão por ambiente
+
+**Contexto:** a duração da sessão e a flag de cookie seguro eram interpretadas diretamente em `auth.py`, sem validar valores inválidos ou impedir cookie não seguro em produção.
+
+**Decisão:** centralizar `APP_ENV`, `SESSION_HOURS` e `COOKIE_SECURE` na configuração da aplicação. Aceitar apenas ambientes conhecidos, duração de 1 a 720 horas e booleano estrito; exigir cookie seguro em staging e production.
+
+**Consequências:** configuração insegura ou malformada interrompe o startup em vez de degradar silenciosamente. Desenvolvimento local pode usar HTTP e cookie não seguro, mas a configuração de hospedagem deve manter HTTPS e `COOKIE_SECURE=true`.
