@@ -134,3 +134,12 @@ O incremento de privacidade do upload foi implementado em `jobfinder/api.py` e `
 - O validador de startup agora verifica as tabelas privadas, FKs de propriedade, linhas sem proprietário e unicidade composta por conta.
 - CI validado no commit `b0bce8f`: SQLite 121 passed / 1 skipped; PostgreSQL 16 122 passed; build Vite aprovado.
 - Ainda não se declara a auditoria integral concluída. Permanecem a revisão de rotas/configurações e a validação operacional de migrações/dados legados em cópia controlada. `MULTITENANT_READY=false` continua obrigatório.
+
+
+## Atualização — 12/11/2026: registros de perfil e rollback PostgreSQL
+
+- O sincronizador de registros estruturados (formação, experiência, cursos, certificações e projetos) recebe a coleção já carregada pela relação do perfil autenticado; IDs desconhecidos na coleção não são usados para buscar nem alterar registros de outro perfil. Teste de duas contas confirma que enviar ID estrangeiro cria/atualiza somente registro próprio e preserva o registro original.
+- A revisão das rotas privadas identificou escopo por conta nas operações de candidatura, tentativas, tarefas, plano, avaliações, notificações, configurações e histórico. As rotas de mercado consultam snapshots agregados derivados de vagas públicas; não leem conteúdo pessoal de perfil.
+- Testes PostgreSQL efêmeros cobrem criação/FKs da tabela `application_events`, proteção contra rollback com eventos existentes e proteção contra downgrade da unicidade por usuário quando a mesma vaga está associada a contas diferentes.
+- CI do commit `82d60c1`: SQLite 121 passed / 2 skipped; PostgreSQL 16 123 passed; build Vite aprovado.
+- A auditoria endpoint a endpoint ainda não está encerrada: falta validar operacionalmente configuração e migrações do schema completo em cópia controlada, revisar rotinas legadas e planejar a resolução explícita de dados sem proprietário. O gate multiusuário permanece fechado.
