@@ -571,7 +571,6 @@ def fetch_remoteok():
 
 
 SOURCES = {
-    "Remotive": fetch_remotive,
     "Arbeitnow": fetch_arbeitnow,
     "OkEmprego": fetch_okemprego,
     "Nerdin": fetch_nerdin,
@@ -585,8 +584,8 @@ SOURCES = {
 # Capacidades reais de cada plataforma. "search_api" = coleta automática implementada;
 # "apply_api" = há API autorizada de candidatura (nenhuma das fontes abaixo oferece uma).
 SOURCE_INFO = {
-    "Remotive": {"mode": "api", "search_api": True, "apply_api": False,
-                 "note": "API pública de vagas remotas. Candidatura é feita no site original."},
+    "Remotive": {"mode": "link_only", "search_api": False, "apply_api": False,
+                 "note": "A API restringe a redistribuição em sites de terceiros. Abra o portal original; integração automática depende de autorização escrita."},
     "Arbeitnow": {"mode": "api", "search_api": True, "apply_api": False,
                   "note": "API pública (vagas majoritariamente na Europa). Candidatura no site original."},
     "OkEmprego": {"mode": "api", "search_api": True, "apply_api": False,
@@ -664,6 +663,7 @@ def external_search_links(terms=None):
         terms = ["estágio desenvolvimento de software"]
 
     templates = {
+        "Remotive": "https://remotive.com/remote-jobs",
         "LinkedIn": "https://www.linkedin.com/jobs/search/?keywords={q}",
         "Indeed": "https://br.indeed.com/jobs?q={q}",
         "Gupy": "https://www.google.com/search?q=site%3Agupy.io%2Fjobs+{q}",
