@@ -66,6 +66,7 @@ export default function CareerTwinPage({ focusSection = null } = {}) {
   const [reviewingId, setReviewingId] = useState(null)
   const [reviewHistory, setReviewHistory] = useState({})
   const [historyLoadingId, setHistoryLoadingId] = useState(null)
+  const [reviewNotes, setReviewNotes] = useState({})
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -95,9 +96,8 @@ export default function CareerTwinPage({ focusSection = null } = {}) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           decision,
-          note: decision === 'confirmed'
-            ? 'A pessoa confirmou que a informação corresponde à origem exibida.'
-            : 'A pessoa marcou a menção como não relevante para sua trajetória.',
+          note: reviewNotes[item.id] || '',
+
         }),
       })
       await load()
@@ -192,14 +192,26 @@ export default function CareerTwinPage({ focusSection = null } = {}) {
                 'Aguardando revisão humana'}
               {item.reviewed_at ? ` · ${new Date(item.reviewed_at).toLocaleDateString('pt-BR')}` : ''}
             </small>
-            {item.is_active && <div className="career-evidence-review-actions">
-              <button className="btn btn-secondary btn-sm" disabled={reviewingId === item.id || item.review_decision === 'confirmed'} onClick={() => reviewEvidence(item, 'confirmed')}>
-                {reviewingId === item.id ? 'Salvando…' : 'Confirmar origem'}
-              </button>
-              <button className="btn btn-secondary btn-sm" disabled={reviewingId === item.id || item.review_decision === 'dismissed'} onClick={() => reviewEvidence(item, 'dismissed')}>
-                Marcar não relevante
-              </button>
-            </div>}
+            {item.is_active && <>
+              <label className="career-review-note-label" htmlFor={`review-note-${item.id}`}>Observação da revisão (opcional)</label>
+              <textarea
+                id={`review-note-${item.id}`}
+                className="career-review-note"
+                rows={2}
+                maxLength={1000}
+                placeholder="Ex.: esta tecnologia foi usada no projeto para construir a API."
+                value={reviewNotes[item.id] || ''}
+                onChange={event => setReviewNotes(current => ({ ...current, [item.id]: event.target.value }))}
+              />
+              <div className="career-evidence-review-actions">
+                <button className="btn btn-secondary btn-sm" disabled={reviewingId === item.id || item.review_decision === 'confirmed'} onClick={() => reviewEvidence(item, 'confirmed')}>
+                  {reviewingId === item.id ? 'Salvando…' : 'Confirmar origem'}
+                </button>
+                <button className="btn btn-secondary btn-sm" disabled={reviewingId === item.id || item.review_decision === 'dismissed'} onClick={() => reviewEvidence(item, 'dismissed')}>
+                  Marcar não relevante
+                </button>
+              </div>
+            </>}
             <div className="career-evidence-review-actions">
               <button className="btn btn-secondary btn-sm" disabled={historyLoadingId === item.id} onClick={() => toggleReviewHistory(item)}>
                 {historyLoadingId === item.id ? 'Carregando…' : reviewHistory[item.id] ? 'Ocultar histórico' : 'Ver histórico'}
