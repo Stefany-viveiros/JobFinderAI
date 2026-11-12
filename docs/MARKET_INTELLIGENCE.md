@@ -157,7 +157,7 @@ Não combinar estágio e júnior silenciosamente: mostrar comparativo lado a lad
 - `GET /api/market/profile-gap`: cruzamento entre demanda e evidências do perfil.
 - `POST /api/market/skills/{skill_id}/progress`: registrar estudo/prática/validação, sem converter estudo automaticamente em domínio.
 
-Os endpoints devem validar filtros e limitar o volume processado. A primeira versão pode executar a análise de forma síncrona para o volume local; filas e agendamento recorrente ficam para a fase de implantação em nuvem.
+Os endpoints devem validar filtros e limitar o volume processado. A primeira versão pode executar a análise de forma síncrona para o volume local; filas ficam para uma fase posterior; o runner quinzenal e o workflow diário de verificação já foram implementados na branch, com ativação condicionada à integração na branch padrão e ao segredo de banco.
 
 ## 8. Regras de qualidade e amostra
 
