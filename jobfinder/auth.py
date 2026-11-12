@@ -5,7 +5,6 @@ As rotas de escrita devem validar também o token CSRF via X-CSRF-Token.
 """
 from datetime import datetime, timedelta
 import hashlib
-import os
 import secrets
 
 from fastapi import Depends, HTTPException, Request, Response
