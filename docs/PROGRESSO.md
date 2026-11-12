@@ -1,7 +1,7 @@
 # Progresso — JobFinder AI Proof-to-Opportunity Engine
 
 **Branch:** `feature/proof-to-opportunity-engine`  
-**Último commit:** `e61097bdd895b9881681b486703b591a4eb04527`  
+**Último commit:** `72617a251342502fe203624c7eab92186ef0f47f`  
 **Atualização:** 12/11/2026.
 
 ## Estado de execução
@@ -117,3 +117,15 @@ Continuar a auditoria endpoint a endpoint com foco em vínculo cruzado de entida
 - A automação quinzenal de mercado ainda exige agendador externo; o botão/manual e comparação de snapshots existentes não equivalem a agendamento ativo.
 - O ledger persistente de evidências e a validação independente de desafios continuam fora do escopo concluído; não há execução de código de usuário.
 - A taxa de conversão de candidaturas permanece oculta até existir base de candidaturas suficientemente madura e comparável.
+
+
+## Incremento de auditoria de isolamento — 12/11/2026
+
+- Identificado que as rotas de favoritar, preparar candidatura, confirmar candidatura e criar tarefa associada verificavam a existência global da vaga sem exigir vínculo ativo em `JobMatch` para a conta autenticada.
+- Criado o helper `_require_user_job_match`, que exige vínculo por `user_id` e vaga não arquivada antes dessas operações.
+- Removida a criação implícita de `JobMatch` ao favoritar um ID global arbitrário; a operação agora só altera um vínculo que já pertence à conta.
+- Criado teste negativo cobrindo tarefa, favorito, candidatura manual e preparação de candidatura contra vaga vinculada somente a outra conta. Também verifica que as tentativas negadas não criam tarefas, candidaturas ou tentativas.
+- Commits: `2de88e6` (correção) e `72617a2` (teste de IDOR).
+- CI do commit `72617a2`: SQLite **120 passed, 1 skipped**; PostgreSQL 16 **121 passed**; build Vite **success**. Warnings são depreciações já reportadas; a mensagem PostgreSQL de chave duplicada aparece no teste de unicidade e não falhou a suíte.
+
+**Próximo passo:** continuar a revisão de todas as rotas que aceitam IDs globais ou relacionados e verificar as operações de perfil/configuração e o vínculo de entidades legadas. O gate `MULTITENANT_READY=false` permanece obrigatório até encerrar a revisão completa e validar o schema.
