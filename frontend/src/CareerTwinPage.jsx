@@ -19,6 +19,7 @@ const SOURCE_LABELS = {
   legacy_project: 'Projeto (campo antigo)',
   legacy_certification: 'Certificação (campo antigo)',
   self_declared: 'Declarada no perfil',
+  self_assessment: 'Autoavaliação de desafio',
 }
 
 async function request(path) {
@@ -53,12 +54,18 @@ export default function CareerTwinPage({ focusSection = null } = {}) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [filter, setFilter] = useState('all')
+  const [ledger, setLedger] = useState([])
 
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
-      setData(await request('/career-twin'))
+      const [twin, evidence] = await Promise.all([
+        request('/career-twin'),
+        request('/career-evidence?limit=500'),
+      ])
+      setData(twin)
+      setLedger(evidence.items || [])
     } catch (err) {
       setError(err.message || 'Não foi possível carregar seu Career Twin.')
     } finally {
@@ -109,6 +116,29 @@ export default function CareerTwinPage({ focusSection = null } = {}) {
       <Metric icon={CheckCircle2} label="Com evidências" value={summary.skills_with_evidence || 0} detail="Com origem rastreável"/>
       <Metric icon={Target} label="Autoavaliações" value={summary.skills_with_self_assessment || 0} detail="Não equivalem a certificação"/>
     </div>
+
+    <section className="panel career-panel" id="career-evidence-ledger">
+      <div className="career-panel-heading">
+        <div>
+          <span className="career-eyebrow">HISTÓRICO RASTREÁVEL</span>
+          <h2>Ledger de evidências</h2>
+          <p>{ledger.length} registro(s) · {ledger.filter(item => item.is_active).length} ativo(s). Alterações preservam versões anteriores.</p>
+        </div>
+        <span className="career-status has-evidence">Histórico persistente</span>
+      </div>
+      {ledger.length ? <div className="career-evidence-list">
+        {ledger.map(item => <div className={item.is_active ? 'career-evidence' : 'career-evidence career-evidence-superseded'} key={item.id}>
+          <span className="career-evidence-dot"/>
+          <div>
+            <strong>{item.skill_name} · {SOURCE_LABELS[item.source_type] || item.source_type}</strong>
+            <span>{item.source_label}</span>
+            {item.excerpt && <p>“{item.excerpt}”</p>}
+            <small>{item.is_active ? 'Versão atual' : 'Versão anterior'} · {item.verification_label}</small>
+          </div>
+        </div>)}
+      </div> : <div className="career-empty"><CircleHelp size={18}/><span>As evidências aparecerão aqui quando você salvar competências em experiências, projetos, cursos, formação ou autoavaliações.</span></div>}
+      <p className="career-market-note">O registro indica a origem da informação. Conteúdo do perfil é autodeclarado; desafios enviados são autoavaliações. Nenhum deles é apresentado como validação independente.</p>
+    </section>
 
     <section className="panel career-panel" id="career-competencies">
       <div className="career-panel-heading"><div><span className="career-eyebrow">MAPA DE COMPETÊNCIAS</span><h2>O que seu histórico demonstra</h2><p>As categorias indicam onde a competência foi mencionada, não o seu nível de domínio.</p></div><button className="btn btn-secondary btn-sm" onClick={load}><RefreshCw size={14}/> Atualizar</button></div>
