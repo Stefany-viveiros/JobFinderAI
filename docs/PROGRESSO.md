@@ -280,3 +280,14 @@ A validação é feita em bancos efêmeros do CI; não equivale a um ensaio com 
 - Testes negativos cobrem esquemas `javascript:` e `data:`, HTTP, credenciais na URL e espaços. O código de desafio continua sem execução no servidor.
 - CI `43240275590` (commit `8e539a84`): SQLite **164 passed, 4 skipped**; PostgreSQL 16 **168 passed**; build Vite **success**.
 - As falhas intermediárias desta implementação foram causadas por imports ausentes e por o teste ler um campo interno não exposto no retorno do serviço; ambas foram corrigidas. O commit validado passou nos três jobs.
+
+
+## Ampliação do ecossistema de fontes — 12/11/2026
+
+- O catálogo de fontes passou a listar **25 portais/plataformas**: 4 conectores de coleta já implementados (Remotive, Arbeitnow, OkEmprego e Nerdin) e 21 atalhos de busca externa (LinkedIn, Gupy, Indeed, InfoJobs, Catho, Vagas.com, Sólides Vagas, Trabalha Brasil, Empregos.com.br, Glassdoor, Jooble, CIEE, Nube, Companhia de Estágios, 99jobs, GeekHunter, Programathor, Trampos, Remotar, Emprega Brasil/SINE e Revelo).
+- A página do Agente exibe a matriz de capacidade e os atalhos externos. Os portais sem conector não são raspados: o usuário abre o portal e conclui o fluxo de candidatura no site original.
+- Nenhum portal link-only é apresentado como integração de coleta ou candidatura automática. Não há armazenamento de senha de terceiros nem automação de login, CAPTCHA ou etapas protegidas.
+- A API pública documentada da Gupy consultada é voltada a empresas/clientes com token e publicação de suas próprias vagas; não equivale a uma API aberta de busca global para candidatos.
+- Acesso às APIs do LinkedIn depende de aprovação/parceria. As integrações de Indeed também são sujeitas a programas e termos próprios.
+- Próximo incremento: implementar conectores adicionais apenas com API/feed autorizado ou parceria confirmada; priorizar fontes com foco em estágio, trainee e tecnologia no Brasil. Validar disponibilidade e termos antes de ativar cada conector.
+- Commits desta etapa: `76111f6` (catálogo), `bd80eee` (testes), `66456cb` (atalhos) e `c1db0d1` (interface).
