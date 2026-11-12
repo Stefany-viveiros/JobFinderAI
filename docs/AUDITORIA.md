@@ -10,12 +10,12 @@
 | Funcionalidade | Situação atual | O que falta | Ação |
 |---|---|---|---|
 | Currículo PDF/DOCX | Incrementado | Consentimento explícito para Gemini, extração local padrão, cinco importações/hora, limite 5 MB, validação de assinatura/estrutura e barreira contra DOCX ZIP expansivo | Manter atualização de bibliotecas e considerar antivírus/limite de CPU em infraestrutura; não tratar validação básica como antivírus |
-| Perfil profissional | Parcial | Consolidar objetivos, evidências e trilha temporal em uma visão única | Reaproveitar os registros estruturados existentes e completar a experiência |
-| Career Twin | Incrementado | Read model determinístico e interface mostram evidências por origem; a linha do tempo agrega formação, experiência, projeto, aprendizado, metas e desafios por conta | Manter derivações explicáveis; ledger persistente e eventos completos de edição ainda não existem |
+| Perfil profissional | Incrementado | Registros estruturados alimentam Career Twin e ledger persistente; revisão humana pode confirmar origem ou marcar menção irrelevante | Melhorar o ciclo de revisão e conectar eventos de evolução a novas evidências |
+| Career Twin | Incrementado | Read model, timeline e ledger versionado persistem origem, trecho, hash, versões e autoavaliações; revisão humana append-only inclui observação e histórico consultável por conta | Manter distinção entre confirmação da origem e proficiência; validação independente continua fora do escopo |
 | Skill Gap | Incrementado | Snapshot × perfil, metadados de período/amostra e diagnóstico por requisito de vaga com origem da evidência | Ampliar taxonomia/contexto e avaliar obrigatoriedade quando descrições forem ambíguas; ausência de menção não é ausência de conhecimento |
 | Inteligência de mercado | Incrementado | Snapshots, tamanho de amostra, comparabilidade e diferenças em pontos percentuais entre dois snapshots com filtros/versões equivalentes | Ainda falta agendamento quinzenal real e histórico de cada observação/publicação da vaga; tendência não é previsão |
 | Plano de desenvolvimento | Parcial | Itens e status pertencem à conta, mas conclusão não forma ainda um ciclo completo e rastreável até nova evidência | Vincular atividades a evidências e eventos antes de declarar atualização automática do Career Twin |
-| Desafios | Parcial | Desafios e checklist são autoavaliação; não há runner ou revisão humana independente | Manter avaliação automática claramente indisponível; não executar código do usuário |
+| Desafios | Parcial | Desafios e checklist são autoavaliação, vinculados a competência/tentativa e registrados no ledger; não há runner seguro | Manter avaliação automática claramente indisponível; não executar código do usuário |
 | Autenticação | Implementada no núcleo | Revisão adicional de configuração, expiração e operação de e-mail | Preservar Argon2, sessão opaca, cookies e recuperação de senha |
 | Multiusuário | Parcial, fail-closed | Campos de propriedade e consultas escopadas existem; há testes com duas contas; dados legados podem permanecer sem proprietário e o gate bloqueia acesso por padrão | Não habilitar `MULTITENANT_READY` antes de auditoria endpoint a endpoint e schema válido |
 | Candidaturas | Incrementado | Pipeline, aprovação, limite diário, compatibilidade mínima e histórico imutável de mudanças de etapa por conta; migração Alembic aditiva | Completar métricas de conversão com amostra suficiente; histórico só conta a partir da ativação e não recupera etapas anteriores |
@@ -42,7 +42,7 @@
 
 ### Integridade do produto
 
-1. O Career Twin é um read model derivado; não há ledger persistente de cada evidência nem histórico completo de eventos para reconstruir todas as transições.
+1. O Career Twin combina read model derivado e ledger persistente versionado. Alterações relevantes criam novas versões; decisões humanas são eventos append-only. O histórico não reconstrói alterações anteriores à ativação do ledger.
 2. A classificação de competência indica origem textual/contextual. Projeto concluído, curso ou certificação não comprovam isoladamente proficiência.
 3. O Skill Gap compara snapshot e perfil; o endpoint `/api/jobs/{job_id}/diagnosis` agora explica competências identificadas por requisito, incluindo origem, trecho e classificação textual de obrigatoriedade/desejabilidade. A taxonomia não cobre todas as expressões possíveis.
 4. Snapshots são criados por solicitação manual. O endpoint `/api/market/trends` compara dois snapshots concluídos apenas quando período, nível, taxonomia e extrator são equivalentes. A execução quinzenal automática ainda depende de agendador/serviço contínuo configurado.
@@ -69,7 +69,7 @@ Esses resultados pertencem ao commit-base e não validam alterações posteriore
 
 1. Endurecer upload e privacidade de currículo — incremento iniciado nesta branch.
 2. Verificar e fechar brechas de isolamento por endpoint com testes de duas contas.
-3. Completar evidências e timeline do Career Twin.
+3. Revisar continuamente a qualidade das evidências e conectar eventos do plano a novas evidências, sem inferir proficiência.
 4. Evoluir diagnóstico por vaga, mantendo score explicável.
 5. Integrar plano, desafios e eventos sem executar código.
 6. Evoluir painel de candidaturas e relatório de mercado.
@@ -176,3 +176,12 @@ O incremento de privacidade do upload foi implementado em `jobfinder/api.py` e `
 
 - Teste de preflight verifica origem permitida (localhost) com credenciais e origem externa não cadastrada recusada pelo middleware.
 - CI do commit `efab261`: SQLite 144 passed / 2 skipped; PostgreSQL 16 146 passed; build Vite aprovado.
+
+
+## Atualização — ledger persistente e revisão humana — 12/11/2026
+
+- `career_evidence` armazena competências identificadas, fonte, trecho, hash, nível de validação e versões ativas/inativas.
+- `career_evidence_reviews` mantém decisões humanas append-only. A revisão não altera o trecho original nem promove `self_reported` ou `self_assessed` para validação independente.
+- `POST /api/career-evidence/{evidence_id}/review` permite confirmar a origem ou marcar uma menção como não relevante, com observação opcional.
+- `GET /api/career-evidence/{evidence_id}/reviews` retorna a trilha completa em ordem cronológica e aplica titularidade por conta.
+- A UI do Career Twin permite registrar observações e consultar o histórico. A CI funcional anterior passou em SQLite, PostgreSQL 16 e Vite; a CI desta ampliação deve ser consultada no commit mais recente antes de declarar a revisão validada.
