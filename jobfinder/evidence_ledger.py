@@ -283,3 +283,34 @@ def review_profile_evidence(
             else "Registro marcado como não relevante; a evidência original foi preservada."
         ),
     }
+
+
+def list_evidence_reviews(
+    db: Session, *, evidence_id: int, user_id: int
+) -> list[dict]:
+    """Retorna o histórico completo somente se a evidência pertencer à conta."""
+    item = db.scalar(
+        select(CareerEvidence.id).where(
+            CareerEvidence.id == evidence_id,
+            CareerEvidence.user_id == user_id,
+        )
+    )
+    if item is None:
+        raise LookupError("Evidência não encontrada para esta conta.")
+    reviews = db.scalars(
+        select(CareerEvidenceReview)
+        .where(
+            CareerEvidenceReview.evidence_id == evidence_id,
+            CareerEvidenceReview.user_id == user_id,
+        )
+        .order_by(CareerEvidenceReview.created_at.asc(), CareerEvidenceReview.id.asc())
+    ).all()
+    return [
+        {
+            "id": review.id,
+            "decision": review.decision,
+            "note": review.note,
+            "created_at": review.created_at.isoformat() if review.created_at else None,
+        }
+        for review in reviews
+    ]
