@@ -19,39 +19,6 @@ def _digest(url: str) -> str:
     return hashlib.sha256(url.strip().lower().encode()).hexdigest()[:24]
 
 
-def fetch_remotive():
-    response = requests.get(
-        "https://remotive.com/api/remote-jobs",
-        params={"limit": 100},
-        headers=HEADERS,
-        timeout=TIMEOUT,
-    )
-    response.raise_for_status()
-
-    items = response.json().get("jobs", [])
-    results = []
-
-    for job in items:
-        url = job.get("url") or ""
-        if not url:
-            continue
-
-        results.append({
-            "source": "Remotive",
-            "source_id": str(job.get("id") or _digest(url)),
-            "title": job.get("title") or "Vaga",
-            "company": job.get("company_name") or "Empresa não informada",
-            "description": job.get("description") or "",
-            "location": job.get("candidate_required_location") or "Remoto",
-            "modality": "Remoto",
-            "job_type": job.get("job_type") or "Não informado",
-            "published_at": job.get("publication_date") or "",
-            "url": url,
-        })
-
-    return results
-
-
 def fetch_arbeitnow():
     response = requests.get(
         "https://www.arbeitnow.com/api/job-board-api",
