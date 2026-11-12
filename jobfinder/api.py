@@ -1000,7 +1000,13 @@ def agent_settings_dict(db, user_id=None):
     return {"auto_apply_enabled": s.auto_apply_enabled, "require_approval": s.require_approval,
             "daily_limit": s.daily_limit, "min_score": s.min_score,
             "sent_today": applying.sent_today_count(db, user_id=user_id),
-            "email_ready": bool(smtp_account_dict(smtp_account).get("ready", False)),
+            "email_ready": bool(smtp_account_dict(smtp_account).get("ready", False)) and
+                           os.getenv("MULTITENANT_READY", "false").strip().lower() != "true",
+            "email_block_reason": (
+                "O envio por e-mail ficará disponível quando o currículo individual puder ser armazenado "
+                "e anexado com segurança. Até lá, finalize no portal original."
+                if os.getenv("MULTITENANT_READY", "false").strip().lower() == "true" else ""
+            ),
             "profile_gaps": applying.profile_gaps(p), "profile_ready": not applying.profile_gaps(p)}
 
 
