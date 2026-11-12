@@ -539,7 +539,7 @@ def test_resume_import_requires_explicit_consent_before_calling_gemini(client, m
     external = _post_resume_import(client, allow_external_ai=True)
     assert external.status_code == 200
     assert external.json()["analysis_mode"] == "gemini"
-    assert gemini_calls == ["Pessoa de Teste\\nDesenvolvimento de software com Python, FastAPI e SQL."]
+    assert gemini_calls == ["Pessoa de Teste\nDesenvolvimento de software com Python, FastAPI e SQL."]
 
 
 def test_resume_import_rejects_content_that_does_not_match_docx_extension(client):

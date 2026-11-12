@@ -1009,7 +1009,7 @@ async def import_resume(
         raise HTTPException(400, "O arquivo enviado está vazio.")
     if suffix == ".pdf" and b"%PDF-" not in content[:1024]:
         raise HTTPException(400, "O conteúdo não parece ser um PDF válido.")
-    if suffix == ".docx" and not content.startswith(b"PK\\x03\\x04"):
+    if suffix == ".docx" and not content.startswith(b"PK\x03\x04"):
         raise HTTPException(400, "O conteúdo não parece ser um DOCX válido.")
 
     try:

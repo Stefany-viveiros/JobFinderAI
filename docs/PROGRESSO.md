@@ -1,7 +1,7 @@
 # Progresso — JobFinder AI Proof-to-Opportunity Engine
 
 **Branch:** `feature/proof-to-opportunity-engine`  
-**Último commit registrado:** a ser atualizado após o incremento de privacidade do currículo.  
+**Último commit registrado:** `73c9255e9376224e681bc77105ece209c25b540a` (correção de validação em andamento).  
 **Última atualização:** 11/11/2026.
 
 ## Estado retomável
