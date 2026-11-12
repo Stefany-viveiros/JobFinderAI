@@ -196,7 +196,23 @@ function WorkspaceApp({ user, onLogout }) {
   }
 
   const metrics = dashboard?.metrics || {}
-  const pageLabel = { Dashboard: 'Visão geral', 'Buscar vagas': 'Buscar oportunidades', Candidaturas: 'Minhas candidaturas', Agente: 'Agente de candidaturas', Tarefas: 'Tarefas e prazos', 'Inteligência de mercado': 'Inteligência de mercado', 'Career Twin': 'Career Twin', 'Perfil e configurações': 'Perfil profissional' }[page]
+  const pageLabel = {
+    Dashboard: 'Visão geral',
+    Oportunidades: 'Oportunidades',
+    Agente: 'Agente de candidaturas',
+    Candidaturas: 'Minhas candidaturas',
+    Tarefas: 'Tarefas e prazos',
+    'Meu Career Twin': 'Meu Career Twin',
+    Competências: 'Competências',
+    Diagnóstico: 'Diagnóstico de compatibilidade',
+    Desafios: 'Desafios práticos',
+    Mercado: 'Inteligência de mercado',
+    Plano: 'Plano de desenvolvimento',
+    'Perfil e configurações': 'Configurações',
+    'Buscar vagas': 'Oportunidades',
+    'Inteligência de mercado': 'Inteligência de mercado',
+    'Career Twin': 'Meu Career Twin',
+  }[page]
   const todayText = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })
 
   return <div className="app-shell">
@@ -205,15 +221,21 @@ function WorkspaceApp({ user, onLogout }) {
       <div className="workspace-label">WORKSPACE</div>
       <nav className="nav-list">
         <NavItem icon={LayoutDashboard} text="Visão geral" active={page === 'Dashboard'} onClick={() => changePage('Dashboard')} />
-        <NavItem icon={Search} text="Buscar vagas" active={page === 'Buscar vagas'} onClick={() => changePage('Buscar vagas')} count={metrics.new_jobs} />
+        <NavItem icon={Search} text="Oportunidades" active={page === 'Oportunidades' || page === 'Buscar vagas'} onClick={() => changePage('Oportunidades')} count={metrics.new_jobs} />
         <NavItem icon={Bot} text="Agente" active={page === 'Agente'} onClick={() => changePage('Agente')} count={metrics.awaiting_approval} />
         <NavItem icon={BriefcaseBusiness} text="Candidaturas" active={page === 'Candidaturas'} onClick={() => changePage('Candidaturas')} />
+        <NavItem icon={BrainCircuit} text="Meu Career Twin" active={page === 'Meu Career Twin' || page === 'Career Twin'} onClick={() => changePage('Meu Career Twin')} />
+        <NavItem icon={Layers3} text="Competências" active={page === 'Competências'} onClick={() => changePage('Competências')} />
+        <NavItem icon={Target} text="Diagnóstico" active={page === 'Diagnóstico'} onClick={() => changePage('Diagnóstico')} />
+        <NavItem icon={Code2} text="Desafios" active={page === 'Desafios'} onClick={() => changePage('Desafios')} />
+        <NavItem icon={Activity} text="Mercado" active={page === 'Mercado' || page === 'Inteligência de mercado'} onClick={() => changePage('Mercado')} />
+        <NavItem icon={BookOpen} text="Plano" active={page === 'Plano'} onClick={() => changePage('Plano')} />
         <NavItem icon={CheckCircle2} text="Tarefas" active={page === 'Tarefas'} onClick={() => changePage('Tarefas')} count={metrics.pending_tasks} />
-        <NavItem icon={Activity} text="Inteligência de mercado" active={page === 'Inteligência de mercado'} onClick={() => changePage('Inteligência de mercado')} />
-        <NavItem icon={BrainCircuit} text="Career Twin" active={page === 'Career Twin'} onClick={() => changePage('Career Twin')} />
       </nav>
       <div className="workspace-label nav-spacer">PREFERÊNCIAS</div>
-      <nav className="nav-list"><NavItem icon={UserRound} text="Perfil profissional" active={page === 'Perfil e configurações'} onClick={() => changePage('Perfil e configurações')} /><NavItem icon={Settings} text="Configurações" active={false} onClick={() => changePage('Perfil e configurações')} /></nav>
+      <nav className="nav-list">
+        <NavItem icon={Settings} text="Configurações" active={page === 'Perfil e configurações'} onClick={() => changePage('Perfil e configurações')} />
+      </nav>
       <div className="sidebar-bottom">
         <div className="upgrade-card"><div className="upgrade-icon"><Zap size={17}/></div><strong>Seu próximo passo</strong><p>Mantenha seu perfil atualizado para melhorar a compatibilidade das vagas.</p><button onClick={() => changePage('Perfil e configurações')}>Completar perfil <ArrowUpRight size={14}/></button></div>
         <div className="user-card"><div className="avatar">{initials(profile.name)}</div><div className="user-info"><strong>{profile.name || 'Seu perfil'}</strong><span>{profile.course || 'Candidata a tecnologia'}</span></div><button className="icon-btn user-settings" onClick={() => changePage('Perfil e configurações')} aria-label="Editar perfil"><Settings size={17}/></button></div>
@@ -225,12 +247,13 @@ function WorkspaceApp({ user, onLogout }) {
       <div className="content-wrap">
         {loading && !dashboard ? <div className="loading-panel"><LoaderCircle className="spin" size={25}/><span>Carregando seu workspace...</span></div> : <>
           {page === 'Dashboard' && <DashboardPage dashboard={dashboard} jobs={jobs} onNavigate={changePage} onCreateTask={() => { setEditingTask(null); setTaskForm(emptyTask); setModal('task') }} onFavorite={toggleFavorite} />}
-          {page === 'Buscar vagas' && <JobsPage jobs={jobs} query={query} setQuery={setQuery} minScore={minScore} setMinScore={setMinScore} favoriteOnly={favoriteOnly} setFavoriteOnly={setFavoriteOnly} modality={modality} setModality={setModality} sort={sort} setSort={setSort} onCollect={collectJobs} sourceSelection={sourceSelection} setSourceSelection={setSourceSelection} busy={busy} onAdd={() => setModal('job')} onFavorite={toggleFavorite} onApply={applyJob} onPrepare={prepareJob} levelFilter={levelFilter} setLevelFilter={setLevelFilter} sourceFilter={sourceFilter} setSourceFilter={setSourceFilter} attemptFilter={attemptFilter} setAttemptFilter={setAttemptFilter} />}
+          {(page === 'Oportunidades' || page === 'Buscar vagas') && <JobsPage jobs={jobs} query={query} setQuery={setQuery} minScore={minScore} setMinScore={setMinScore} favoriteOnly={favoriteOnly} setFavoriteOnly={setFavoriteOnly} modality={modality} setModality={setModality} sort={sort} setSort={setSort} onCollect={collectJobs} sourceSelection={sourceSelection} setSourceSelection={setSourceSelection} busy={busy} onAdd={() => setModal('job')} onFavorite={toggleFavorite} onApply={applyJob} onPrepare={prepareJob} levelFilter={levelFilter} setLevelFilter={setLevelFilter} sourceFilter={sourceFilter} setSourceFilter={setSourceFilter} attemptFilter={attemptFilter} setAttemptFilter={setAttemptFilter} />}
           {page === 'Agente' && <AgentPage settings={agentSettings} setSettings={setAgentSettings} onSave={saveAgentSettings} onRun={runAgent} runResult={agentRun} attempts={attempts} sources={sourcesInfo} onApprove={approveAttempt} onCancel={cancelAttempt} onConfirmManual={applyJob} busy={busy} />}
           {page === 'Candidaturas' && <ApplicationsPage applications={applications} onEdit={(a) => { setEditingApp(a); setAppForm({ status: a.status, applied_at: a.applied_at || '', deadline: a.deadline || '', recruiter: a.recruiter || '', notes: a.notes || '' }); setModal('application') }} />}
           {page === 'Tarefas' && <TasksPage tasks={tasks} view={taskView} setView={setTaskView} onCreate={() => { setEditingTask(null); setTaskForm(emptyTask); setModal('task') }} onEdit={(t) => { setEditingTask(t); setTaskForm({ title: t.title, description: t.description || '', due_date: t.due_date || '', priority: t.priority, notify: t.notify }); setModal('task') }} onComplete={completeTask} onDelete={deleteTask} onSendReminders={sendReminders} smtpReady={Boolean(dashboard?.smtp_ready)} notificationHistory={notificationHistory} busy={busy} />}
-          {page === 'Inteligência de mercado' && <MarketIntelligencePage />}
-          {page === 'Career Twin' && <CareerTwinPage />}
+          {(page === 'Mercado' || page === 'Diagnóstico' || page === 'Desafios' || page === 'Plano' || page === 'Inteligência de mercado') && <MarketIntelligencePage focusSection={page === 'Diagnóstico' ? 'diagnosis' : page === 'Desafios' ? 'challenges' : page === 'Plano' ? 'plan' : 'market'} />}
+          {(page === 'Meu Career Twin' || page === 'Career Twin') && <CareerTwinPage />}
+          {page === 'Competências' && <CareerTwinPage focusSection="skills" />}
           {page === 'Perfil e configurações' && <ProfilePage profile={profile} setProfile={setProfile} onSave={saveProfile} busy={busy} />}
         </>}
       </div>
