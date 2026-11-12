@@ -1,18 +1,56 @@
 """Agendamento idempotente de snapshots públicos de inteligência de mercado.
 
 O runner pode ser chamado diariamente por cron/GitHub Actions; só cria um snapshot
-quando não há um snapshot comparável concluído nos últimos 15 dias.
+quando não há um snapshot comparável concluído nos últimos 15 dias. Ele nunca
+executa migrações: o banco precisa estar previamente atualizado pelo deploy.
 """
 import json
 import os
 from datetime import datetime, timedelta
+from pathlib import Path
 
-from sqlalchemy import func, select
+from alembic.config import Config
+from alembic.migration import MigrationContext
+from alembic.script import ScriptDirectory
+from sqlalchemy import func, inspect, select
 
-from .db import SessionLocal, init_db
+from .db import SessionLocal, engine
 from .market import taxonomy_version
 from .market_service import EXTRACTOR_VERSION, create_market_snapshot, index_unprocessed_jobs
 from .models import MarketAnalysisRun
+
+
+REQUIRED_MARKET_TABLES = {
+    "jobs",
+    "skills",
+    "job_skills",
+    "job_skill_extractions",
+    "market_analysis_runs",
+    "market_skill_metrics",
+    "market_skill_pairs",
+}
+
+
+def validate_market_schema(connection) -> dict:
+    """Falha antes de escrever se o banco não estiver na revisão Alembic atual."""
+    root = Path(__file__).resolve().parents[1]
+    config = Config(str(root / "alembic.ini"))
+    scripts = ScriptDirectory.from_config(config)
+    heads = scripts.get_heads()
+    current = MigrationContext.configure(connection).get_current_revision()
+    missing = sorted(REQUIRED_MARKET_TABLES - set(inspect(connection).get_table_names()))
+
+    if len(heads) != 1 or current != heads[0]:
+        raise RuntimeError(
+            "Banco de inteligência de mercado fora da revisão Alembic atual. "
+            "Aplique as migrações no processo de deploy antes de executar o snapshot."
+        )
+    if missing:
+        raise RuntimeError(
+            "Schema de inteligência de mercado incompleto; tabelas ausentes: "
+            + ", ".join(missing)
+        )
+    return {"revision": current, "tables": "ok"}
 
 
 def run_snapshot_if_due(
@@ -75,10 +113,13 @@ def main() -> int:
         raise SystemExit(
             "DATABASE_URL ausente. Configure o segredo MARKET_DATABASE_URL no GitHub Actions."
         )
-    init_db()
+    # O runner não chama init_db(): nenhuma migração ou criação de tabela é
+    # executada automaticamente por um job agendado.
+    with engine.connect() as connection:
+        schema = validate_market_schema(connection)
     with SessionLocal() as db:
         result = run_snapshot_if_due(db)
-    print(json.dumps(result, ensure_ascii=False, default=str))
+    print(json.dumps({"schema": schema, "result": result}, ensure_ascii=False, default=str))
     return 0
 
 
