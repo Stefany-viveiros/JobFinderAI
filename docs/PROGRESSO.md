@@ -340,3 +340,12 @@ A validação é feita em bancos efêmeros do CI; não equivale a um ensaio com 
 - O workflow de CI agora cancela execuções antigas da mesma branch para priorizar a validação do commit mais recente.
 - Commits desta frente: `878e175`, `3bd9925`, `6ce9da6`, `93728d0`, `0af8960`, `3661427`, `bc2df7f` e `367b246`.
 - **Bloqueio restante para liberar envio multiusuário:** implementar upload/armazenamento cifrado por usuário, retenção/remoção do arquivo, validação do tipo real e anexação do arquivo correspondente à conta autenticada. Não usar currículo global como alternativa.
+
+
+
+### Validação da proteção de currículo — CI aprovado
+
+- Execução [43248231103](https://github.com/Stefany-viveiros/JobFinderAI/actions/runs/43248231103), commit `aaf1299`: SQLite **171 passed, 4 skipped**; PostgreSQL 16 **175 passed**; build de produção Vite **success**.
+- O teste que inicialmente falhou foi ajustado para refletir o fluxo real: uma tentativa `manual_required` não pode ser aprovada como envio SMTP. A validação final passou nos dois bancos.
+- A regra de segurança permanece: modo multiusuário não envia e-mail até haver currículo individual armazenado e anexado com segurança. O SMTP pode estar conectado, mas isso não significa que o envio de candidatura esteja liberado.
+- O CI da branch agora prioriza a última execução por meio de concorrência com cancelamento de execuções antigas.
