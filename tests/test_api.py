@@ -1186,6 +1186,19 @@ def test_career_evidence_review_is_append_only_and_account_scoped(client, db, te
     assert listed["review_decision"] == "dismissed"
     assert listed["review_note"] == "A menção não representa uso prático."
 
+    # A decisão mais recente de irrelevância retira somente essa origem do Career Twin.
+    twin = client.get("/api/career-twin").json()
+    python_skill = next(
+        (item for item in twin["skills"] if item["name"] == "Python"), None
+    )
+    if python_skill is not None:
+        assert not any(
+            item["source_id"] == evidence["source_id"]
+            and item["source_type"] == "ongoing_project"
+            for item in python_skill["evidence"]
+        )
+
+
     second = TestClient(api_module.app, base_url="https://testserver")
     registration = second.post("/api/auth/register", json={
         "email": "review-owner-check@example.com",
