@@ -168,3 +168,12 @@ A inspeção foi realizada por leitura dos arquivos da branch no GitHub. O ambie
 **Decisão:** antes de favoritar, preparar candidatura, confirmar candidatura manual ou criar tarefa associada, exigir um `JobMatch` com o mesmo `job_id`, `user_id` autenticado e `is_archived=false`. A ausência do vínculo retorna 404. O endpoint de favorito deixa de criar vínculo implicitamente a partir de um ID global arbitrário.
 
 **Consequências:** conhecer ou adivinhar o identificador global de uma vaga não concede acesso às ações privadas. O catálogo permanece compartilhado e a pessoa precisa ter a oportunidade vinculada ao próprio painel. Teste de regressão cobre as quatro operações e verifica ausência de efeitos colaterais. O gate multiusuário continua fechado até a auditoria integral.
+
+
+## 19. Validação fail-closed do schema multiusuário
+
+**Contexto:** o validador anterior verificava apenas a constraint de unicidade da tabela `applications`, sem confirmar as demais relações de propriedade ou a existência de registros privados legados sem proprietário.
+
+**Decisão:** antes de iniciar em modo multiusuário, verificar tabelas privadas, colunas `user_id`, chaves estrangeiras para `users.id`, ausência de linhas sem proprietário e constraints de unicidade por conta para candidaturas, vínculos de vagas, perfil e configurações do agente. A verificação é executada no startup quando `MULTITENANT_READY=true`.
+
+**Consequências:** bancos com dados legados sem proprietário permanecem bloqueados até procedimento explícito, auditável e respaldado. A coluna pode continuar nullable durante a transição para preservar compatibilidade, mas nenhuma linha sem dono pode existir quando o gate for habilitado. Não há atribuição automática de dados.
