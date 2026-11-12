@@ -48,6 +48,10 @@ def parse_cors_origins(raw: str) -> list[str]:
     validated = []
     for origin in origins:
         parsed = urlsplit(origin)
+        try:
+            parsed.port  # força validação de portas, inclusive valores fora do intervalo
+        except ValueError as exc:
+            raise ValueError(f"Porta inválida na origem CORS: {origin!r}.") from exc
         if (
             parsed.scheme not in {"http", "https"}
             or not parsed.hostname
