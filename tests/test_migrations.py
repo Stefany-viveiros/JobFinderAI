@@ -218,3 +218,71 @@ def test_application_history_migration_creates_account_scoped_event_table(tmp_pa
         assert connection.execute(sa.text("SELECT COUNT(*) FROM application_events")).scalar_one() == 1
     assert sa.inspect(engine).has_table("application_events")
     engine.dispose()
+
+
+def test_postgresql_application_history_migration_preserves_events_on_rollback(monkeypatch):
+    import os
+    from uuid import uuid4
+    from sqlalchemy.engine import make_url
+
+    postgres_url = os.getenv("TEST_POSTGRES_URL")
+    if not postgres_url:
+        pytest.skip("TEST_POSTGRES_URL não configurada; teste executado no CI com PostgreSQL.")
+
+    admin_engine = sa.create_engine(postgres_url)
+    schema = f"jobfinder_events_{uuid4().hex}"
+    with admin_engine.begin() as connection:
+        connection.execute(sa.text(f'CREATE SCHEMA "{schema}"'))
+
+    scoped_url = make_url(postgres_url).set(
+        query={"options": f"-csearch_path={schema}"}
+    )
+    engine = sa.create_engine(scoped_url)
+    try:
+        metadata = sa.MetaData()
+        sa.Table("users", metadata, sa.Column("id", sa.Integer, primary_key=True))
+        applications = sa.Table(
+            "applications", metadata,
+            sa.Column("id", sa.Integer, primary_key=True),
+            sa.Column("user_id", sa.Integer, nullable=True),
+            sa.Column("job_id", sa.Integer, nullable=False),
+            sa.UniqueConstraint("user_id", "job_id", name="uq_user_application_job"),
+        )
+        metadata.create_all(engine)
+
+        config_path = Path(__file__).resolve().parents[1] / "alembic.ini"
+        config = Config(str(config_path))
+        config.set_main_option("sqlalchemy.url", str(scoped_url).replace("%", "%%"))
+        monkeypatch.setenv("DATABASE_URL", str(scoped_url))
+        command.upgrade(config, "head")
+
+        inspector = sa.inspect(engine)
+        assert inspector.has_table("application_events")
+        foreign_keys = inspector.get_foreign_keys("application_events")
+        assert any(fk["constrained_columns"] == ["user_id"] and fk["referred_table"] == "users" for fk in foreign_keys)
+        assert any(fk["constrained_columns"] == ["application_id"] and fk["referred_table"] == "applications" for fk in foreign_keys)
+
+        with engine.begin() as connection:
+            connection.execute(sa.text("INSERT INTO users (id) VALUES (1)"))
+            connection.execute(sa.text("INSERT INTO applications (id, user_id, job_id) VALUES (10, 1, 99)"))
+            connection.execute(sa.text(
+                "INSERT INTO application_events "
+                "(id, user_id, application_id, previous_status, new_status, source, note, occurred_at) "
+                "VALUES (100, 1, 10, '', 'Candidatura enviada', 'manual_confirmed', '', CURRENT_TIMESTAMP)"
+            ))
+
+        with pytest.raises(RuntimeError, match="Os dados não serão apagados"):
+            command.downgrade(config, "20261102_0001")
+        with engine.connect() as connection:
+            assert connection.execute(sa.text("SELECT COUNT(*) FROM application_events")).scalar_one() == 1
+        assert sa.inspect(engine).has_table("application_events")
+
+        with engine.begin() as connection:
+            connection.execute(sa.text("DELETE FROM application_events WHERE id = 100"))
+        command.downgrade(config, "20261102_0001")
+        assert not sa.inspect(engine).has_table("application_events")
+    finally:
+        engine.dispose()
+        with admin_engine.begin() as connection:
+            connection.execute(sa.text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+        admin_engine.dispose()
