@@ -164,11 +164,13 @@ def collect_for_user(db, items, user_id, limit=80, only_target=True):
             job = Job(**{k: item.get(k) for k in _JOB_FIELDS},
                       level=classify_level(item.get("title"), item.get("description"), item.get("job_type")) or "outro",
                       dedupe_key=title_key)
-            db.add(job)
             try:
-                db.flush()
+                # Savepoint impede que uma colisão concorrente desfaça as vagas
+                # já inseridas nesta mesma coleta do usuário.
+                with db.begin_nested():
+                    db.add(job)
+                    db.flush()
             except IntegrityError:
-                db.rollback()
                 # Uma gravação concorrente pode ter inserido a URL canônica.
                 existing_rows = db.execute(select(Job.id, Job.url, Job.dedupe_key)).all()
                 url_to_id = {normalize_url(row.url): row.id for row in existing_rows if row.url}
