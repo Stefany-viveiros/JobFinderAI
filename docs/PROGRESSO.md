@@ -1,8 +1,8 @@
 # Progresso — JobFinder AI Proof-to-Opportunity Engine
 
 **Branch:** `feature/proof-to-opportunity-engine`  
-**Último commit:** `378c8de6c32bd85e836f41b277b20dc2108108dc`  
-**Atualização:** 12/11/2026.  \n**Cobertura geral estimada:** 76% (estimativa de escopo, não métrica automatizada).
+**Último commit:** `e12d57504aef6f43c28dfb71cacf6bd93e5d4520`  
+**Atualização:** 12/11/2026.  \n**Cobertura geral estimada:** 77% (estimativa de escopo, não métrica automatizada).
 
 ## Estado de execução
 
@@ -165,3 +165,16 @@ Continuar a auditoria endpoint a endpoint com foco em vínculo cruzado de entida
 - CI do commit `1ac6407`: SQLite **131 passed, 2 skipped**; PostgreSQL 16 **133 passed**; build Vite **success**.
 
 **Próximo passo:** revisar configurações de sessão/cookie e variáveis obrigatórias de produção, depois validar a migração completa e o bootstrap em schema PostgreSQL efêmero. Não alterar o ambiente Render/Neon de demonstração.
+
+
+## Validação da configuração de sessão — 12/11/2026
+
+- Centralizada a configuração de sessão em `jobfinder.config`: `APP_ENV`, `SESSION_HOURS` e `COOKIE_SECURE`.
+- `SESSION_HOURS` precisa estar entre 1 e 720; `APP_ENV` aceita somente development, test, staging ou production; `COOKIE_SECURE` aceita somente true/false.
+- Staging e production exigem `COOKIE_SECURE=true`; configurações inválidas interrompem a inicialização.
+- `auth.py` passou a consumir a configuração validada, evitando interpretações divergentes de variáveis de ambiente.
+- `.env.example` agora exemplifica HTTP local com cookie não seguro somente em desenvolvimento; `render.yaml` declara explicitamente production, cookie seguro e sessão de 24 horas.
+- Testes unitários cobrem valores válidos e recusam ambiente desconhecido, sessão fora do intervalo e cookie inseguro em staging/production.
+- CI do commit `e12d575`: SQLite **141 passed, 2 skipped**; PostgreSQL 16 **143 passed**; build Vite **success**.
+
+**Pendente:** revisão operacional da configuração de produção e ensaio de bootstrap completo do schema em banco efêmero. O manifesto foi ajustado no repositório, mas nenhum deploy foi realizado; `MULTITENANT_READY=false` permanece.
