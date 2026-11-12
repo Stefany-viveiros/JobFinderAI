@@ -379,3 +379,12 @@ A validação é feita em bancos efêmeros do CI; não equivale a um ensaio com 
 - O endpoint informa apenas estados genéricos das chaves de armazenamento de currículo e credenciais SMTP (`configured` / `missing_or_invalid`); nunca retorna valores, fragmentos ou conteúdo de segredos.
 - O serviço pode continuar disponível para busca e operação manual mesmo quando uma integração opcional não está configurada; o status da integração aparece separadamente.
 - CI [43250875473](https://github.com/Stefany-viveiros/JobFinderAI/actions/runs/43250875473), commit `f2250aa`: SQLite **177 passed, 4 skipped**; PostgreSQL 16 **181 passed**; build Vite **success**.
+
+
+### Preflight de release somente leitura — 12/11/2026
+
+- Criado `scripts/preflight_release.py` para conferir o estado do Alembic, presença das tabelas privadas, FKs de titularidade e registros sem proprietário válido.
+- O diagnóstico exige `DATABASE_URL` explícita; não escolhe banco local como fallback, não aplica migrações e não altera registros. PostgreSQL é consultado em transação read-only e SQLite usa `PRAGMA query_only`.
+- A saída omite usuário/senha da URL e não imprime SQL nem dados pessoais. O argumento `--require-multitenant` executa também o gate de schema do produto quando as verificações básicas passam.
+- Testes adicionados para mascaramento de credenciais e bloqueio quando `DATABASE_URL` está ausente.
+- Validação do CI desta implementação pendente; nenhum staging, Neon, Render ou `main` foi acessado.
