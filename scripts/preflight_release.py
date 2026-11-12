@@ -146,11 +146,11 @@ def main() -> int:
             report["checks"]["ownership"] = ownership
 
             if args.require_multitenant and not failures:
-                # Validador adicional do próprio produto; só consulta schema e dados.
-                os.environ["DATABASE_URL"] = database_url
+                # Reutiliza a conexão já protegida como somente leitura.
+                # Assim o validador não abre uma segunda conexão fora da transação read-only.
                 from jobfinder.db import validate_multitenant_schema
 
-                validate_multitenant_schema()
+                validate_multitenant_schema(connection)
                 report["checks"]["multitenant_gate"] = {"status": "ok"}
             elif args.require_multitenant:
                 report["checks"]["multitenant_gate"] = {
