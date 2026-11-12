@@ -72,7 +72,7 @@ def test_prepare_then_approve_is_blocked_without_user_resume_attachment(client, 
     monkeypatch.setattr(applying, "_deliver", lambda m, smtp_config=None: delivered.append(m))
     response = client.post(f"/api/attempts/{attempt['id']}/approve")
     assert response.status_code == 400
-    assert "canal de envio automático" in response.json()["detail"]
+    assert "manual_required" in response.json()["detail"]
     assert delivered == []
     assert client.get("/api/dashboard").json()["metrics"]["failed_applications"] == 0
 
