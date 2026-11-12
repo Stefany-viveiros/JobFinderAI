@@ -159,3 +159,12 @@ A inspeção foi realizada por leitura dos arquivos da branch no GitHub. O ambie
 **Decisão:** reorganizar o menu lateral e reutilizar `CareerTwinPage` e `MarketIntelligencePage`, com rolagem para as seções de competências, diagnóstico, desafios e plano.
 
 **Consequências:** reduz duplicação e preserva APIs e estados atuais. Os módulos Competências/Diagnóstico/Desafios/Plano são pontos de entrada para seções existentes, não subsistemas independentes. O painel de candidaturas mostra contagens reais, mas não estima conversão sem amostra/coorte suficiente.
+
+
+## 18. Vínculo obrigatório entre oportunidade e conta nas ações privadas
+
+**Contexto:** o catálogo de vagas é compartilhado, mas favoritos, candidaturas, tentativas e tarefas pertencem à conta. Algumas rotas aceitavam um ID de vaga existente no catálogo sem exigir que houvesse vínculo ativo em `JobMatch` para a sessão autenticada.
+
+**Decisão:** antes de favoritar, preparar candidatura, confirmar candidatura manual ou criar tarefa associada, exigir um `JobMatch` com o mesmo `job_id`, `user_id` autenticado e `is_archived=false`. A ausência do vínculo retorna 404. O endpoint de favorito deixa de criar vínculo implicitamente a partir de um ID global arbitrário.
+
+**Consequências:** conhecer ou adivinhar o identificador global de uma vaga não concede acesso às ações privadas. O catálogo permanece compartilhado e a pessoa precisa ter a oportunidade vinculada ao próprio painel. Teste de regressão cobre as quatro operações e verifica ausência de efeitos colaterais. O gate multiusuário continua fechado até a auditoria integral.
