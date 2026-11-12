@@ -1372,3 +1372,46 @@ def test_multitenant_schema_validator_rejects_cross_account_evidence_reviews(db,
     db.delete(other)
     db.commit()
     validate_multitenant_schema()
+
+
+def test_multitenant_schema_validator_rejects_cross_account_application_events(db, test_user):
+    from jobfinder.db import validate_multitenant_schema
+    from jobfinder.models import Application, ApplicationEvent, User
+    from jobfinder.api import password_hasher
+
+    other = User(
+        email="second-application-owner@example.com",
+        email_normalized="second-application-owner@example.com",
+        full_name="Outra conta",
+        password_hash=password_hasher.hash("OutraSenhaSegura123!"),
+        role="user",
+        is_active=True,
+    )
+    db.add(other)
+    db.flush()
+    application = Application(
+        user_id=test_user.id,
+        job_id=987654,
+        status="Candidatura enviada",
+    )
+    db.add(application)
+    db.flush()
+    event = ApplicationEvent(
+        user_id=other.id,
+        application_id=application.id,
+        previous_status="",
+        new_status="Candidatura enviada",
+        source="manual",
+        note="Tentativa de vínculo cruzado",
+    )
+    db.add(event)
+    db.commit()
+
+    with pytest.raises(RuntimeError, match="vinculados a outra conta"):
+        validate_multitenant_schema()
+
+    db.delete(event)
+    db.delete(application)
+    db.delete(other)
+    db.commit()
+    validate_multitenant_schema()
