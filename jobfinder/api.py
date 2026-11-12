@@ -745,16 +745,24 @@ def collect_jobs(payload: dict, request: Request, db: Session = Depends(get_db))
     }
 
 
+def _require_user_job_match(db: Session, job_id: int, user_id: int) -> JobMatch:
+    """Exige que a oportunidade esteja vinculada e ativa no painel da conta."""
+    match = db.scalar(select(JobMatch).where(
+        JobMatch.job_id == job_id,
+        JobMatch.user_id == user_id,
+        JobMatch.is_archived.is_(False),
+    ))
+    if match is None:
+        raise HTTPException(404, "Oportunidade não encontrada no seu painel.")
+    return match
+
+
 @app.patch("/api/jobs/{job_id}/favorite")
 def toggle_favorite(job_id: int, request: Request, db: Session = Depends(get_db)):
     job = db.get(Job, job_id)
     if not job:
         raise HTTPException(404, "Vaga não encontrada.")
-    user_id = request.state.user_id
-    match = db.scalar(select(JobMatch).where(JobMatch.job_id == job.id, JobMatch.user_id == user_id))
-    if match is None:
-        match = JobMatch(job_id=job.id, user_id=user_id)
-        db.add(match)
+    match = _require_user_job_match(db, job_id, request.state.user_id)
     match.is_favorite = not match.is_favorite
     db.commit()
     return {"id": job.id, "is_favorite": match.is_favorite}
@@ -772,6 +780,7 @@ def apply_to_job(job_id: int, payload: ConfirmSent, request: Request, db: Sessio
     job = db.get(Job, job_id)
     if not job:
         raise HTTPException(404, "Vaga não encontrada.")
+    _require_user_job_match(db, job_id, request.state.user_id)
     if not payload.confirmed:
         raise HTTPException(400, "Confirme que você já enviou a candidatura no site da vaga.")
     try:
@@ -789,6 +798,7 @@ def prepare_job_application(job_id: int, request: Request, db: Session = Depends
     job = db.get(Job, job_id)
     if not job:
         raise HTTPException(404, "Vaga não encontrada.")
+    _require_user_job_match(db, job_id, request.state.user_id)
     try:
         attempt = applying.prepare_attempt(db, job, get_profile(db, request.state.user_id), user_id=request.state.user_id)
     except applying.ApplyError as exc:
@@ -1018,8 +1028,8 @@ def list_tasks(request: Request, view: str = "Pendentes", db: Session = Depends(
 
 @app.post("/api/tasks")
 def new_task(payload: TaskCreate, request: Request, db: Session = Depends(get_db)):
-    if payload.job_id is not None and not db.get(Job, payload.job_id):
-        raise HTTPException(404, "Vaga associada não encontrada.")
+    if payload.job_id is not None:
+        _require_user_job_match(db, payload.job_id, request.state.user_id)
     task = create_task(db, payload.title, payload.description, payload.due_date, payload.priority, payload.job_id, payload.notify, user_id=request.state.user_id)
     return {"message": "Tarefa criada.", "task": task_dict(task)}
 
