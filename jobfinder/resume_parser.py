@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import io
 import re
+import zipfile
 from pathlib import Path
 
 from docx import Document
@@ -10,6 +11,10 @@ from pypdf import PdfReader
 
 
 MAX_TEXT_CHARS = 60_000
+MAX_DOCX_ENTRIES = 500
+MAX_DOCX_UNCOMPRESSED_BYTES = 20 * 1024 * 1024
+MAX_DOCX_ENTRY_BYTES = 10 * 1024 * 1024
+MAX_DOCX_COMPRESSION_RATIO = 200
 TECHNOLOGIES = [
     "Python", "JavaScript", "TypeScript", "Java", "C#", "PHP", "C++", "C",
     "React", "Angular", "Vue", "Node.js", "FastAPI", "Django", "Flask",
@@ -17,6 +22,37 @@ TECHNOLOGIES = [
     "MongoDB", "Git", "GitHub", "Docker", "AWS", "Azure", "Google Cloud",
     "Power BI", "Excel", "TensorFlow", "PyTorch", "Linux",
 ]
+
+
+def _validate_docx_archive(content: bytes) -> None:
+    """Valida o pacote DOCX antes da leitura para limitar expansão e estrutura ZIP."""
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            entries = archive.infolist()
+    except (zipfile.BadZipFile, zipfile.LargeZipFile, OSError) as exc:
+        raise ValueError("O arquivo não contém uma estrutura DOCX válida.") from exc
+
+    if not entries or len(entries) > MAX_DOCX_ENTRIES:
+        raise ValueError("O DOCX possui quantidade de arquivos fora do limite permitido.")
+    names = [item.filename for item in entries]
+    if len(names) != len(set(names)):
+        raise ValueError("O DOCX contém nomes de arquivos duplicados.")
+    if "[Content_Types].xml" not in names or "word/document.xml" not in names:
+        raise ValueError("O pacote enviado não contém a estrutura mínima de um DOCX.")
+
+    total_uncompressed = 0
+    for item in entries:
+        if item.flag_bits & 0x1:
+            raise ValueError("DOCX protegido por criptografia não é aceito.")
+        if item.file_size > MAX_DOCX_ENTRY_BYTES:
+            raise ValueError("Um componente do DOCX excede o limite de tamanho descompactado.")
+        total_uncompressed += item.file_size
+        if item.file_size >= 1024 * 1024:
+            ratio = item.file_size / max(item.compress_size, 1)
+            if ratio > MAX_DOCX_COMPRESSION_RATIO:
+                raise ValueError("O DOCX apresenta taxa de compressão excessiva.")
+    if total_uncompressed > MAX_DOCX_UNCOMPRESSED_BYTES:
+        raise ValueError("O DOCX excede o limite de conteúdo descompactado.")
 
 
 def _read_text(content: bytes, suffix: str) -> str:
@@ -29,6 +65,7 @@ def _read_text(content: bytes, suffix: str) -> str:
             pages.append(page.extract_text() or "")
         return "\n".join(pages)
     if suffix == ".docx":
+        _validate_docx_archive(content)
         document = Document(io.BytesIO(content))
         parts = [p.text for p in document.paragraphs if p.text.strip()]
         for table in document.tables:

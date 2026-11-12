@@ -1,7 +1,10 @@
 from docx import Document
 from io import BytesIO
+from zipfile import ZIP_DEFLATED, ZipFile
 
-from jobfinder.resume_parser import parse_resume, extract_resume_text
+import pytest
+
+from jobfinder.resume_parser import parse_resume, extract_resume_text, _read_text
 
 
 def make_docx():
@@ -62,3 +65,19 @@ def test_extract_resume_text_keeps_full_docx_content():
     assert "Marina da Silva" in text
     assert "FORMAÇÃO ACADÊMICA" in text
     assert "Estágio de suporte técnico" in text
+
+
+
+def test_docx_parser_rejects_invalid_zip_package():
+    with pytest.raises(ValueError, match="estrutura DOCX válida"):
+        _read_text(b"PK\\x03\\x04", ".docx")
+
+
+def test_docx_parser_rejects_excessive_compression_ratio():
+    archive = BytesIO()
+    with ZipFile(archive, "w", ZIP_DEFLATED, compresslevel=9) as package:
+        package.writestr("[Content_Types].xml", "<Types/>")
+        package.writestr("word/document.xml", "A" * (2 * 1024 * 1024))
+
+    with pytest.raises(ValueError, match="compressão excessiva"):
+        _read_text(archive.getvalue(), ".docx")
