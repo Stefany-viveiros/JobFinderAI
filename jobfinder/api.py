@@ -1106,7 +1106,7 @@ def update_profile(payload: ProfileUpdate, request: Request, db: Session = Depen
         if key.startswith("weight_"):
             value = max(0, min(100, value))
         setattr(p, key, value)
-    ledger_sync = sync_profile_evidence(db, p, user_id=request.state.user_id)
+    # Garante IDs estáveis para novos registros estruturados antes de criar source_key.\n    db.flush()\n    ledger_sync = sync_profile_evidence(db, p, user_id=request.state.user_id)
     db.commit()
     refresh_user_scores(db, request.state.user_id)
     db.refresh(p)
