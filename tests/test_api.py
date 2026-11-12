@@ -389,3 +389,98 @@ def test_two_accounts_cannot_read_or_modify_each_others_private_data(client, db,
         ))
         db.commit()
         assert second.get("/api/notifications").json() == []
+
+def test_career_twin_returns_traceable_profile_evidence(client, db, ready_profile):
+    from jobfinder.models import PortfolioProject, Skill, SkillAssessmentAttempt
+
+    project = PortfolioProject(
+        profile_id=ready_profile.id,
+        name="API de portfólio",
+        description="Serviço backend construído com Python e FastAPI.",
+        technologies="Python, FastAPI, PostgreSQL",
+        status="Concluído",
+        repository_url="https://github.com/example/api",
+    )
+    db.add(project)
+
+    sql = Skill(
+        canonical_name="SQL",
+        category="database",
+        aliases_json='["sql"]',
+        active=True,
+        taxonomy_version="test",
+    )
+    db.add(sql)
+    db.flush()
+    db.add(SkillAssessmentAttempt(
+        user_id=ready_profile.user_id,
+        skill_id=sql.id,
+        challenge_title="Desafio SQL",
+        challenge_prompt="Consulta com JOIN e agregação",
+        rubric_json="[]",
+        response_text="Escrevi uma consulta SQL com JOIN e GROUP BY para consolidar os resultados.",
+        evidence_url="",
+        rubric_answers_json="{}",
+        score=75,
+        feedback="Autoavaliação registrada.",
+        status="self_reviewed",
+    ))
+    db.commit()
+
+    response = client.get("/api/career-twin")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is True
+    assert payload["profile"]["name"] == "Ana Teste"
+    assert payload["summary"]["skills_identified"] >= 3
+
+    python_skill = next(item for item in payload["skills"] if item["name"] == "Python")
+    assert python_skill["status"] == "completed_project"
+    assert any(item["source_type"] == "completed_project" for item in python_skill["evidence"])
+    assert any(item["source_type"] == "self_declared" for item in python_skill["evidence"])
+
+    sql_skill = next(item for item in payload["skills"] if item["name"] == "SQL")
+    assert sql_skill["status"] == "self_assessed"
+    assert sql_skill["self_assessment"]["result_kind"] == "self_assessment"
+    assert "não é validação independente" in sql_skill["self_assessment"]["notice"]
+
+
+def test_career_twin_is_isolated_between_accounts(client, db, test_user, ready_profile):
+    from fastapi.testclient import TestClient
+    from jobfinder.models import User
+    from jobfinder.api import password_hasher
+    from jobfinder.service import get_profile
+
+    second_user = User(
+        email="career-twin-second@example.com",
+        email_normalized="career-twin-second@example.com",
+        full_name="Segunda Pessoa",
+        password_hash=password_hasher.hash("OutraSenhaSegura123!"),
+        role="user",
+        is_active=True,
+    )
+    db.add(second_user)
+    db.commit()
+    second_profile = get_profile(db, user_id=second_user.id)
+    second_profile.name = "Segunda Pessoa"
+    second_profile.technologies = "React e TypeScript"
+    db.commit()
+
+    first_payload = client.get("/api/career-twin").json()
+    assert first_payload["profile"]["name"] == "Ana Teste"
+    assert "React" not in {item["name"] for item in first_payload["skills"]}
+
+    with TestClient(api_module.app, base_url="https://testserver") as second:
+        login = second.post("/api/auth/login", json={
+            "email": second_user.email,
+            "password": "OutraSenhaSegura123!",
+        })
+        assert login.status_code == 200
+        session = second.get("/api/auth/me")
+        assert session.status_code == 200
+        second.headers.update({"X-CSRF-Token": session.json()["csrf_token"]})
+        second_payload = second.get("/api/career-twin").json()
+
+    assert second_payload["profile"]["name"] == "Segunda Pessoa"
+    assert "React" in {item["name"] for item in second_payload["skills"]}
+    assert "Python" not in {item["name"] for item in second_payload["skills"]}
