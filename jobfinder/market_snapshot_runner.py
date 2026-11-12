@@ -5,9 +5,9 @@ quando não há um snapshot comparável concluído nos últimos 15 dias.
 """
 import json
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from .db import SessionLocal, init_db
 from .market import taxonomy_version
@@ -32,8 +32,7 @@ def run_snapshot_if_due(
             MarketAnalysisRun.level_scope == "both",
         )
         .order_by(
-            MarketAnalysisRun.completed_at.desc(),
-            MarketAnalysisRun.created_at.desc(),
+            func.coalesce(MarketAnalysisRun.completed_at, MarketAnalysisRun.created_at).desc(),
             MarketAnalysisRun.id.desc(),
         )
         .limit(1)
