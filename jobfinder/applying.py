@@ -17,7 +17,8 @@ from sqlalchemy import func, select
 
 from .config import settings
 from .matching import normalize, profile_technology_terms
-from .models import Application, ApplicationAttempt, ApplicationEvent, Job
+from .models import Application, ApplicationAttempt, ApplicationEvent, Job, SmtpAccount
+from .smtp_credentials import decrypt_password, CredentialEncryptionError
 
 OPEN_STATUSES = ("prepared", "awaiting_approval", "manual_required")
 SENDABLE_STATUSES = ("prepared", "awaiting_approval", "failed")
@@ -147,30 +148,39 @@ def extract_apply_email(text: str) -> str | None:
     return None
 
 
-def email_channel_available(job, user_id: int | None = None) -> tuple[bool, str]:
+def email_channel_available(job, user_id: int | None = None, db=None) -> tuple[bool, str]:
     if not extract_apply_email(job.description):
         return False, "A vaga não publica e-mail de candidatura; finalize no site original."
-    # Até existir armazenamento criptografado de credenciais SMTP por conta,
-    # nunca compartilhe o remetente/segredo global do servidor entre usuários SaaS.
     import os
-    if user_id is not None and os.getenv("MULTITENANT_READY", "false").strip().lower() == "true":
-        return False, (
-            "Envio automático indisponível: configure uma conexão SMTP individual da sua conta. "
-            "Por segurança, credenciais globais do servidor não são compartilhadas."
-        )
+    if os.getenv("MULTITENANT_READY", "false").strip().lower() == "true":
+        if user_id is None or db is None:
+            return False, "Conexão SMTP individual indisponível sem identidade autenticada."
+        account = db.scalar(select(SmtpAccount).where(SmtpAccount.user_id == user_id))
+        if account is None:
+            return False, "Configure sua conexão SMTP individual para habilitar o envio automático."
+        try:
+            decrypt_password(account.encrypted_password)
+        except CredentialEncryptionError:
+            return False, "Credencial SMTP indisponível; revise a chave de criptografia do servidor."
+        return True, ""
     if not settings.smtp_can_send_applications:
         return False, "SMTP não configurado no .env (SMTP_HOST, SMTP_FROM, SMTP_USERNAME, SMTP_PASSWORD)."
     return True, ""
 
 
-def _deliver(msg: EmailMessage):
-    """Isolado para facilitar testes. Levanta exceção se o SMTP recusar."""
-    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=25) as server:
+def _deliver(msg: EmailMessage, smtp_config: dict | None = None):
+    """Entrega com credenciais da conta; o modo legado usa apenas configuração local."""
+    config = smtp_config or {
+        "host": settings.smtp_host, "port": settings.smtp_port,
+        "username": settings.smtp_username, "password": settings.smtp_password,
+        "use_tls": settings.smtp_use_tls,
+    }
+    with smtplib.SMTP(config["host"], config["port"], timeout=25) as server:
         server.ehlo()
-        if settings.smtp_use_tls:
+        if config["use_tls"]:
             server.starttls()
             server.ehlo()
-        server.login(settings.smtp_username, settings.smtp_password)
+        server.login(config["username"], config["password"])
         server.send_message(msg)
 
 
@@ -210,7 +220,7 @@ def prepare_attempt(db, job: Job, profile, user_id: int | None = None) -> Applic
     if existing:
         raise ApplyError("Esta vaga já tem uma candidatura em andamento ou enviada.")
     subject, body = build_cover_letter(job, profile)
-    ok, reason = email_channel_available(job, user_id=user_id)
+    ok, reason = email_channel_available(job, user_id=user_id, db=db)
     if ok:
         attempt = ApplicationAttempt(user_id=user_id, job_id=job.id, status="prepared", channel="email", subject=subject,
                                      message=body, recipient=extract_apply_email(job.description),
@@ -259,18 +269,31 @@ def send_attempt(db, attempt: ApplicationAttempt, daily_limit: int | None = None
     if attempt.channel != "email" or not attempt.recipient:
         raise ApplyError("Esta candidatura não tem canal de envio automático; finalize no site original.")
     import os
-    if user_id is not None and os.getenv("MULTITENANT_READY", "false").strip().lower() == "true":
-        raise ApplyError(
-            "Envio automático bloqueado: configure SMTP individual da sua conta. "
-            "Credenciais globais do servidor não são compartilhadas entre usuários."
-        )
-    if not settings.smtp_can_send_applications:
-        raise ApplyError("SMTP não configurado no .env.")
+    smtp_config = None
+    if os.getenv("MULTITENANT_READY", "false").strip().lower() == "true":
+        if user_id is None:
+            raise ApplyError("Envio SMTP exige identidade autenticada.")
+        account = db.scalar(select(SmtpAccount).where(SmtpAccount.user_id == user_id))
+        if account is None:
+            raise ApplyError("Configure sua conexão SMTP individual antes de aprovar o envio.")
+        try:
+            smtp_password = decrypt_password(account.encrypted_password)
+        except CredentialEncryptionError as exc:
+            raise ApplyError(str(exc)) from exc
+        smtp_config = {
+            "host": account.host, "port": account.port, "username": account.username,
+            "password": smtp_password, "use_tls": account.use_tls,
+        }
+        sender_email = account.from_email
+    else:
+        if not settings.smtp_can_send_applications:
+            raise ApplyError("SMTP não configurado no .env.")
+        sender_email = settings.smtp_from
     if daily_limit is not None and sent_today_count(db, user_id=user_id) >= daily_limit:
         raise ApplyError(f"Limite diário de {daily_limit} candidatura(s) automática(s) atingido.")
 
     msg = EmailMessage()
-    msg["Subject"], msg["From"], msg["To"] = attempt.subject, settings.smtp_from, attempt.recipient
+    msg["Subject"], msg["From"], msg["To"] = attempt.subject, sender_email, attempt.recipient
     msg.set_content(attempt.message)
     if settings.cv_path:
         cv = Path(settings.cv_path)
@@ -280,7 +303,7 @@ def send_attempt(db, attempt: ApplicationAttempt, daily_limit: int | None = None
             return attempt
         msg.add_attachment(cv.read_bytes(), maintype="application", subtype="pdf", filename=cv.name)
     try:
-        _deliver(msg)
+        _deliver(msg, smtp_config=smtp_config)
     except Exception as exc:  # qualquer falha de rede/autenticação: nada é registrado como enviado
         attempt.status, attempt.detail = "failed", f"{type(exc).__name__}: {exc}"
         db.commit()
