@@ -7,6 +7,7 @@ from jobfinder import sources
 class FakeResponse:
     def __init__(self, json_data=None, text=""):
         self._json, self.text = json_data, text
+        self.content = text.encode("utf-8")
 
     def raise_for_status(self):
         pass
@@ -80,3 +81,54 @@ def test_brazilian_portal_catalog_is_link_only_and_never_claims_auto_apply():
         assert sources.SOURCE_INFO[name]["mode"] == "link_only"
         assert sources.SOURCE_INFO[name]["search_api"] is False
         assert sources.SOURCE_INFO[name]["apply_api"] is False
+
+
+def test_empregare_public_api_is_normalized_and_deduplicated(monkeypatch):
+    payload = {
+        "sucesso": True,
+        "model": {
+            "totalPaginas": 1,
+            "dados": [{
+                "id": 42, "url": "/v42", "titulo": "Estágio em Desenvolvimento",
+                "chamada": "Atuação com Python", "empresa": "Empresa Y",
+                "nivel": "Estágio", "trabalhoRemoto": True,
+                "trabalhoRemotoTexto": "Trabalho remoto", "cidades": ["São Paulo"],
+                "timestamp": 1794000000,
+            }],
+        },
+    }
+    calls = []
+    monkeypatch.setattr(requests, "get", lambda *a, **k: (calls.append(k) or FakeResponse(payload)))
+    jobs = sources.fetch_empregare()
+    assert len(jobs) == 1
+    assert jobs[0]["source"] == "Empregare"
+    assert jobs[0]["source_id"] == "42"
+    assert jobs[0]["url"] == "https://www.empregare.com/v42"
+    assert jobs[0]["modality"] == "Remoto"
+    assert jobs[0]["job_type"] == "Estágio"
+    assert len(calls) == 2
+    assert calls[0]["params"]["ItensPagina"] == 30
+
+
+def test_empregando_brasil_xml_feed_is_normalized(monkeypatch):
+    xml = """<?xml version="1.0" encoding="UTF-8"?>
+    <jobs><job><id>abc-1</id><title>Estágio Python</title>
+    <url>https://empregandobrasil.com.br/vaga/abc-1</url><company>Empresa Z</company>
+    <city>São Paulo</city><state>SP</state><published>2026-11-10</published>
+    <description><![CDATA[<p>Desenvolvimento com <b>Python</b>.</p>]]></description>
+    </job></jobs>"""
+    monkeypatch.setattr(requests, "get", lambda *a, **k: FakeResponse(text=xml))
+    jobs = sources.fetch_empregando_brasil()
+    assert len(jobs) == 1
+    assert jobs[0]["source"] == "Empregando Brasil"
+    assert jobs[0]["location"] == "São Paulo, SP"
+    assert jobs[0]["description"] == "Desenvolvimento com Python ."
+    assert jobs[0]["published_at"] == "2026-11-10"
+
+
+def test_empregando_brasil_rejects_oversized_feed(monkeypatch):
+    response = FakeResponse(text="<jobs/>")
+    response.content = b"x" * (8 * 1024 * 1024 + 1)
+    monkeypatch.setattr(requests, "get", lambda *a, **k: response)
+    with pytest.raises(ValueError, match="8 MB"):
+        sources.fetch_empregando_brasil()
