@@ -4,7 +4,6 @@ A primeira versão é um read model determinístico: não persiste cópias do pe
 não atribui nível de proficiência e não transforma ausência de menção em ausência
 de conhecimento.
 """
-import json
 from collections import defaultdict
 
 from sqlalchemy import select
@@ -182,6 +181,7 @@ def build_career_twin(db: Session, *, user_id: int) -> dict:
             market_by_skill[skill.canonical_name] = {
                 "skill_id": skill.id,
                 "jobs_count": metric.jobs_count,
+                "category": skill.category,
                 "mention_rate": round(metric.mention_rate * 100, 1),
                 "rank": metric.rank,
                 "run_id": run.id,
@@ -227,7 +227,7 @@ def build_career_twin(db: Session, *, user_id: int) -> dict:
 
         skills.append({
             "name": name,
-            "category": next((item["category"] for item in evidence), None),
+            "category": next((item["category"] for item in evidence), market.get("category") if market else None),
             "status": status,
             "status_label": status_label,
             "evidence": evidence,
@@ -256,7 +256,7 @@ def build_career_twin(db: Session, *, user_id: int) -> dict:
         "summary": {
             "completed_sections": completed_sections,
             "total_sections": len(sections),
-            "skills_identified": len(skills),
+            "skills_identified": sum(bool(item["evidence"] or item["self_assessment"]) for item in skills),
             "skills_with_evidence": sum(bool(item["evidence"]) for item in skills),
             "skills_with_self_assessment": sum(bool(item["self_assessment"]) for item in skills),
             "skills_not_found_in_profile": sum(item["status"] == "not_found" for item in skills),
