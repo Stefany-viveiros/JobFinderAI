@@ -253,3 +253,15 @@ Continuar a auditoria endpoint a endpoint com foco em vínculo cruzado de entida
 - **Não está ativo em produção:** o agendamento automático do GitHub só executa na branch padrão depois da integração e da configuração do segredo `MARKET_DATABASE_URL`. Nenhum banco Neon foi acessado.
 - Testes adicionados para primeira execução, intervalo de 15 dias, skip de snapshot recente e mudança de taxonomia. CI do commit `def66f9`: SQLite 157 passed / 3 skipped; PostgreSQL 16 160 passed; Vite build aprovado.
 
+
+
+## Validação adicional — isolamento e migração SMTP — 12/11/2026
+
+- O gate multiusuário agora valida também se cada evento de histórico de candidatura pertence ao mesmo usuário proprietário da candidatura relacionada. Vínculos ausentes ou cruzados interrompem a liberação.
+- Teste negativo dedicado adicionado para impedir evento de candidatura de uma conta associado a candidatura de outra.
+- CI do commit `f7e9bdaf`: SQLite e PostgreSQL 16 aprovados; build Vite aprovado.
+- A migração `20261112_0005_smtp_accounts` ganhou testes dedicados para SQLite e PostgreSQL 16: FK para `users`, unicidade por usuário, senha armazenada somente no campo cifrado e downgrade bloqueado quando há credencial registrada.
+- Commits desta rodada: `cfe9452`, `cb56971`, `336f021`, `f7e9bda`, `7210d35` e `15bfccf`. Os commits intermediários com falhas foram corrigidos; a execução `43239062773` confirmou os três jobs verdes.
+- Nova execução de CI para os testes de migração SMTP: [43239908898](https://github.com/Stefany-viveiros/JobFinderAI/actions/runs/43239908898) (em andamento no momento desta atualização).
+
+A validação é feita em bancos efêmeros do CI; não equivale a um ensaio com cópia do banco real de destino. Neon e Render continuam sem alterações.
