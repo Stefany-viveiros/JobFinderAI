@@ -124,6 +124,7 @@ def test_empregando_brasil_rejects_oversized_feed(monkeypatch):
 
 
 def test_jobicy_public_api_is_normalized_with_canonical_attribution(monkeypatch):
+    sources._JOBICY_CACHE.update({"expires_at": 0.0, "items": None})
     payload = {
         "success": True,
         "jobs": [{
@@ -134,8 +135,12 @@ def test_jobicy_public_api_is_normalized_with_canonical_attribution(monkeypatch)
             "jobIndustry": ["Engineering"], "pubDate": "2026-11-11T10:00:00Z",
         }],
     }
-    monkeypatch.setattr(requests, "get", lambda *a, **k: FakeResponse(payload))
+    calls = []
+    monkeypatch.setattr(requests, "get", lambda *a, **k: (calls.append(k) or FakeResponse(payload)))
     jobs = sources.fetch_jobicy()
+    cached_jobs = sources.fetch_jobicy()
+    assert len(calls) == 1
+    assert cached_jobs == jobs
     assert jobs[0]["source"] == "Jobicy"
     assert jobs[0]["source_id"] == "987"
     assert jobs[0]["url"] == "https://jobicy.com/jobs/python-intern"
