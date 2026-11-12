@@ -488,3 +488,66 @@ def test_career_evidence_review_migration_preserves_human_history_on_rollback(tm
     command.downgrade(config, "20261112_0003")
     assert not sa.inspect(engine).has_table("career_evidence_reviews")
     engine.dispose()
+
+
+def test_smtp_accounts_migration_is_account_scoped_and_refuses_data_loss(tmp_path, monkeypatch):
+    database = tmp_path / "smtp-accounts.db"
+    engine = sa.create_engine(f"sqlite:///{database}")
+    metadata = sa.MetaData()
+    sa.Table("users", metadata, sa.Column("id", sa.Integer, primary_key=True))
+    sa.Table(
+        "applications", metadata,
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("user_id", sa.Integer, nullable=True),
+        sa.Column("job_id", sa.Integer, nullable=False),
+        sa.UniqueConstraint("user_id", "job_id", name="uq_user_application_job"),
+    )
+    metadata.create_all(engine)
+
+    config_path = Path(__file__).resolve().parents[1] / "alembic.ini"
+    config = Config(str(config_path))
+    config.set_main_option("sqlalchemy.url", f"sqlite:///{database}")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    command.upgrade(config, "head")
+
+    inspector = sa.inspect(engine)
+    assert inspector.has_table("smtp_accounts")
+    columns = {item["name"]: item for item in inspector.get_columns("smtp_accounts")}
+    assert columns["user_id"]["nullable"] is False
+    assert columns["encrypted_password"]["nullable"] is False
+    assert "password" not in columns
+    assert "encrypted_password" in columns
+    unique_sets = {
+        tuple(sorted(item.get("column_names") or ()))
+        for item in inspector.get_unique_constraints("smtp_accounts")
+    }
+    assert ("user_id",) in unique_sets
+    assert any(
+        fk["constrained_columns"] == ["user_id"]
+        and fk["referred_table"] == "users"
+        for fk in inspector.get_foreign_keys("smtp_accounts")
+    )
+
+    with engine.begin() as connection:
+        connection.execute(sa.text("INSERT INTO users (id) VALUES (1), (2)"))
+        connection.execute(sa.text(
+            "INSERT INTO smtp_accounts "
+            "(id, user_id, host, port, username, encrypted_password, from_email, use_tls, created_at, updated_at) "
+            "VALUES (1, 1, 'smtp.example.test', 587, 'user@example.test', 'ciphertext-only', "
+            "'user@example.test', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+        ))
+    with pytest.raises(IntegrityError):
+        with engine.begin() as connection:
+            connection.execute(sa.text(
+                "INSERT INTO smtp_accounts "
+                "(id, user_id, host, port, username, encrypted_password, from_email, use_tls, created_at, updated_at) "
+                "VALUES (2, 1, 'smtp.example.test', 587, 'other@example.test', 'ciphertext-only', "
+                "'other@example.test', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            ))
+
+    with pytest.raises(RuntimeError, match="os dados não serão apagados"):
+        command.downgrade(config, "20261112_0004")
+    with engine.connect() as connection:
+        assert connection.execute(sa.text("SELECT COUNT(*) FROM smtp_accounts")).scalar_one() == 1
+    assert sa.inspect(engine).has_table("smtp_accounts")
+    engine.dispose()
