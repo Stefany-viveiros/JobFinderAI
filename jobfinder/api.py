@@ -683,19 +683,24 @@ def diagnose_job(job_id: int, request: Request, db: Session = Depends(get_db)):
         raise HTTPException(404, "Oportunidade não encontrada no seu painel.")
     job, match = row
     profile = get_profile(db, user_id)
-    assessed_names = set(db.scalars(
-        select(Skill.canonical_name)
-        .join(SkillAssessmentAttempt, SkillAssessmentAttempt.skill_id == Skill.id)
+    dismissed_evidence = list_dismissed_evidence_keys(db, user_id=user_id)
+    assessment_rows = db.execute(
+        select(SkillAssessmentAttempt.id, Skill.canonical_name)
+        .join(Skill, SkillAssessmentAttempt.skill_id == Skill.id)
         .where(
             SkillAssessmentAttempt.user_id == user_id,
             SkillAssessmentAttempt.status == "self_reviewed",
         )
-    ).all())
+    ).all()
+    assessed_names = {
+        name for attempt_id, name in assessment_rows
+        if (f"challenge_attempt:{attempt_id}", name) not in dismissed_evidence
+    }
     diagnosis = diagnose_job_requirements(
         job.description or "",
         profile,
         self_assessed_skill_names=assessed_names,
-        dismissed_evidence_keys=list_dismissed_evidence_keys(db, user_id=user_id),
+        dismissed_evidence_keys=dismissed_evidence,
     )
     return {
         "job": {
