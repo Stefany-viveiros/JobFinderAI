@@ -40,14 +40,12 @@ from .career_twin import build_career_twin
 from .matching import diagnose_job_requirements
 
 app = FastAPI(title="JobFinder AI API", version="1.1.0", description="API do JobFinder AI")
-cors_origins = [
-    origin.strip()
-    for origin in os.getenv(
-        "CORS_ORIGINS",
-        "http://localhost:5173,http://127.0.0.1:5173",
-    ).split(",")
-    if origin.strip()
-]
+try:
+    cors_origins = settings_cors_origins = __import__("jobfinder.config", fromlist=["parse_cors_origins"]).parse_cors_origins(
+        os.getenv("CORS_ORIGINS") or "http://localhost:5173,http://127.0.0.1:5173"
+    )
+except ValueError as exc:
+    raise RuntimeError(f"Configuração CORS insegura: {exc}") from exc
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
