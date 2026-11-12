@@ -451,7 +451,7 @@ def test_skill_assessment_rejects_unsafe_evidence_urls(db, test_user, unsafe_url
         db.add(skill)
         db.flush()
     attempt = create_skill_assessment(db, user_id=test_user.id, skill_id=skill.id)
-    answers = {item["id"]: True for item in json.loads(attempt["rubric_json"])}
+    answers = {item["id"]: True for item in attempt["criteria"]}
     with pytest.raises(ValueError, match="URL HTTPS válida"):
         submit_skill_assessment(
             db, attempt["id"], response_text="Minha solução foi documentada e testada.",
