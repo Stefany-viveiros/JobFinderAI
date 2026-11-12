@@ -1,0 +1,276 @@
+"""Career Twin: visão consolidada e rastreável do perfil profissional.
+
+A primeira versão é um read model determinístico: não persiste cópias do perfil,
+não atribui nível de proficiência e não transforma ausência de menção em ausência
+de conhecimento.
+"""
+import json
+from collections import defaultdict
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session, selectinload
+
+from .market import extract_skills
+from .models import (
+    MarketAnalysisRun,
+    MarketSkillMetric,
+    Profile,
+    Skill,
+    SkillAssessmentAttempt,
+)
+
+
+COMPLETED_VALUES = {"concluído", "concluido", "completed", "finalizado"}
+IN_PROGRESS_VALUES = {"em andamento", "em desenvolvimento", "em curso", "em estudo", "in progress"}
+
+
+def _status(value: str | None) -> str:
+    return (value or "").strip().casefold()
+
+
+def _record_evidence(source_type: str, source_label: str, source_id: int | None, text: str):
+    found = extract_skills(text, source_field=source_type)
+    return [
+        {
+            "canonical_name": item["canonical_name"],
+            "category": item["category"],
+            "source_type": source_type,
+            "source_label": source_label,
+            "source_id": source_id,
+            "excerpt": item["evidence_text"],
+        }
+        for item in found
+    ]
+
+
+def _public_profile(profile: Profile) -> dict:
+    def records(items, fields):
+        return [
+            {"id": item.id, **{field: getattr(item, field) for field in fields}}
+            for item in items
+        ]
+
+    return {
+        "id": profile.id,
+        "name": profile.name or "",
+        "course": profile.course or "",
+        "institution": profile.institution or "",
+        "academic_stage": profile.academic_stage or "",
+        "interests": profile.interests or "",
+        "location": profile.location or "",
+        "modality": profile.modality or "",
+        "job_types": profile.job_types or "",
+        "educations": records(profile.educations, (
+            "course", "institution", "degree", "status", "start_date", "end_date", "description"
+        )),
+        "experiences": records(profile.experiences, (
+            "company", "role", "employment_type", "location", "start_date", "end_date",
+            "is_current", "description"
+        )),
+        "courses": records(profile.courses, (
+            "name", "provider", "workload", "completed_at", "status", "credential_url"
+        )),
+        "certifications": records(profile.certifications_items, (
+            "name", "issuer", "issued_at", "expires_at", "credential_id", "credential_url"
+        )),
+        "projects": records(profile.portfolio_projects, (
+            "name", "description", "technologies", "repository_url", "demo_url", "status"
+        )),
+    }
+
+
+def build_career_twin(db: Session, *, user_id: int) -> dict:
+    """Monta o Career Twin exclusivamente a partir dos registros da conta autenticada."""
+    profile = db.scalar(
+        select(Profile)
+        .where(Profile.user_id == user_id)
+        .options(
+            selectinload(Profile.educations),
+            selectinload(Profile.experiences),
+            selectinload(Profile.courses),
+            selectinload(Profile.certifications_items),
+            selectinload(Profile.portfolio_projects),
+        )
+    )
+    if profile is None:
+        return {
+            "available": False,
+            "message": "Seu perfil ainda não foi criado. Preencha o perfil profissional para montar seu Career Twin.",
+        }
+
+    evidence_by_skill = defaultdict(list)
+
+    def add(source_type: str, label: str, source_id: int | None, value: str):
+        if not (value or "").strip():
+            return
+        for evidence in _record_evidence(source_type, label, source_id, value):
+            evidence_by_skill[evidence["canonical_name"]].append(evidence)
+
+    for item in profile.experiences:
+        add("professional_experience", f'{item.role or "Experiência"} · {item.company or "Empresa não informada"}', item.id,
+            f"{item.role} {item.company} {item.description}")
+
+    for item in profile.portfolio_projects:
+        state = _status(item.status)
+        source_type = "completed_project" if state in COMPLETED_VALUES else "ongoing_project"
+        add(source_type, item.name or "Projeto", item.id,
+            f"{item.name} {item.description} {item.technologies}")
+
+    for item in profile.courses:
+        state = _status(item.status)
+        source_type = "completed_course" if state in COMPLETED_VALUES else (
+            "ongoing_course" if state in IN_PROGRESS_VALUES else "course_status_unspecified"
+        )
+        add(source_type, f'{item.name or "Curso"} · {item.provider or "Instituição não informada"}', item.id,
+            f"{item.name} {item.provider}")
+
+    for item in profile.certifications_items:
+        add("certification_record", f'{item.name or "Certificação"} · {item.issuer or "Emissor não informado"}', item.id,
+            f"{item.name} {item.issuer}")
+
+    for item in profile.educations:
+        add("education_record", f'{item.course or "Formação"} · {item.institution or "Instituição não informada"}', item.id,
+            f"{item.course} {item.institution} {item.description}")
+
+    # Campos legados continuam disponíveis e suas origens são identificadas.
+    add("legacy_experience", "Experiência (campo legado)", None, profile.experience or "")
+    add("legacy_project", "Projetos (campo legado)", None, profile.projects or "")
+    add("legacy_certification", "Certificações (campo legado)", None, profile.certifications or "")
+    add("self_declared", "Tecnologias declaradas", None, profile.technologies or "")
+    add("self_declared", "Habilidades declaradas", None, profile.skills or "")
+    add("self_declared", "Palavras-chave declaradas", None, profile.keywords or "")
+
+    assessment_rows = db.execute(
+        select(SkillAssessmentAttempt, Skill)
+        .join(Skill, Skill.id == SkillAssessmentAttempt.skill_id)
+        .where(
+            SkillAssessmentAttempt.user_id == user_id,
+            SkillAssessmentAttempt.status == "self_reviewed",
+        )
+        .order_by(SkillAssessmentAttempt.submitted_at.desc(), SkillAssessmentAttempt.id.desc())
+    ).all()
+    assessments_by_skill = {}
+    for attempt, skill in assessment_rows:
+        if skill.canonical_name not in assessments_by_skill:
+            assessments_by_skill[skill.canonical_name] = {
+                "attempt_id": attempt.id,
+                "title": attempt.challenge_title,
+                "score": attempt.score,
+                "feedback": attempt.feedback or "",
+                "evidence_url": attempt.evidence_url or "",
+                "submitted_at": attempt.submitted_at.isoformat() if attempt.submitted_at else None,
+                "result_kind": "self_assessment",
+                "notice": "Autoavaliação informada pela própria pessoa; não é validação independente de proficiência.",
+            }
+
+    run = db.scalar(
+        select(MarketAnalysisRun)
+        .where(MarketAnalysisRun.status == "completed")
+        .order_by(MarketAnalysisRun.created_at.desc(), MarketAnalysisRun.id.desc())
+        .limit(1)
+    )
+    market_by_skill = {}
+    market_payload = None
+    if run is not None:
+        metric_rows = db.execute(
+            select(MarketSkillMetric, Skill)
+            .join(Skill, Skill.id == MarketSkillMetric.skill_id)
+            .where(MarketSkillMetric.run_id == run.id)
+            .order_by(MarketSkillMetric.rank)
+        ).all()
+        for metric, skill in metric_rows:
+            market_by_skill[skill.canonical_name] = {
+                "skill_id": skill.id,
+                "jobs_count": metric.jobs_count,
+                "mention_rate": round(metric.mention_rate * 100, 1),
+                "rank": metric.rank,
+                "run_id": run.id,
+            }
+        market_payload = {
+            "run_id": run.id,
+            "created_at": run.created_at.isoformat() if run.created_at else None,
+            "period_start": run.period_start.isoformat() if run.period_start else None,
+            "period_end": run.period_end.isoformat() if run.period_end else None,
+            "level_scope": run.level_scope,
+            "valid_jobs": run.valid_jobs,
+            "jobs_with_description": run.jobs_with_description,
+            "quality_notes": run.quality_notes or "",
+        }
+
+    skill_names = set(evidence_by_skill) | set(assessments_by_skill) | set(market_by_skill)
+    skills = []
+    for name in sorted(skill_names, key=str.casefold):
+        evidence = evidence_by_skill.get(name, [])
+        assessment = assessments_by_skill.get(name)
+        market = market_by_skill.get(name)
+        if any(item["source_type"] == "professional_experience" for item in evidence):
+            status = "professional_experience"
+            status_label = "Mencionada em experiência profissional"
+        elif any(item["source_type"] == "completed_project" for item in evidence):
+            status = "completed_project"
+            status_label = "Mencionada em projeto concluído"
+        elif any(item["source_type"] == "ongoing_project" for item in evidence):
+            status = "ongoing_project"
+            status_label = "Mencionada em projeto em andamento"
+        elif any(item["source_type"] == "self_declared" for item in evidence):
+            status = "self_declared"
+            status_label = "Declarada no perfil"
+        elif evidence:
+            status = evidence[0]["source_type"]
+            status_label = "Mencionada em registro acadêmico ou de aprendizagem"
+        elif assessment:
+            status = "self_assessed"
+            status_label = "Possui autoavaliação registrada"
+        else:
+            status = "not_found"
+            status_label = "Não identificada nos registros disponíveis"
+
+        skills.append({
+            "name": name,
+            "category": next((item["category"] for item in evidence), None),
+            "status": status,
+            "status_label": status_label,
+            "evidence": evidence,
+            "self_assessment": assessment,
+            "market": market,
+            "interpretation": (
+                "A ausência de menção não significa ausência de conhecimento."
+                if status == "not_found"
+                else "A origem indica onde a competência foi mencionada; não representa, por si só, nível de proficiência."
+            ),
+        })
+
+    public_profile = _public_profile(profile)
+    sections = {
+        "identity": bool(public_profile["name"] or public_profile["interests"]),
+        "education": bool(public_profile["educations"] or public_profile["course"]),
+        "experience": bool(public_profile["experiences"] or profile.experience),
+        "projects": bool(public_profile["projects"] or profile.projects),
+        "learning": bool(public_profile["courses"] or public_profile["certifications"]),
+        "skills": bool(profile.technologies or profile.skills or profile.keywords or skills),
+    }
+    completed_sections = sum(sections.values())
+    return {
+        "available": True,
+        "profile": public_profile,
+        "summary": {
+            "completed_sections": completed_sections,
+            "total_sections": len(sections),
+            "skills_identified": len(skills),
+            "skills_with_evidence": sum(bool(item["evidence"]) for item in skills),
+            "skills_with_self_assessment": sum(bool(item["self_assessment"]) for item in skills),
+            "skills_not_found_in_profile": sum(item["status"] == "not_found" for item in skills),
+        },
+        "sections": sections,
+        "skills": skills,
+        "market": market_payload,
+        "data_quality": {
+            "method": "extração determinística por taxonomia e aliases do JobFinder AI",
+            "warnings": [
+                "Menção textual não comprova domínio técnico.",
+                "Cursos e certificações são registros de aprendizagem, não validações automáticas de proficiência.",
+                "Desafios atuais são autoavaliações, não avaliações independentes.",
+                "Competências não identificadas podem existir e não devem ser tratadas como ausentes.",
+            ],
+        },
+    }
