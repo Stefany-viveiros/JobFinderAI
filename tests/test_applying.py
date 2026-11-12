@@ -62,7 +62,7 @@ def test_multitenant_email_is_blocked_until_user_resume_can_be_attached(db, read
     available, reason = applying.email_channel_available(job, user_id=test_user.id, db=db)
     assert available is False
     assert "currículo" in reason
-    assert "portal original" in reason
+    assert "Perfil profissional" in reason
 
     # Mesmo uma tentativa antiga não pode contornar a regra nem anexar CV global.
     attempt = ApplicationAttempt(
