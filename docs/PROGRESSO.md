@@ -1,8 +1,8 @@
 # Progresso — JobFinder AI Proof-to-Opportunity Engine
 
 **Branch:** `feature/proof-to-opportunity-engine`  
-**Último commit de implementação:** `b871229`  
-**Atualização:** 12/11/2026.  \n**Cobertura geral estimada:** 92% (estimativa de escopo, não métrica automatizada).
+**Último commit de implementação:** `def66f9`  
+**Atualização:** 12/11/2026.  \n**Cobertura geral estimada:** 93% (estimativa de escopo, não métrica automatizada).
 
 ## Estado de execução
 
@@ -251,5 +251,5 @@ Continuar a auditoria endpoint a endpoint com foco em vínculo cruzado de entida
 - O workflow usa somente o segredo `MARKET_DATABASE_URL`; sem o segredo, o runner falha explicitamente em vez de usar banco local por engano.
 - O job lê apenas o catálogo público de vagas; não acessa perfil, currículo ou credenciais de SMTP.
 - **Não está ativo em produção:** o agendamento automático do GitHub só executa na branch padrão depois da integração e da configuração do segredo `MARKET_DATABASE_URL`. Nenhum banco Neon foi acessado.
-- Testes adicionados para primeira execução, intervalo de 15 dias, skip de snapshot recente e mudança de taxonomia. SQLite: 157 passed / 3 skipped; PostgreSQL 16 ainda aguardando no CI desta revisão.
+- Testes adicionados para primeira execução, intervalo de 15 dias, skip de snapshot recente e mudança de taxonomia. CI do commit `def66f9`: SQLite 157 passed / 3 skipped; PostgreSQL 16 160 passed; Vite build aprovado.
 
