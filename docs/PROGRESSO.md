@@ -243,3 +243,13 @@ Continuar a auditoria endpoint a endpoint com foco em vínculo cruzado de entida
 
 **Segurança / decisão:** manter `MULTITENANT_READY=false`. Não usar a chave de produção antes de definir armazenamento seguro, backup e procedimento de rotação; perder a chave torna as senhas armazenadas irrecuperáveis.
 
+## Incremento — agendamento quinzenal de inteligência de mercado (12/11/2026)
+
+- Criado `jobfinder.market_snapshot_runner`: verifica diariamente se existe snapshot comparável (nível estágio+júnior, janela de 30 dias, mesma taxonomia e extrator) concluído nos últimos 15 dias.
+- A execução é idempotente: pula snapshots recentes e cria outro quando vence o intervalo ou quando a taxonomia/extrator muda.
+- Criado `.github/workflows/market-snapshot.yml`, com cron diário às 09:15 UTC, disparo manual e grupo de concorrência para evitar execuções simultâneas.
+- O workflow usa somente o segredo `MARKET_DATABASE_URL`; sem o segredo, o runner falha explicitamente em vez de usar banco local por engano.
+- O job lê apenas o catálogo público de vagas; não acessa perfil, currículo ou credenciais de SMTP.
+- **Não está ativo em produção:** o agendamento automático do GitHub só executa na branch padrão depois da integração e da configuração do segredo `MARKET_DATABASE_URL`. Nenhum banco Neon foi acessado.
+- Testes adicionados para primeira execução, intervalo de 15 dias, skip de snapshot recente e mudança de taxonomia. SQLite: 157 passed / 3 skipped; PostgreSQL 16 ainda aguardando no CI desta revisão.
+
