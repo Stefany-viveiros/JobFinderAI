@@ -25,7 +25,7 @@ from .models import (
     Job, JobMatch, Application, Task, Profile, NotificationLog, ApplicationAttempt,
     Education, Experience, Course, Certification, PortfolioProject,
     MarketAnalysisRun, MarketSkillMetric, MarketSkillPair, Skill, DevelopmentPlanItem, SkillAssessmentAttempt, ApplicationEvent,
-    SmtpAccount,
+    SmtpAccount, UserResume,
 )
 from .service import get_profile, save_jobs, refresh_scores, create_task, complete_task, STATUSES, collect_and_save_ranked, collect_for_user, refresh_user_scores
 from .sources import SOURCES, SOURCE_INFO, LINK_ONLY_SOURCES, collect_selected, external_search_links
@@ -36,6 +36,7 @@ from .config import settings, parse_cors_origins
 from .smtp_credentials import encrypt_password, decrypt_password, CredentialEncryptionError
 from .resume_parser import parse_resume, extract_resume_text
 from .resume_ai import analyze_resume_with_gemini, ResumeAIError
+from .resume_storage import encrypt_resume, safe_filename, resume_content_type, ResumeStorageError
 from .market_service import (create_market_snapshot, index_unprocessed_jobs, build_profile_gap,
     list_development_plan, create_development_item, update_development_item, DEVELOPMENT_STATUSES,
     create_skill_assessment, submit_skill_assessment, list_skill_assessments, compare_market_trends)
@@ -1280,6 +1281,7 @@ async def import_resume(
     request: Request,
     file: UploadFile = File(...),
     allow_external_ai: bool = Form(False),
+    store_for_applications: bool = Form(False),
     db: Session = Depends(get_db),
 ):
     """Extrai sugestões sem salvar o arquivo nem enviar dados externos sem consentimento."""
@@ -1337,7 +1339,55 @@ async def import_resume(
         raise HTTPException(422, "Não foi possível ler este arquivo. Verifique se o PDF/DOCX está íntegro e tente novamente.")
     if not extracted:
         raise HTTPException(422, "Não encontramos informações reconhecíveis. Confira se o PDF permite selecionar/copiar o texto.")
-    return {"message": message, "analysis_mode": analysis_mode, "extracted": extracted}
+
+    resume_storage_saved = False
+    if store_for_applications:
+        try:
+            encrypted_content = encrypt_resume(content)
+            stored_filename = safe_filename(filename)
+            stored_type = resume_content_type(stored_filename)
+        except ResumeStorageError as exc:
+            raise HTTPException(503, str(exc)) from exc
+        stored = db.scalar(select(UserResume).where(UserResume.user_id == request.state.user_id))
+        if stored is None:
+            stored = UserResume(
+                user_id=request.state.user_id, filename=stored_filename,
+                content_type=stored_type, encrypted_content=encrypted_content,
+                sha256=hashlib.sha256(content).hexdigest(),
+            )
+            db.add(stored)
+        else:
+            stored.filename = stored_filename
+            stored.content_type = stored_type
+            stored.encrypted_content = encrypted_content
+            stored.sha256 = hashlib.sha256(content).hexdigest()
+        db.commit()
+        resume_storage_saved = True
+        message += " O arquivo original também foi armazenado cifrado para anexos de candidatura."
+
+    return {
+        "message": message, "analysis_mode": analysis_mode, "extracted": extracted,
+        "resume_storage_saved": resume_storage_saved,
+    }
+
+
+@app.get("/api/profile/resume")
+def read_stored_resume(request: Request, db: Session = Depends(get_db)):
+    stored = db.scalar(select(UserResume).where(UserResume.user_id == request.state.user_id))
+    return {
+        "configured": stored is not None,
+        "filename": stored.filename if stored else "",
+        "updated_at": stored.updated_at.isoformat() if stored and stored.updated_at else None,
+    }
+
+
+@app.delete("/api/profile/resume")
+def delete_stored_resume(request: Request, db: Session = Depends(get_db)):
+    stored = db.scalar(select(UserResume).where(UserResume.user_id == request.state.user_id))
+    if stored is not None:
+        db.delete(stored)
+        db.commit()
+    return {"message": "Arquivo de currículo individual removido.", "configured": False}
 
 
 @app.get("/api/notifications")
