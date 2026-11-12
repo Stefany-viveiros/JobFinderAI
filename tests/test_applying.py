@@ -145,3 +145,42 @@ def test_cover_letter_uses_multiple_structured_degrees_and_experience(db):
     assert "Engenharia da Computação" in body and "ADS" in body
     assert "Empresa A" in body and "Analista" in body
     assert "Sistema Web" in body and "Python, React" in body
+
+
+def test_smtp_transport_uses_implicit_ssl_on_port_465(monkeypatch):
+    calls = []
+    class FakeSMTP:
+        def __init__(self, host, port, timeout, context):
+            calls.append(("connect_ssl", host, port, context))
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def ehlo(self): calls.append(("ehlo",))
+        def login(self, username, password): calls.append(("login", username))
+        def send_message(self, msg): calls.append(("send",))
+    monkeypatch.setattr(applying.smtplib, "SMTP_SSL", FakeSMTP)
+    applying._deliver(applying.EmailMessage(), {"host":"smtp.example.com","port":465,"username":"u","password":"p","use_tls":True})
+    assert calls[0][:3] == ("connect_ssl", "smtp.example.com", 465)
+    assert ("login", "u") in calls and ("send",) in calls
+    assert not any(call[0] == "starttls" for call in calls)
+
+
+def test_smtp_transport_uses_starttls_on_port_587(monkeypatch):
+    calls = []
+    class FakeSMTP:
+        def __init__(self, host, port, timeout): calls.append(("connect", host, port))
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def ehlo(self): calls.append(("ehlo",))
+        def starttls(self, context): calls.append(("starttls", context))
+        def login(self, username, password): calls.append(("login", username))
+        def send_message(self, msg): calls.append(("send",))
+    monkeypatch.setattr(applying.smtplib, "SMTP", FakeSMTP)
+    applying._deliver(applying.EmailMessage(), {"host":"smtp.example.com","port":587,"username":"u","password":"p","use_tls":True})
+    assert calls[0] == ("connect", "smtp.example.com", 587)
+    assert any(call[0] == "starttls" for call in calls)
+    assert ("login", "u") in calls and ("send",) in calls
+
+
+def test_smtp_transport_refuses_plaintext_authentication():
+    with pytest.raises(applying.ApplyError, match="sem TLS"):
+        applying._deliver(applying.EmailMessage(), {"host":"smtp.example.com","port":25,"username":"u","password":"p","use_tls":False})
