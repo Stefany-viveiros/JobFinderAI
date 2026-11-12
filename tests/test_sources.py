@@ -16,17 +16,6 @@ class FakeResponse:
         return self._json
 
 
-def test_remotive_is_normalized(monkeypatch):
-    payload = {"jobs": [{"id": 7, "url": "https://remotive.com/j/7", "title": "Junior Python Dev",
-                         "company_name": "ACME", "description": "<p>Python</p>", "job_type": "full_time",
-                         "candidate_required_location": "Brazil", "publication_date": "2026-10-01"},
-                        {"id": 8, "title": "sem url"}]}
-    monkeypatch.setattr(requests, "get", lambda *a, **k: FakeResponse(payload))
-    jobs = sources.fetch_remotive()
-    assert len(jobs) == 1 and jobs[0]["source"] == "Remotive" and jobs[0]["modality"] == "Remoto"
-    assert jobs[0]["url"] == "https://remotive.com/j/7"
-
-
 def test_arbeitnow_is_normalized(monkeypatch):
     payload = {"data": [{"slug": "s1", "url": "https://arbeitnow.com/s1", "title": "Intern", "company_name": "X",
                          "remote": True, "job_types": ["Internship"], "location": "Berlin"}]}
@@ -172,3 +161,10 @@ def test_remoteok_feed_skips_metadata_and_normalizes_jobs(monkeypatch):
     assert jobs[0]["title"] == "Junior Software Engineer"
     assert jobs[0]["url"] == "https://remoteok.com/remote-jobs/123"
     assert "Remote OK" not in jobs[0]["description"]
+
+
+def test_remotive_is_directory_only_due_to_redistribution_restrictions():
+    assert "Remotive" not in sources.SOURCES
+    assert sources.SOURCE_INFO["Remotive"]["mode"] == "link_only"
+    assert sources.SOURCE_INFO["Remotive"]["search_api"] is False
+    assert any(item["source"] == "Remotive" for item in sources.external_search_links(["python"]))
