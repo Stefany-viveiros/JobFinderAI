@@ -361,11 +361,145 @@ def fetch_nerdin():
     return results
 
 
+def fetch_empregare():
+    """Busca vagas ativas na API pública de jobboards Empregare (sem autenticação)."""
+    endpoint = "https://pdv.empregare.com/api/pt-br/vagas/buscar-novo"
+    queries = ("estágio tecnologia", "desenvolvedor júnior")
+    results = []
+    seen = set()
+
+    for query in queries:
+        for page in (1, 2):
+            response = requests.get(
+                endpoint,
+                params={"Query": query, "Ordenacao": 0, "ItensPagina": 30, "Pagina": page},
+                headers=HEADERS,
+                timeout=TIMEOUT,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            model = payload.get("model") or {}
+            for job in model.get("dados") or []:
+                job_id = str(job.get("id") or "")
+                raw_url = job.get("url") or (f"/v{job_id}" if job_id else "")
+                if not raw_url:
+                    continue
+                url = urljoin("https://www.empregare.com/", raw_url)
+                if url in seen:
+                    continue
+                seen.add(url)
+
+                cities = job.get("cidades") or []
+                if isinstance(cities, str):
+                    cities = [cities]
+                remote_text = job.get("trabalhoRemotoTexto") or ""
+                remote_flag = job.get("trabalhoRemoto")
+                remote_label = str(remote_text).lower()
+                if remote_flag is True or "remoto" in remote_label:
+                    modality = "Remoto"
+                elif "híbr" in remote_label or "hibrid" in remote_label:
+                    modality = "Híbrido"
+                elif cities:
+                    modality = "Presencial"
+                else:
+                    modality = "Não informada"
+
+                published = job.get("data") or job.get("dataCadastro") or ""
+                if not published and job.get("timestamp"):
+                    try:
+                        from datetime import datetime, timezone
+                        published = datetime.fromtimestamp(
+                            int(job["timestamp"]), tz=timezone.utc
+                        ).isoformat()
+                    except (TypeError, ValueError, OSError):
+                        published = ""
+
+                results.append({
+                    "source": "Empregare",
+                    "source_id": job_id or _digest(url),
+                    "title": job.get("titulo") or "Vaga",
+                    "company": job.get("empresa") or "Empresa não informada",
+                    "description": job.get("chamada") or "",
+                    "location": ", ".join(str(city) for city in cities if city) or "Brasil",
+                    "modality": modality,
+                    "job_type": job.get("nivel") or job.get("tipoProcessoSeletivo") or "Não informado",
+                    "published_at": str(published),
+                    "url": url,
+                })
+            if page >= int(model.get("totalPaginas") or page):
+                break
+
+    return results
+
+
+def _xml_child_text(element, name):
+    """Obtém texto por nome local, tolerando namespaces e caixa."""
+    for child in list(element):
+        local_name = child.tag.rsplit("}", 1)[-1].lower()
+        if local_name == name.lower():
+            return (child.text or "").strip()
+    return ""
+
+
+def fetch_empregando_brasil():
+    """Consome o feed XML público para parceiros do Empregando Brasil."""
+    import xml.etree.ElementTree as ET
+
+    response = requests.get(
+        "https://empregandobrasil.com.br/feeds/partners/jobs.xml",
+        headers=HEADERS,
+        timeout=TIMEOUT,
+    )
+    response.raise_for_status()
+    content = response.content
+    if len(content) > 8 * 1024 * 1024:
+        raise ValueError("Feed Empregando Brasil excedeu o limite de 8 MB.")
+    root = ET.fromstring(content)
+    results = []
+    seen = set()
+
+    for element in root.iter():
+        if element is root:
+            continue
+        fields = {
+            child.tag.rsplit("}", 1)[-1].lower()
+            for child in list(element)
+        }
+        if not {"id", "title", "url"} <= fields:
+            continue
+        job_id = _xml_child_text(element, "id")
+        url = _xml_child_text(element, "url")
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        city = _xml_child_text(element, "city")
+        state = _xml_child_text(element, "state")
+        description_html = _xml_child_text(element, "description")
+        description = BeautifulSoup(description_html, "html.parser").get_text(" ", strip=True)
+        published = _xml_child_text(element, "published") or _xml_child_text(element, "created")
+        results.append({
+            "source": "Empregando Brasil",
+            "source_id": job_id or _digest(url),
+            "title": _xml_child_text(element, "title") or "Vaga",
+            "company": _xml_child_text(element, "company") or "Empresa não informada",
+            "description": description,
+            "location": ", ".join(part for part in (city, state) if part) or "Brasil",
+            "modality": "Não informada",
+            "job_type": "Não informado",
+            "published_at": published,
+            "url": url,
+        })
+
+    return results
+
+
 SOURCES = {
     "Remotive": fetch_remotive,
     "Arbeitnow": fetch_arbeitnow,
     "OkEmprego": fetch_okemprego,
     "Nerdin": fetch_nerdin,
+    "Empregare": fetch_empregare,
+    "Empregando Brasil": fetch_empregando_brasil,
 }
 
 
@@ -380,6 +514,10 @@ SOURCE_INFO = {
                   "note": "API de vagas do Brasil. Candidatura no site original."},
     "Nerdin": {"mode": "html", "search_api": True, "apply_api": False,
                "note": "Leitura da página pública de vagas de estágio/júnior. Pode quebrar se o layout mudar."},
+    "Empregare": {"mode": "api", "search_api": True, "apply_api": False,
+                   "note": "API pública de vagas ativas; candidatura segue no link canônico do portal."},
+    "Empregando Brasil": {"mode": "api", "search_api": True, "apply_api": False,
+                          "note": "Feed XML público para parceiros, atualizado a cada 12 horas; candidatura no anunciante."},
     "Indeed": {"mode": "link_only", "search_api": False, "apply_api": False,
                "note": "Sem API pública de busca/candidatura (só parceiros aprovados) e os termos proíbem "
                        "raspagem. Use os links de busca e cadastre a vaga manualmente."},
