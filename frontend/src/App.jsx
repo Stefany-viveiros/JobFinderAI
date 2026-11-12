@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import AgentPage, { AttemptPill } from './AgentPage.jsx'
 import MarketIntelligencePage from './MarketIntelligencePage.jsx'
+import CareerTwinPage from './CareerTwinPage.jsx'
 import {
-  Activity, Bot, ArrowDownRight, ArrowUpRight, Bell, BriefcaseBusiness, CalendarDays,
+  Activity, Bot, BrainCircuit, ArrowDownRight, ArrowUpRight, Bell, BriefcaseBusiness, CalendarDays,
   Check, CheckCircle2, ChevronDown, CircleHelp, Clock3, ExternalLink, Filter,
   LayoutDashboard, LoaderCircle, LogOut, Menu, Plus, Search, Send, Settings,
   SlidersHorizontal, Sparkles, Star, Target, Trash2, UserRound, X, Zap,
@@ -194,7 +195,7 @@ function WorkspaceApp({ user, onLogout }) {
   }
 
   const metrics = dashboard?.metrics || {}
-  const pageLabel = { Dashboard: 'Visão geral', 'Buscar vagas': 'Buscar oportunidades', Candidaturas: 'Minhas candidaturas', Agente: 'Agente de candidaturas', Tarefas: 'Tarefas e prazos', 'Inteligência de mercado': 'Inteligência de mercado', 'Perfil e configurações': 'Perfil profissional' }[page]
+  const pageLabel = { Dashboard: 'Visão geral', 'Buscar vagas': 'Buscar oportunidades', Candidaturas: 'Minhas candidaturas', Agente: 'Agente de candidaturas', Tarefas: 'Tarefas e prazos', 'Inteligência de mercado': 'Inteligência de mercado', 'Career Twin': 'Career Twin', 'Perfil e configurações': 'Perfil profissional' }[page]
   const todayText = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })
 
   return <div className="app-shell">
@@ -208,6 +209,7 @@ function WorkspaceApp({ user, onLogout }) {
         <NavItem icon={BriefcaseBusiness} text="Candidaturas" active={page === 'Candidaturas'} onClick={() => changePage('Candidaturas')} />
         <NavItem icon={CheckCircle2} text="Tarefas" active={page === 'Tarefas'} onClick={() => changePage('Tarefas')} count={metrics.pending_tasks} />
         <NavItem icon={Activity} text="Inteligência de mercado" active={page === 'Inteligência de mercado'} onClick={() => changePage('Inteligência de mercado')} />
+        <NavItem icon={BrainCircuit} text="Career Twin" active={page === 'Career Twin'} onClick={() => changePage('Career Twin')} />
       </nav>
       <div className="workspace-label nav-spacer">PREFERÊNCIAS</div>
       <nav className="nav-list"><NavItem icon={UserRound} text="Perfil profissional" active={page === 'Perfil e configurações'} onClick={() => changePage('Perfil e configurações')} /><NavItem icon={Settings} text="Configurações" active={false} onClick={() => changePage('Perfil e configurações')} /></nav>
@@ -227,6 +229,7 @@ function WorkspaceApp({ user, onLogout }) {
           {page === 'Candidaturas' && <ApplicationsPage applications={applications} onEdit={(a) => { setEditingApp(a); setAppForm({ status: a.status, applied_at: a.applied_at || '', deadline: a.deadline || '', recruiter: a.recruiter || '', notes: a.notes || '' }); setModal('application') }} />}
           {page === 'Tarefas' && <TasksPage tasks={tasks} view={taskView} setView={setTaskView} onCreate={() => { setEditingTask(null); setTaskForm(emptyTask); setModal('task') }} onEdit={(t) => { setEditingTask(t); setTaskForm({ title: t.title, description: t.description || '', due_date: t.due_date || '', priority: t.priority, notify: t.notify }); setModal('task') }} onComplete={completeTask} onDelete={deleteTask} onSendReminders={sendReminders} smtpReady={Boolean(dashboard?.smtp_ready)} notificationHistory={notificationHistory} busy={busy} />}
           {page === 'Inteligência de mercado' && <MarketIntelligencePage />}
+          {page === 'Career Twin' && <CareerTwinPage />}
           {page === 'Perfil e configurações' && <ProfilePage profile={profile} setProfile={setProfile} onSave={saveProfile} busy={busy} />}
         </>}
       </div>
