@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from .market import extract_skills
+from .evidence_ledger import list_profile_evidence
 from .models import (
     MarketAnalysisRun,
     MarketSkillMetric,
@@ -381,6 +382,9 @@ def build_career_twin(db: Session, *, user_id: int) -> dict:
         "sections": sections,
         "skills": skills,
         "timeline": timeline,
+        "evidence_ledger": list_profile_evidence(
+            db, user_id=user_id, active_only=True, limit=500
+        ),
         "market": market_payload,
         "data_quality": {
             "method": "extração determinística por taxonomia e aliases do JobFinder AI",
