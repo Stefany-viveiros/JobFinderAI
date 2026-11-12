@@ -2,7 +2,7 @@
 
 **Branch:** `feature/proof-to-opportunity-engine`  
 **Último commit de implementação:** `c32a736`  
-**Atualização:** 12/11/2026.  \n**Cobertura geral estimada:** 89% (estimativa de escopo, não métrica automatizada).
+**Atualização:** 12/11/2026.  \n**Cobertura geral estimada:** 90% (estimativa de escopo, não métrica automatizada).
 
 ## Estado de execução
 
@@ -10,7 +10,7 @@
 |---|---|---|
 | A — Auditoria | Concluída | Matriz em `docs/AUDITORIA.md`; frontend, API, modelos, serviços, migrações, testes e deploy revisados na branch |
 | B — Segurança e privacidade | Incrementos concluídos; liberação SaaS pendente | Consentimento explícito para Gemini, upload endurecido, rate limit, CSRF e testes de isolamento; gate continua fechado |
-| C — Career Twin | Incremento concluído | Read model, linha do tempo e Ledger persistente versionado; revisão humana com observação, histórico append-only, exclusão de evidência irrelevante do Career Twin/diagnóstico e consulta isolada por conta. Gate de schema também valida FKs, proprietário e revisões cruzadas; CI da última proteção em validação |
+| C — Career Twin | Incremento concluído | Read model, linha do tempo e Ledger persistente versionado; revisão humana com observação, histórico append-only, exclusão de evidência irrelevante do Career Twin/diagnóstico e consulta isolada por conta. Gate de schema também valida FKs, proprietário, revisões órfãs e vínculos cruzados; CI aprovado em SQLite, PostgreSQL 16 e Vite |
 | D — Diagnóstico de oportunidades | Incremento concluído | Endpoint por vaga com classificação de requisitos e rastreabilidade de evidências; não mede proficiência; CI aprovado |
 | E — Desenvolvimento e desafios | Parcial, com evidências persistentes | Desafios enviados geram evidência `self_assessed` vinculada à tentativa e à competência. Continua sem execução de código ou validação independente; UI deixa essa limitação explícita |
 | F — Candidaturas e agente | Histórico concluído; métricas parciais | Pipeline e política do agente preservados; histórico por evento/conta no backend e frontend. Painel mostra totais, entrevistas, andamento e aprovações; taxa de conversão não é exibida sem base temporal/coorte suficiente. Métricas de retorno e cobertura das fontes ainda pendentes |
