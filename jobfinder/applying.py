@@ -162,7 +162,12 @@ def email_channel_available(job, user_id: int | None = None, db=None) -> tuple[b
             decrypt_password(account.encrypted_password)
         except CredentialEncryptionError:
             return False, "Credencial SMTP indisponível; revise a chave de criptografia do servidor."
-        return True, ""
+        # O importador atual extrai os dados do currículo, mas não persiste um arquivo
+        # individual seguro para anexar. Não envie uma candidatura sem o CV esperado.
+        return False, (
+            "Envio por e-mail bloqueado: o currículo individual ainda não possui "
+            "armazenamento seguro para anexo. Finalize a candidatura no portal original."
+        )
     if not settings.smtp_can_send_applications:
         return False, "SMTP não configurado no .env (SMTP_HOST, SMTP_FROM, SMTP_USERNAME, SMTP_PASSWORD)."
     return True, ""
@@ -284,6 +289,12 @@ def send_attempt(db, attempt: ApplicationAttempt, daily_limit: int | None = None
             "host": account.host, "port": account.port, "username": account.username,
             "password": smtp_password, "use_tls": account.use_tls,
         }
+        # Defesa em profundidade: tentativas antigas ou criadas antes da regra
+        # também não podem enviar sem um anexo de currículo por usuário.
+        raise ApplyError(
+            "Envio por e-mail bloqueado: o currículo individual ainda não possui "
+            "armazenamento seguro para anexo. Finalize a candidatura no portal original."
+        )
         sender_email = account.from_email
     else:
         if not settings.smtp_can_send_applications:
