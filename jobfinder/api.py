@@ -1296,7 +1296,7 @@ async def import_resume(
     store_for_applications: bool = Form(False),
     db: Session = Depends(get_db),
 ):
-    """Extrai sugestões sem salvar o arquivo nem enviar dados externos sem consentimento."""
+    """Extrai sugestões e, somente com opt-in, guarda o arquivo cifrado por usuário."""
     _enforce_rate_limit(
         db, request, scope="resume-import-user",
         subject=str(request.state.user_id), limit=RESUME_IMPORTS_PER_HOUR,
