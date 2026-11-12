@@ -640,3 +640,21 @@ input[type="checkbox"], input[type="radio"] {
 .market-assessment-runner-notice{display:grid;gap:4px;margin:10px 0 14px;padding:11px 13px;border:1px dashed #d8dbea;border-radius:9px;background:#fafbfe}
 .market-assessment-runner-notice strong{font-size:11px;color:#5d6480}
 .market-assessment-runner-notice span{font-size:10px;line-height:1.55;color:#8189a0}
+
+
+/* Ações de revisão do ledger de evidências */
+.career-evidence-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.career-evidence-review-actions .btn {
+  min-height: 34px;
+}
+@media (max-width: 560px) {
+  .career-evidence-review-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
