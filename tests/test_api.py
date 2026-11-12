@@ -565,3 +565,76 @@ def test_resume_import_has_per_account_rate_limit(client, monkeypatch):
     blocked = _post_resume_import(client)
     assert blocked.status_code == 429
     assert int(blocked.headers["Retry-After"]) > 0
+
+
+def test_attempt_actions_are_isolated_between_accounts(client, db, test_user):
+    from fastapi.testclient import TestClient
+    from jobfinder.api import password_hasher
+    from jobfinder.models import ApplicationAttempt, User
+
+    second_user = User(
+        email="attempt-isolation@example.com",
+        email_normalized="attempt-isolation@example.com",
+        full_name="Conta Secundária",
+        password_hash=password_hasher.hash("SenhaSeguraDaSegundaConta123!"),
+        role="user",
+        is_active=True,
+    )
+    db.add(second_user)
+    db.commit()
+
+    job = make_job(db)
+    attempts = [
+        ApplicationAttempt(
+            user_id=test_user.id, job_id=job.id, status="prepared", channel="email",
+            recipient="recrutamento@example.test", subject="Candidatura de teste",
+            message="Mensagem privada da primeira conta.",
+        ),
+        ApplicationAttempt(
+            user_id=test_user.id, job_id=job.id, status="prepared", channel="email",
+            recipient="recrutamento@example.test", subject="Outra candidatura de teste",
+            message="Outra mensagem privada da primeira conta.",
+        ),
+    ]
+    db.add_all(attempts)
+    db.commit()
+    cancel_id, approve_id = attempts[0].id, attempts[1].id
+
+    with TestClient(api_module.app, base_url="https://testserver") as second:
+        login = second.post("/api/auth/login", json={
+            "email": second_user.email,
+            "password": "SenhaSeguraDaSegundaConta123!",
+        })
+        assert login.status_code == 200
+        session = second.get("/api/auth/me")
+        assert session.status_code == 200
+        second.headers.update({"X-CSRF-Token": session.json()["csrf_token"]})
+
+        assert second.get("/api/attempts").json() == []
+        assert second.post(f"/api/attempts/{cancel_id}/cancel").status_code == 404
+        assert second.post(f"/api/attempts/{approve_id}/approve").status_code == 404
+
+    own_attempts = {item["id"]: item for item in client.get("/api/attempts").json()}
+    assert own_attempts[cancel_id]["status"] == "prepared"
+    assert own_attempts[approve_id]["status"] == "prepared"
+
+
+def test_workspace_remains_fail_closed_when_multitenant_gate_is_disabled(client, monkeypatch):
+    monkeypatch.setenv("MULTITENANT_READY", "false")
+    assert client.get("/api/dashboard").status_code == 503
+    assert client.get("/api/profile").status_code == 503
+    assert client.post("/api/tasks", json={
+        "title": "Não deve ser criada",
+        "notify": False,
+    }).status_code == 503
+
+
+def test_authenticated_writes_require_csrf_token(client):
+    client.headers.pop("X-CSRF-Token", None)
+    response = client.put("/api/agent/settings", json={
+        "auto_apply_enabled": False,
+        "require_approval": True,
+        "daily_limit": 5,
+        "min_score": 80,
+    })
+    assert response.status_code == 403
