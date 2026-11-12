@@ -23,7 +23,7 @@ def test_collect_for_user_deduplicates_tracking_variants(db, test_user, ready_pr
             {
                 "source": "Fonte B",
                 "source_id": "b-9",
-                "title": "Outra descrição da mesma vaga",
+                "title": "Estágio Backend Python — mesma vaga em outra fonte",
                 "company": "Outra empresa",
                 "description": "Vaga duplicada com URL canônica equivalente",
                 "location": "Brasil",
