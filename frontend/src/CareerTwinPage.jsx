@@ -5,7 +5,7 @@ import {
   Sparkles, Target, UserRound,
 } from 'lucide-react'
 
-const API = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '')
+const API = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '')\nlet csrfToken = ''
 const SOURCE_LABELS = {
   professional_experience: 'Experiência profissional',
   completed_project: 'Projeto concluído',
@@ -22,8 +22,15 @@ const SOURCE_LABELS = {
   self_assessment: 'Autoavaliação de desafio',
 }
 
-async function request(path) {
-  const response = await fetch(`${API}${path}`, { credentials: 'include' })
+async function request(path, options = {}) {
+  const method = (options.method || 'GET').toUpperCase()
+  const headers = { ...(options.headers || {}) }
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && csrfToken) headers['X-CSRF-Token'] = csrfToken
+  const response = await fetch(`${API}${path}`, {
+    ...options, credentials: 'include', headers,
+  })
+  const returnedCsrf = response.headers.get('X-CSRF-Token')
+  if (returnedCsrf) csrfToken = returnedCsrf
   const body = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(body.detail || body.message || `Erro ${response.status}`)
   return body
@@ -54,12 +61,14 @@ export default function CareerTwinPage({ focusSection = null } = {}) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [filter, setFilter] = useState('all')
-  const [ledger, setLedger] = useState([])
+  const [ledger, setLedger] = useState([])\n  const [reviewingId, setReviewingId] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
+      const session = await request('/auth/me')
+      csrfToken = session.csrf_token || csrfToken
       const [twin, evidence] = await Promise.all([
         request('/career-twin'),
         request('/career-evidence?limit=500'),
@@ -72,6 +81,28 @@ export default function CareerTwinPage({ focusSection = null } = {}) {
       setLoading(false)
     }
   }, [])
+
+  const reviewEvidence = async (item, decision) => {
+    setReviewingId(item.id)
+    setError('')
+    try {
+      await request(`/career-evidence/${item.id}/review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          decision,
+          note: decision === 'confirmed'
+            ? 'A pessoa confirmou que a informação corresponde à origem exibida.'
+            : 'A pessoa marcou a menção como não relevante para sua trajetória.',
+        }),
+      })
+      await load()
+    } catch (err) {
+      setError(err.message || 'Não foi possível registrar a revisão.')
+    } finally {
+      setReviewingId(null)
+    }
+  }
 
   useEffect(() => { load() }, [load])
   useEffect(() => {
@@ -134,10 +165,24 @@ export default function CareerTwinPage({ focusSection = null } = {}) {
             <span>{item.source_label}</span>
             {item.excerpt && <p>“{item.excerpt}”</p>}
             <small>{item.is_active ? 'Versão atual' : 'Versão anterior'} · {item.verification_label}</small>
+            <small>
+              {item.review_decision === 'confirmed' ? 'Revisada: origem confirmada pela pessoa' :
+                item.review_decision === 'dismissed' ? 'Revisada: marcada como não relevante' :
+                'Aguardando revisão humana'}
+              {item.reviewed_at ? ` · ${new Date(item.reviewed_at).toLocaleDateString('pt-BR')}` : ''}
+            </small>
+            {item.is_active && <div className="career-evidence-review-actions">
+              <button className="btn btn-secondary btn-sm" disabled={reviewingId === item.id || item.review_decision === 'confirmed'} onClick={() => reviewEvidence(item, 'confirmed')}>
+                {reviewingId === item.id ? 'Salvando…' : 'Confirmar origem'}
+              </button>
+              <button className="btn btn-ghost btn-sm" disabled={reviewingId === item.id || item.review_decision === 'dismissed'} onClick={() => reviewEvidence(item, 'dismissed')}>
+                Marcar não relevante
+              </button>
+            </div>}
           </div>
         </div>)}
       </div> : <div className="career-empty"><CircleHelp size={18}/><span>As evidências aparecerão aqui quando você salvar competências em experiências, projetos, cursos, formação ou autoavaliações.</span></div>}
-      <p className="career-market-note">O registro indica a origem da informação. Conteúdo do perfil é autodeclarado; desafios enviados são autoavaliações. Nenhum deles é apresentado como validação independente.</p>
+      <p className="career-market-note">A revisão confirma apenas se a menção corresponde à origem exibida. Ela não comprova proficiência nem substitui avaliação técnica. Cada decisão é registrada no histórico, sem alterar a evidência original.</p>
     </section>
 
     <section className="panel career-panel" id="career-competencies">
