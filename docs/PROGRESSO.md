@@ -291,3 +291,17 @@ A validação é feita em bancos efêmeros do CI; não equivale a um ensaio com 
 - Acesso às APIs do LinkedIn depende de aprovação/parceria. As integrações de Indeed também são sujeitas a programas e termos próprios.
 - Próximo incremento: implementar conectores adicionais apenas com API/feed autorizado ou parceria confirmada; priorizar fontes com foco em estágio, trainee e tecnologia no Brasil. Validar disponibilidade e termos antes de ativar cada conector.
 - Commits desta etapa: `76111f6` (catálogo), `bd80eee` (testes), `66456cb` (atalhos) e `c1db0d1` (interface).
+
+
+## Novos conectores de coleta de vagas — 12/11/2026
+
+- `Empregare`: integrado o endpoint público de busca de vagas ativas, com paginação limitada, normalização de modalidade/localidade e link canônico para candidatura no portal.
+- `Empregando Brasil`: integrado o feed XML público para parceiros, com extração dos campos documentados, limpeza de descrição HTML e limite de 8 MB por resposta.
+- `Jobicy`: integrado o endpoint JSON público, com até 200 vagas remotas por chamada, mantendo crédito e URL canônica.
+- `Remote OK`: integrado o feed JSON público, ignorando o objeto inicial de metadados e mantendo link para o anúncio original.
+- O seletor de fontes em Buscar oportunidades e o filtro por origem passaram a ser dinâmicos, derivados de `/api/sources`. A seleção inicial inclui os quatro conectores anteriores e os quatro novos.
+- Os conectores são isolados: falha de uma fonte não interrompe as demais. Nenhum desses conectores envia candidatura automaticamente; o envio continua dependendo do fluxo permitido pela plataforma de origem.
+- Testes adicionados para normalização, deduplicação, paginação, atribuição de fonte e limite de tamanho do XML.
+- Commits desta etapa: `1260de5` (Empregare/Empregando Brasil), `72f9a76` (testes), `4a3c9e4` (Jobicy/Remote OK), `a990a04` (testes) e `cfdc5ff` (seletor inicial).
+- Referências técnicas consultadas: documentação pública Empregare; feed e termos de distribuição Empregando Brasil; API pública Jobicy; FAQ/API pública Remote OK.
+- A API Adzuna permanece candidata a conector opcional dependente de `app_id/app_key`; não foi ativada sem credenciais e validação dos termos de uso.
