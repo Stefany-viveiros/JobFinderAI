@@ -138,7 +138,7 @@ def test_cancelled_attempt_can_be_prepared_again_by_agent(db, ready_profile, tes
     item = {
         "source": "Nerdin", "title": "Estágio Backend Python", "company": "Reprocessar",
         "url": "https://a.test/reprocessar",
-        "description": "Python FastAPI Git. Envie seu currículo para rh@reprocessar.com",
+        "description": "Python FastAPI Git APIs REST. Envie seu currículo para rh@reprocessar.com",
         "location": "Brasil", "modality": "Remoto", "job_type": "Estágio",
     }
     first = run_agent(db, collector=lambda names: ([item], []), user_id=test_user.id)
