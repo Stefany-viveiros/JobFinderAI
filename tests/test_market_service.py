@@ -427,3 +427,30 @@ def test_market_trends_do_not_mix_different_snapshot_scopes(db):
     trends = compare_market_trends(db)
     assert trends["available"] is False
     assert "mesmo período, nível e versões" in trends["message"]
+
+
+@pytest.mark.parametrize("unsafe_url", [
+    "javascript:alert(1)",
+    "data:text/html,<script>alert(1)</script>",
+    "http://example.com/evidence",
+    "https://user:password@example.com/evidence",
+    "https://example.com/with space",
+])
+def test_skill_assessment_rejects_unsafe_evidence_urls(db, test_user, unsafe_url):
+    from jobfinder.market_service import create_skill_assessment, submit_skill_assessment
+
+    skill = db.scalar(select(Skill).where(Skill.canonical_name == "python"))
+    if skill is None:
+        skill = Skill(
+            canonical_name="python", category="language",
+            aliases_json="[]", taxonomy_version="test", active=True,
+        )
+        db.add(skill)
+        db.flush()
+    attempt = create_skill_assessment(db, user_id=test_user.id, skill_id=skill.id)
+    answers = {item["id"]: True for item in json.loads(attempt["rubric_json"])}
+    with pytest.raises(ValueError, match="URL HTTPS válida"):
+        submit_skill_assessment(
+            db, attempt["id"], response_text="Minha solução foi documentada e testada.",
+            evidence_url=unsafe_url, rubric_answers=answers, user_id=test_user.id,
+        )
