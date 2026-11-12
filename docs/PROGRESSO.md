@@ -1,7 +1,7 @@
 # Progresso — JobFinder AI Proof-to-Opportunity Engine
 
 **Branch:** `feature/proof-to-opportunity-engine`  
-**Último commit de implementação:** `def66f9`  
+**Último commit de implementação:** `076ace5`  
 **Atualização:** 12/11/2026.  \n**Cobertura geral estimada:** 93% (estimativa de escopo, não métrica automatizada).
 
 ## Estado de execução
@@ -299,7 +299,7 @@ A validação é feita em bancos efêmeros do CI; não equivale a um ensaio com 
 - `Empregando Brasil`: integrado o feed XML público para parceiros, com extração dos campos documentados, limpeza de descrição HTML e limite de 8 MB por resposta.
 - `Jobicy`: integrado o endpoint JSON público, com até 200 vagas remotas por chamada, mantendo crédito e URL canônica.
 - `Remote OK`: integrado o feed JSON público, ignorando o objeto inicial de metadados e mantendo link para o anúncio original.
-- O seletor de fontes em Buscar oportunidades e o filtro por origem passaram a ser dinâmicos, derivados de `/api/sources`. A seleção inicial inclui os quatro conectores anteriores e os quatro novos.
+- O seletor de fontes em Buscar oportunidades e o filtro por origem passaram a ser dinâmicos, derivados de `/api/sources`. A seleção inicial é derivada dinamicamente dos conectores ativos; após a revisão de conformidade, são sete fontes automáticas.
 - Os conectores são isolados: falha de uma fonte não interrompe as demais. Nenhum desses conectores envia candidatura automaticamente; o envio continua dependendo do fluxo permitido pela plataforma de origem.
 - Testes adicionados para normalização, deduplicação, paginação, atribuição de fonte e limite de tamanho do XML.
 - Commits desta etapa: `1260de5` (Empregare/Empregando Brasil), `72f9a76` (testes), `4a3c9e4` (Jobicy/Remote OK), `a990a04` (testes) e `cfdc5ff` (seletor inicial).
@@ -314,4 +314,16 @@ A validação é feita em bancos efêmeros do CI; não equivale a um ensaio com 
 - Jobicy e Remote OK mantêm atribuição de origem e URL canônica. O feed Empregando Brasil é usado conforme a seção pública de distribuição para parceiros; Empregare expõe endpoint de busca de vagas ativas sem autenticação.
 - CI de conectores Empregare/Empregando Brasil — [run 43243369094](https://github.com/Stefany-viveiros/JobFinderAI/actions/runs/43243369094): SQLite **168 passed, 4 skipped**; PostgreSQL 16 **172 passed**; Vite **success**.
 - CI de Jobicy/Remote OK — [run 43243557583](https://github.com/Stefany-viveiros/JobFinderAI/actions/runs/43243557583): SQLite **170 passed, 4 skipped**; PostgreSQL 16 **174 passed**; Vite **success**.
-- Commits de conformidade Remotive: `6a0d787`, `62d3f5f`, `81265a3` e `5912102`. O CI desses commits está em execução no momento desta atualização.
+- Commits de conformidade Remotive: `6a0d787`, `62d3f5f`, `81265a3` e `5912102`. As falhas intermediárias foram corrigidas; o CI final da rodada está aprovado.
+
+
+
+## Validação final da rodada de fontes — 12/11/2026
+
+- CI final do commit `076ace5`: [execução 43244290479](https://github.com/Stefany-viveiros/JobFinderAI/actions/runs/43244290479) concluída com sucesso nos três jobs: backend SQLite, backend PostgreSQL 16 e build de produção Vite.
+- A correção final atualizou o teste de coleta para usar uma fonte ativa, em vez de Remotive, que agora é corretamente classificada como atalho externo.
+- O conector Jobicy respeita o intervalo recomendado de consulta com cache em memória de uma hora; isso reduz chamadas repetidas durante a execução do processo, mas não substitui cache distribuído entre múltiplas instâncias.
+- Estado confirmado nesta branch: sete conectores de coleta automática e 22 atalhos externos. Os conectores normalizam e coletam oportunidades; não significam que todos os portais permitam candidatura automática.
+- Nenhum segredo foi adicionado ao repositório. Nenhuma alteração foi feita em `main`, Render ou Neon.
+
+**Próxima frente:** melhorar a transparência operacional do catálogo (fonte automática, link externo ou integração dependente de credenciais) e continuar a validação de release candidate. A cobertura geral permanece estimada em **93%** até resolver os bloqueios operacionais: configuração SMTP real, validação em cópia controlada do banco de destino, agendamento com segredo e integração segura de execução de desafios.
