@@ -83,6 +83,11 @@ def test_smtp_account_is_encrypted_private_and_used_for_delivery(client, db, rea
     from sqlalchemy import select
 
     monkeypatch.setenv("SMTP_CREDENTIALS_KEY", Fernet.generate_key().decode("ascii"))
+    blocked = client.put("/api/agent/smtp", json={
+        "host": "127.0.0.1", "port": 25, "username": "x", "password": "x",
+        "from_email": "x@example.com", "use_tls": False,
+    })
+    assert blocked.status_code == 422
     payload = {
         "host": "smtp.gmail.com",
         "port": 587,
