@@ -423,6 +423,13 @@ def test_two_accounts_cannot_read_or_modify_each_others_private_data(client, db,
             if item["source_type"] == "self_assessment" and item["source_id"] == assessment_id
         )
         assert challenge_evidence["verification_level"] == "self_assessed"
+        twin_ledger = client.get("/api/career-twin").json()["evidence_ledger"]
+        assert any(
+            item["source_type"] == "self_assessment"
+            and item["source_id"] == assessment_id
+            and item["verification_level"] == "self_assessed"
+            for item in twin_ledger
+        )
         assert db.query(CareerEvidence).filter(
             CareerEvidence.user_id == test_user.id,
             CareerEvidence.source_key == f"challenge_attempt:{assessment_id}",
