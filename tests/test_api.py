@@ -99,6 +99,16 @@ def test_smtp_account_is_encrypted_private_and_used_for_delivery(client, db, rea
     assert account.encrypted_password != payload["password"]
     assert "senha-super-secreta" not in account.encrypted_password
 
+    # Se a chave de ambiente for perdida, o sistema informa que não pode enviar.
+    monkeypatch.delenv("SMTP_CREDENTIALS_KEY")
+    assert client.get("/api/agent/smtp").json()["ready"] is False
+    assert client.get("/api/agent/settings").json()["email_ready"] is False
+    monkeypatch.setenv("SMTP_CREDENTIALS_KEY", Fernet.generate_key().decode("ascii"))
+    # Restaura a chave original usada para cifrar a credencial.
+    from jobfinder.smtp_credentials import encrypt_password
+    account.encrypted_password = encrypt_password(payload["password"])
+    db.commit()
+
     # Uma segunda conta não recebe nem os metadados SMTP da primeira.
     second = User(
         email="second-smtp@example.com", email_normalized="second-smtp@example.com",
