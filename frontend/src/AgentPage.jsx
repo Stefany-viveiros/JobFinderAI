@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Bot, Check, CircleHelp, ExternalLink, LoaderCircle, Play, Send, X } from 'lucide-react'
 
 const ATTEMPT_LABEL = {
@@ -18,6 +18,15 @@ export default function AgentPage({ settings, setSettings, onSave, onRun, runRes
   const [open, setOpen] = useState(null)
   const [smtpPassword, setSmtpPassword] = useState('')
   const [smtpForm, setSmtpForm] = useState({ host: '', port: 587, username: '', from_email: '', use_tls: true })
+  useEffect(() => {
+    setSmtpForm({
+      host: smtp?.host || '',
+      port: smtp?.port || 587,
+      username: smtp?.username || '',
+      from_email: smtp?.from_email || '',
+      use_tls: smtp?.use_tls ?? true,
+    })
+  }, [smtp])
   const updateSmtp = (key, value) => setSmtpForm(current => ({ ...current, [key]: value }))
   const shown = attempts.filter(a => filter === 'todas' || a.status === filter)
   const set = (k, v) => setSettings(s => ({ ...s, [k]: v }))
