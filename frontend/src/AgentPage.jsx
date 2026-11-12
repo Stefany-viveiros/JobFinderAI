@@ -7,7 +7,8 @@ const ATTEMPT_LABEL = {
 }
 const ATTEMPT_TONE = { prepared: 'blue', awaiting_approval: 'amber', manual_required: 'amber', sent: 'green', failed: 'red', cancelled: 'gray' }
 const CHANNEL_LABEL = { email: 'E-mail automático', manual: 'Site da vaga (manual)', manual_confirmed: 'Confirmada manualmente' }
-const MODE_LABEL = { api: 'API', html: 'Leitura de página', link_only: 'Somente link' }
+const MODE_LABEL = { api: 'API pública/feed', html: 'Leitura de página', link_only: 'Link externo' }
+const COLLECTION_LABEL = { active: 'Coleta ativa', external: 'Atalho externo' }
 
 export function AttemptPill({ status }) {
   return <span className={`status-pill ${ATTEMPT_TONE[status] || 'gray'}`}><i/>{ATTEMPT_LABEL[status] || status}</span>
@@ -97,8 +98,9 @@ export default function AgentPage({ settings, setSettings, onSave, onRun, runRes
 
     <div className="panel">
       <div className="panel-heading"><div><h2>Fontes de vagas</h2><p>O que cada plataforma realmente permite</p></div></div>
-      <div className="table-wrap"><table className="data-table"><thead><tr><th>Fonte</th><th>Coleta</th><th>Candidatura automática</th><th>Observação</th></tr></thead>
-        <tbody>{(sources?.sources || []).map(s => <tr key={s.name}><td><strong>{s.name}</strong></td><td>{MODE_LABEL[s.mode]}</td><td>{s.apply_api ? 'Sim' : 'Não (site original)'}</td><td className="small">{s.note}</td></tr>)}</tbody></table></div>
+      <div className="table-wrap"><table className="data-table"><thead><tr><th>Fonte</th><th>Disponibilidade</th><th>Tipo de integração</th><th>Candidatura automática</th><th>Observação</th></tr></thead>
+        <tbody>{(sources?.sources || []).map(s => <tr key={s.name}><td><strong>{s.name}</strong></td><td><span className={`status-pill ${s.search_api ? 'green' : 'gray'}`}><i/>{s.search_api ? COLLECTION_LABEL.active : COLLECTION_LABEL.external}</span></td><td>{MODE_LABEL[s.mode] || 'Não informado'}</td><td>{s.apply_api ? 'Disponível' : 'Não (site original)'}</td><td className="small">{s.note}</td></tr>)}</tbody></table></div>
+      <p className="muted small">Coleta ativa significa que o JobFinder consegue importar anúncios dessa fonte. Isso não concede permissão para enviar candidaturas em nome da pessoa. O envio automático só é usado quando existe um canal compatível e configurado; nos demais casos, a candidatura é concluída no portal original.</p>
       {sources?.external_links?.length > 0 && <div className="external-links"><strong>Explorar outros portais de emprego:</strong>
         {sources.external_links.map((l, i) => <a key={i} href={l.url} target="_blank" rel="noreferrer" className="btn btn-secondary btn-sm">{l.source}: {l.query} <ExternalLink size={12}/></a>)}
         <span className="muted small">Encontrou algo? Use “Adicionar manualmente” em Buscar vagas. Esses atalhos não coletam vagas nem automatizam candidaturas; o agente só importa fontes com integração ativa.</span></div>}
