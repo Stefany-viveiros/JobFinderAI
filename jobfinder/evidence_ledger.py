@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .market import extract_skills
-from .models import CareerEvidence, Profile
+from .models import CareerEvidence, Profile, Skill, SkillAssessmentAttempt
 
 
 COMPLETED_VALUES = {"concluído", "concluido", "completed", "finalizado"}
@@ -164,3 +164,65 @@ def list_profile_evidence(
         }
         for item in rows
     ]
+
+
+def record_self_assessment_evidence(
+    db: Session, *, attempt_id: int, user_id: int
+) -> dict:
+    """Registra desafio enviado como autoavaliação, nunca como validação independente."""
+    attempt = db.scalar(
+        select(SkillAssessmentAttempt).where(
+            SkillAssessmentAttempt.id == attempt_id,
+            SkillAssessmentAttempt.user_id == user_id,
+            SkillAssessmentAttempt.status == "self_reviewed",
+        )
+    )
+    if attempt is None or attempt.submitted_at is None:
+        raise ValueError("Autoavaliação não encontrada para esta conta.")
+    skill = db.get(Skill, attempt.skill_id)
+    if skill is None:
+        raise ValueError("Competência da autoavaliação não encontrada.")
+
+    response_excerpt = " ".join((attempt.response_text or "").split())[:220]
+    evidence_url = (attempt.evidence_url or "").strip()
+    excerpt = response_excerpt or (f"Link de evidência: {evidence_url}" if evidence_url else "")
+    digest_input = f"self_assessment\\n{excerpt.casefold()}\\n{evidence_url}"
+    evidence_hash = hashlib.sha256(digest_input.encode("utf-8")).hexdigest()
+    source_key = f"challenge_attempt:{attempt.id}"
+
+    item = db.scalar(
+        select(CareerEvidence).where(
+            CareerEvidence.user_id == user_id,
+            CareerEvidence.source_key == source_key,
+            CareerEvidence.skill_name == skill.canonical_name,
+            CareerEvidence.evidence_hash == evidence_hash,
+        )
+    )
+    if item is None:
+        item = CareerEvidence(
+            user_id=user_id,
+            skill_name=skill.canonical_name,
+            category=skill.category,
+            source_type="self_assessment",
+            source_key=source_key,
+            source_id=attempt.id,
+            source_label=attempt.challenge_title,
+            excerpt=excerpt,
+            evidence_hash=evidence_hash,
+            verification_level="self_assessed",
+            is_active=True,
+        )
+        db.add(item)
+        created = True
+    else:
+        item.is_active = True
+        item.superseded_at = None
+        created = False
+
+    db.flush()
+    return {
+        "created": created,
+        "source_type": "self_assessment",
+        "verification_level": "self_assessed",
+        "notice": "Autoavaliação informada pela própria pessoa; não é validação independente de proficiência.",
+    }
