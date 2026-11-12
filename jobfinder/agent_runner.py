@@ -9,10 +9,12 @@ def main():
     # O runner legado não recebe identidade de usuário. Bloqueia antes de abrir
     # o banco ou coletar vagas enquanto o modo multiusuário estiver ativo.
     if os.getenv("MULTITENANT_READY", "false").lower() == "true":
-        return {
+        result = {
             "status": "blocked",
             "detail": "Agendador global desativado no modo multiusuário; configure execução individual por conta.",
         }
+        print("JobFinder AI agent:", result)
+        return result
     init_db()
     db = SessionLocal()
     try:
