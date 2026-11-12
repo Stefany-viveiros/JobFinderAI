@@ -792,14 +792,35 @@ def prepare_job_application(job_id: int, request: Request, db: Session = Depends
 
 @app.get("/api/attempts")
 def list_attempts(request: Request, status: str = "todas", limit: int = Query(200, ge=1, le=500), db: Session = Depends(get_db)):
-    stmt = select(ApplicationAttempt).options(joinedload(ApplicationAttempt.job)).where(ApplicationAttempt.user_id == request.state.user_id).order_by(ApplicationAttempt.id.desc()).limit(limit)
+    user_id = request.state.user_id
+    # Compatibilidade e lacunas são privadas: nunca ler os campos legados globais de Job.
+    stmt = (
+        select(ApplicationAttempt, JobMatch)
+        .outerjoin(
+            JobMatch,
+            (JobMatch.job_id == ApplicationAttempt.job_id)
+            & (JobMatch.user_id == ApplicationAttempt.user_id),
+        )
+        .options(joinedload(ApplicationAttempt.job))
+        .where(ApplicationAttempt.user_id == user_id)
+        .order_by(ApplicationAttempt.id.desc())
+        .limit(limit)
+    )
     if status != "todas":
         stmt = stmt.where(ApplicationAttempt.status == status)
-    return [{**attempt_dict(a, with_message=True), "job": {
-        "id": a.job.id, "title": a.job.title, "company": a.job.company, "url": a.job.url,
-        "compatibility": round(a.job.compatibility or 0), "source": a.job.source,
-        "missing_reasons": a.job.missing_reasons or ""}}
-        for a in db.scalars(stmt).unique().all()]
+    rows = db.execute(stmt).all()
+    return [{
+        **attempt_dict(attempt, with_message=True),
+        "job": {
+            "id": attempt.job.id,
+            "title": attempt.job.title,
+            "company": attempt.job.company,
+            "url": attempt.job.url,
+            "compatibility": round(match.compatibility or 0) if match else 0,
+            "source": attempt.job.source,
+            "missing_reasons": (match.missing_reasons or "") if match else "",
+        },
+    } for attempt, match in rows]
 
 
 def _attempt_or_404(db, attempt_id, user_id):

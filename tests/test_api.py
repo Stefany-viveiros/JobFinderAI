@@ -778,3 +778,80 @@ def test_application_history_is_isolated_between_accounts(client, db, test_user)
         assert session.status_code == 200
         second.headers.update({"X-CSRF-Token": session.json()["csrf_token"]})
         assert second.get(f"/api/applications/{application_id}/history").status_code == 404
+
+
+
+def test_attempt_list_uses_private_job_match_not_legacy_global_job_score(client, db, test_user):
+    from fastapi.testclient import TestClient
+    from jobfinder.api import password_hasher
+    from jobfinder.models import ApplicationAttempt, JobMatch, User
+    from sqlalchemy import select
+
+    job = make_job(db, compatibility=99)
+    primary_match = db.scalar(select(JobMatch).where(
+        JobMatch.user_id == test_user.id,
+        JobMatch.job_id == job.id,
+    ))
+    primary_match.compatibility = 83
+    primary_match.missing_reasons = "Lacuna privada da primeira conta"
+
+    # Simula legado: estes campos já não são a fonte de score para contas.
+    job.compatibility = 99
+    job.missing_reasons = "LEGADO GLOBAL NAO DEVE SER EXIBIDO"
+
+    second_user = User(
+        email="attempt-list-second@example.com",
+        email_normalized="attempt-list-second@example.com",
+        full_name="Segunda Conta",
+        password_hash=password_hasher.hash("SenhaSeguraOutraConta123!"),
+        role="user",
+        is_active=True,
+    )
+    db.add(second_user)
+    db.flush()
+    db.add(JobMatch(
+        user_id=second_user.id,
+        job_id=job.id,
+        compatibility=21,
+        match_reasons="Apenas segunda conta",
+        missing_reasons="Lacuna privada da segunda conta",
+    ))
+    db.add_all([
+        ApplicationAttempt(
+            user_id=test_user.id,
+            job_id=job.id,
+            status="prepared",
+            channel="manual",
+            message="Texto da primeira conta",
+        ),
+        ApplicationAttempt(
+            user_id=second_user.id,
+            job_id=job.id,
+            status="prepared",
+            channel="manual",
+            message="Texto da segunda conta",
+        ),
+    ])
+    db.commit()
+
+    primary = client.get("/api/attempts").json()
+    assert len(primary) == 1
+    assert primary[0]["job"]["compatibility"] == 83
+    assert primary[0]["job"]["missing_reasons"] == "Lacuna privada da primeira conta"
+    assert "LEGADO GLOBAL" not in primary[0]["job"]["missing_reasons"]
+
+    with TestClient(api_module.app, base_url="https://testserver") as second:
+        login = second.post("/api/auth/login", json={
+            "email": second_user.email,
+            "password": "SenhaSeguraOutraConta123!",
+        })
+        assert login.status_code == 200
+        session = second.get("/api/auth/me")
+        assert session.status_code == 200
+        second.headers.update({"X-CSRF-Token": session.json()["csrf_token"]})
+
+        secondary = second.get("/api/attempts").json()
+        assert len(secondary) == 1
+        assert secondary[0]["job"]["compatibility"] == 21
+        assert secondary[0]["job"]["missing_reasons"] == "Lacuna privada da segunda conta"
+        assert secondary[0]["job"]["missing_reasons"] != primary[0]["job"]["missing_reasons"]
