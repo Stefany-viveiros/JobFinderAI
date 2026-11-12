@@ -314,3 +314,32 @@ def list_evidence_reviews(
         }
         for review in reviews
     ]
+
+
+def list_dismissed_evidence_keys(db: Session, *, user_id: int) -> set[tuple[str, str]]:
+    """Retorna fontes/competências cuja revisão mais recente as marcou como irrelevantes."""
+    rows = db.scalars(
+        select(CareerEvidence).where(
+            CareerEvidence.user_id == user_id,
+            CareerEvidence.is_active.is_(True),
+        )
+    ).all()
+    ids = [item.id for item in rows]
+    if not ids:
+        return set()
+    reviews = db.scalars(
+        select(CareerEvidenceReview)
+        .where(
+            CareerEvidenceReview.user_id == user_id,
+            CareerEvidenceReview.evidence_id.in_(ids),
+        )
+        .order_by(CareerEvidenceReview.created_at.desc(), CareerEvidenceReview.id.desc())
+    ).all()
+    latest = {}
+    for review in reviews:
+        latest.setdefault(review.evidence_id, review)
+    return {
+        (item.source_key, item.skill_name)
+        for item in rows
+        if item.id in latest and latest[item.id].decision == "dismissed"
+    }
