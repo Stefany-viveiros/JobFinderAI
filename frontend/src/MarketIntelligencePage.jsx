@@ -5,7 +5,7 @@ import {
   Target, BookOpen, Plus, Trash2, ClipboardCheck, Code2, Send, ExternalLink,
 } from 'lucide-react'
 
-const API = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api').replace(/\/$/, '')
+const API = (import.meta.env.VITE_API_URL || 'https://jobfinder-ai-api-imux.onrender.com/api').replace(/\/$/, '')
 
 async function request(path, options = {}) {
   const method = (options.method || 'GET').toUpperCase()
