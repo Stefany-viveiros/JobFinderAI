@@ -93,9 +93,14 @@ def validate_multitenant_schema(connection=None) -> None:
     for table in user_scoped_tables:
         if not inspector.has_table(table):
             raise RuntimeError(f"Schema SaaS inválido: tabela {table} ausente.")
-        columns = {column["name"] for column in inspector.get_columns(table)}
-        if "user_id" not in columns:
+        column_details = {column["name"]: column for column in inspector.get_columns(table)}
+        if "user_id" not in column_details:
             raise RuntimeError(f"Schema SaaS inválido: coluna {table}.user_id ausente.")
+        if column_details["user_id"]["nullable"]:
+            raise RuntimeError(
+                f"Schema SaaS inválido: {table}.user_id ainda aceita NULL. "
+                "Aplique a migração de propriedade antes de liberar o acesso."
+            )
         owner_fk_exists = any(
             fk.get("constrained_columns") == ["user_id"]
             and fk.get("referred_table") == "users"
@@ -234,6 +239,31 @@ def _ensure_postgres_multitenant_constraints() -> None:
                     f'ALTER TABLE "{table}" ADD CONSTRAINT "{constraint_name}" UNIQUE ({column_sql})'
                 ))
             inspector = inspect(connection)
+
+        # As tabelas legadas tinham user_id nullable. Antes de liberar o SaaS,
+        # recusa a migração se houver órfãos e só então torna a propriedade obrigatória.
+        owner_tables = (
+            "profile", "applications", "tasks", "notification_log",
+            "agent_settings", "application_attempts", "development_plan_items",
+            "skill_assessment_attempts",
+        )
+        for table in owner_tables:
+            null_count = connection.execute(
+                text(f'SELECT COUNT(*) FROM "{table}" WHERE user_id IS NULL')
+            ).scalar_one()
+            if null_count:
+                raise RuntimeError(
+                    f"Migração multiusuário interrompida: {table} contém "
+                    f"{null_count} registro(s) sem proprietário."
+                )
+            column = next(
+                item for item in inspect(connection).get_columns(table)
+                if item["name"] == "user_id"
+            )
+            if column["nullable"]:
+                connection.execute(
+                    text(f'ALTER TABLE "{table}" ALTER COLUMN user_id SET NOT NULL')
+                )
 
 
 def init_db():
