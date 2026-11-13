@@ -11,6 +11,7 @@ services:
       - .env
     environment:
       APP_ENV: production
+      AUTO_INIT_DB: "false"
       COOKIE_SECURE: "true"
       SESSION_HOURS: ${SESSION_HOURS:-24}
       DATABASE_URL: ${DATABASE_URL:?Configure DATABASE_URL no arquivo .env}
@@ -28,7 +29,7 @@ services:
         - CMD
         - python
         - -c
-        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/ready', timeout=3)"
       interval: 30s
       timeout: 5s
       start_period: 40s
