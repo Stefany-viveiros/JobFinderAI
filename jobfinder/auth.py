@@ -1,4 +1,4 @@
-"""Autenticação por sessão opaca para o JobFinder AI.
+""""Autenticação por sessão opaca para o JobFinder AI.
 
 O cookie contém um segredo aleatório; o banco armazena apenas seu SHA-256.
 As rotas de escrita devem validar também o token CSRF via X-CSRF-Token.
@@ -18,6 +18,11 @@ from .config import settings
 SESSION_COOKIE = "jobfinder_session"
 SESSION_HOURS = settings.session_hours
 COOKIE_SECURE = settings.cookie_secure
+# Frontend e API são hospedados em origens distintas. Em produção, o cookie
+# precisa de SameSite=None para acompanhar fetch() com credentials="include".
+# Em desenvolvimento HTTP local, mantém Lax porque navegadores exigem Secure
+# quando SameSite=None.
+COOKIE_SAMESITE = "none" if COOKIE_SECURE else "lax"
 
 
 def _hash(value: str) -> str:
@@ -48,7 +53,7 @@ def create_session(response: Response, db: Session, user: User) -> str:
         value=raw_token,
         httponly=True,
         secure=COOKIE_SECURE,
-        samesite="lax",
+        samesite=COOKIE_SAMESITE,
         max_age=SESSION_HOURS * 3600,
         path="/",
     )
@@ -58,7 +63,11 @@ def create_session(response: Response, db: Session, user: User) -> str:
 
 def clear_session_cookie(response: Response) -> None:
     response.delete_cookie(
-        SESSION_COOKIE, path="/", httponly=True, secure=COOKIE_SECURE, samesite="lax"
+        SESSION_COOKIE,
+        path="/",
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
     )
 
 
