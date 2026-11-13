@@ -119,11 +119,25 @@ async def require_authenticated_session(request, call_next):
     return await call_next(request)
 
 
+def _auto_init_db_enabled() -> bool:
+    """Evita DDL implícito em staging/produção; mantém bootstrap local e testes."""
+    configured = os.getenv("AUTO_INIT_DB")
+    if configured is None:
+        environment = os.getenv("APP_ENV", "development").strip().lower()
+        configured = "false" if environment in {"staging", "production"} else "true"
+    normalized = configured.strip().lower()
+    if normalized not in {"true", "false"}:
+        raise RuntimeError("AUTO_INIT_DB deve ser true ou false.")
+    return normalized == "true"
+
+
 @app.on_event("startup")
 def startup():
-    init_db()
+    if _auto_init_db_enabled():
+        init_db()
     if os.getenv('MULTITENANT_READY', 'false').lower() == 'true':
         validate_multitenant_schema()
+    # Em staging/produção, Alembic é executado como etapa explícita de release.
     # Perfis individuais são criados sob demanda após autenticação.
 
 

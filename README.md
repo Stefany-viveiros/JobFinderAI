@@ -15,6 +15,12 @@ A configuração inicial para Render + Neon está em [render.yaml](render.yaml).
 
 **Atenção:** o manifesto do Render configura demonstração somente leitura (`DEMO_READ_ONLY=true`). Não desative essa proteção nem conecte dados pessoais reais até concluir a auditoria de isolamento, validar o schema e habilitar `MULTITENANT_READY` conscientemente. Use banco Neon exclusivo para a demonstração.
 
+## Deploy na Oracle Cloud Infrastructure
+
+A preparação de containers para Oracle Cloud está documentada em [docs/DEPLOYMENT_OCI.md](docs/DEPLOYMENT_OCI.md). A arquitetura utiliza Docker Compose, Caddy com HTTPS automático, frontend React servido por Nginx, API FastAPI e o PostgreSQL Neon existente.
+
+**Importante:** a configuração é segura por padrão e mantém `MULTITENANT_READY=false` e `DEMO_READ_ONLY=true` até a validação do banco, das migrações e do isolamento entre contas. A presença dos arquivos Docker não significa que o deploy já foi realizado ou que a aplicação está liberada para usuários reais.
+
 ## Funcionalidades
 
 ### Busca e organização de vagas
