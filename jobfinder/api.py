@@ -25,7 +25,7 @@ from .models import (
     Job, JobMatch, Application, Task, Profile, NotificationLog, ApplicationAttempt,
     Education, Experience, Course, Certification, PortfolioProject,
     MarketAnalysisRun, MarketSkillMetric, MarketSkillPair, Skill, DevelopmentPlanItem, SkillAssessmentAttempt, ApplicationEvent,
-    SmtpAccount, UserResume,
+    UserResume,
 )
 from .service import get_profile, save_jobs, refresh_scores, create_task, complete_task, STATUSES, collect_and_save_ranked, collect_for_user, refresh_user_scores
 from .sources import SOURCES, SOURCE_INFO, LINK_ONLY_SOURCES, collect_selected, external_search_links
@@ -33,7 +33,6 @@ from . import applying
 from .agent import get_agent_settings, run_agent, TARGET_LEVELS
 from .mailer import send_daily_reminder
 from .config import settings, parse_cors_origins
-from .smtp_credentials import encrypt_password, decrypt_password, CredentialEncryptionError
 from .resume_parser import parse_resume, extract_resume_text
 from .resume_ai import analyze_resume_with_gemini, ResumeAIError
 from .resume_storage import encrypt_resume, decrypt_resume, digest_resume, safe_filename, resume_content_type, ResumeStorageError
@@ -597,12 +596,6 @@ def readiness():
     except ResumeStorageError:
         checks["resume_storage_key"] = "missing_or_invalid"
 
-    try:
-        encrypt_password("readiness-probe")
-        checks["smtp_credentials_key"] = "configured"
-    except CredentialEncryptionError:
-        checks["smtp_credentials_key"] = "missing_or_invalid"
-
     payload = {"status": "ready" if ready else "not_ready", "checks": checks}
     return JSONResponse(status_code=200 if ready else 503, content=payload)
 
@@ -945,93 +938,6 @@ def cancel_attempt(attempt_id: int, request: Request, db: Session = Depends(get_
     return {"message": "Candidatura cancelada.", "attempt": attempt_dict(attempt)}
 
 
-class SmtpAccountUpdate(BaseModel):
-    host: str = Field(..., min_length=3, max_length=255)
-    port: int = Field(587, ge=1, le=65535)
-    username: str = Field(..., min_length=1, max_length=320)
-    password: str = Field(..., min_length=1, max_length=4096)
-    from_email: str = Field(..., min_length=3, max_length=320)
-    use_tls: bool = True
-
-
-def smtp_account_dict(account):
-    if account is None:
-        return {"configured": False}
-    try:
-        decrypt_password(account.encrypted_password)
-        ready = True
-    except CredentialEncryptionError:
-        ready = False
-    return {
-        "configured": True,
-        "ready": ready,
-        "host": account.host,
-        "port": account.port,
-        "username": account.username,
-        "from_email": account.from_email,
-        "use_tls": account.use_tls,
-    }
-
-
-@app.get("/api/agent/smtp")
-def read_smtp_account(request: Request, db: Session = Depends(get_db)):
-    account = db.scalar(select(SmtpAccount).where(SmtpAccount.user_id == request.state.user_id))
-    return smtp_account_dict(account)
-
-
-@app.put("/api/agent/smtp")
-def save_smtp_account(payload: SmtpAccountUpdate, request: Request, db: Session = Depends(get_db)):
-    if not payload.use_tls:
-        raise HTTPException(422, "TLS é obrigatório para proteger a senha da sua conta SMTP.")
-    host = payload.host.strip()
-    sender = payload.from_email.strip()
-    if not host or any(char.isspace() for char in host) or "://" in host or "/" in host:
-        raise HTTPException(422, "Informe somente o hostname do servidor SMTP, sem protocolo ou caminho.")
-    allowed_smtp_hosts = {
-        "smtp.gmail.com", "smtp.office365.com", "smtp-mail.outlook.com",
-        "smtp.mail.yahoo.com", "smtp.zoho.com", "smtp.zoho.eu",
-    }
-    allowed_smtp_hosts.update(
-        item.strip().lower()
-        for item in os.getenv("SMTP_ALLOWED_HOSTS", "").split(",")
-        if item.strip()
-    )
-    if host.lower() not in allowed_smtp_hosts:
-        raise HTTPException(
-            422,
-            "Servidor SMTP não permitido. Use um provedor suportado ou solicite a inclusão "
-            "do hostname em SMTP_ALLOWED_HOSTS pelo administrador.",
-        )
-    if not re.fullmatch(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", sender):
-        raise HTTPException(422, "Endereço de remetente inválido.")
-    try:
-        encrypted = encrypt_password(payload.password)
-    except CredentialEncryptionError as exc:
-        raise HTTPException(503, str(exc))
-    account = db.scalar(select(SmtpAccount).where(SmtpAccount.user_id == request.state.user_id))
-    if account is None:
-        account = SmtpAccount(user_id=request.state.user_id)
-        db.add(account)
-    account.host = host
-    account.port = payload.port
-    account.username = payload.username.strip()
-    account.encrypted_password = encrypted
-    account.from_email = sender
-    account.use_tls = payload.use_tls
-    db.commit()
-    db.refresh(account)
-    return {"message": "Conexão SMTP individual salva com senha cifrada.", "smtp": smtp_account_dict(account)}
-
-
-@app.delete("/api/agent/smtp")
-def delete_smtp_account(request: Request, db: Session = Depends(get_db)):
-    account = db.scalar(select(SmtpAccount).where(SmtpAccount.user_id == request.state.user_id))
-    if account is not None:
-        db.delete(account)
-        db.commit()
-    return {"message": "Conexão SMTP individual removida.", "smtp": {"configured": False}}
-
-
 class AgentSettingsUpdate(BaseModel):
     auto_apply_enabled: bool = False
     require_approval: bool = True
@@ -1042,8 +948,6 @@ class AgentSettingsUpdate(BaseModel):
 def agent_settings_dict(db, user_id=None):
     s = get_agent_settings(db, user_id=user_id)
     p = get_profile(db, user_id=user_id)
-    smtp_account = db.scalar(select(SmtpAccount).where(SmtpAccount.user_id == user_id))
-    smtp_ready = bool(smtp_account_dict(smtp_account).get("ready", False))
     multitenant = os.getenv("MULTITENANT_READY", "false").strip().lower() == "true"
     resume_ready = False
     if user_id is not None:
@@ -1054,11 +958,12 @@ def agent_settings_dict(db, user_id=None):
                 resume_ready = bool(content) and digest_resume(content) == resume.sha256
             except ResumeStorageError:
                 resume_ready = False
-    email_ready = smtp_ready and (resume_ready if multitenant else True)
-    if multitenant and not smtp_ready:
-        email_block_reason = "Conecte uma conta SMTP individual para habilitar envios."
+    platform_email_ready = settings.smtp_can_send_applications
+    email_ready = platform_email_ready and (resume_ready if multitenant else True)
+    if not platform_email_ready:
+        email_block_reason = "O envio por e-mail está temporariamente indisponível. Você ainda pode preparar a candidatura e finalizá-la no site da empresa."
     elif multitenant and not resume_ready:
-        email_block_reason = "Guarde seu currículo com armazenamento cifrado no Perfil profissional para habilitar envios."
+        email_block_reason = "Adicione seu currículo ao Perfil profissional para habilitar o envio de candidaturas."
     else:
         email_block_reason = ""
     return {"auto_apply_enabled": s.auto_apply_enabled, "require_approval": s.require_approval,
@@ -1066,7 +971,6 @@ def agent_settings_dict(db, user_id=None):
             "sent_today": applying.sent_today_count(db, user_id=user_id),
             "email_ready": email_ready, "email_block_reason": email_block_reason,
             "profile_gaps": applying.profile_gaps(p), "profile_ready": not applying.profile_gaps(p)}
-
 
 @app.get("/api/agent/settings")
 def read_agent_settings(request: Request, db: Session = Depends(get_db)):

@@ -1,4 +1,5 @@
 import io
+import dataclasses
 
 import pytest
 from docx import Document
@@ -58,129 +59,31 @@ def test_apply_endpoint_requires_explicit_confirmation(client, db):
     assert client.post(f"/api/jobs/{job.id}/apply", json={"confirmed": True}).status_code == 409
 
 
-def test_prepare_then_approve_is_blocked_without_user_resume_attachment(client, db, ready_profile, monkeypatch):
+def test_individual_smtp_settings_are_not_exposed(client):
+    assert client.get("/api/agent/smtp").status_code == 404
+    assert client.put("/api/agent/smtp", json={}).status_code == 404
+    assert client.delete("/api/agent/smtp").status_code == 404
+
+
+def test_platform_smtp_sends_with_user_resume_and_reply_to(client, db, ready_profile, test_user, monkeypatch):
     from cryptography.fernet import Fernet
+    from jobfinder.models import UserResume
 
-    monkeypatch.setenv("SMTP_CREDENTIALS_KEY", Fernet.generate_key().decode("ascii"))
-    config = {
-        "host": "smtp.gmail.com", "port": 587, "username": "ana@test.dev",
-        "password": "smtp-test-secret", "from_email": "ana@test.dev", "use_tls": True,
-    }
-    assert client.put("/api/agent/smtp", json=config).status_code == 200
-    job = make_job(db)
-    attempt = client.post(f"/api/jobs/{job.id}/prepare").json()["attempt"]
-    assert attempt["status"] == "manual_required"
-    assert attempt["channel"] == "manual"
-    assert "currículo" in attempt["detail"]
-
-    delivered = []
-    monkeypatch.setattr(applying, "_deliver", lambda m, smtp_config=None: delivered.append(m))
-    response = client.post(f"/api/attempts/{attempt['id']}/approve")
-    assert response.status_code == 400
-    assert "manual_required" in response.json()["detail"]
-    assert delivered == []
-    assert client.get("/api/dashboard").json()["metrics"]["failed_applications"] == 0
-
-
-def test_smtp_account_is_encrypted_private_and_used_for_delivery(client, db, ready_profile, monkeypatch, test_user):
-    from cryptography.fernet import Fernet
-    from jobfinder.models import SmtpAccount, User
-    from sqlalchemy import select
-
-    monkeypatch.setenv("SMTP_CREDENTIALS_KEY", Fernet.generate_key().decode("ascii"))
-    blocked = client.put("/api/agent/smtp", json={
-        "host": "127.0.0.1", "port": 25, "username": "x", "password": "x",
-        "from_email": "x@example.com", "use_tls": False,
-    })
-    assert blocked.status_code == 422
-    payload = {
-        "host": "smtp.gmail.com",
-        "port": 587,
-        "username": "stefany@example.com",
-        "password": "senha-super-secreta",
-        "from_email": "stefany@example.com",
-        "use_tls": True,
-    }
-    saved = client.put("/api/agent/smtp", json=payload)
-    assert saved.status_code == 200
-    assert saved.json()["smtp"]["configured"] is True
-    assert "password" not in saved.json()["smtp"]
-    account = db.scalar(select(SmtpAccount).where(SmtpAccount.user_id == test_user.id))
-    assert account.encrypted_password != payload["password"]
-    assert "senha-super-secreta" not in account.encrypted_password
-
-    # Se a chave de ambiente for perdida, o sistema informa que não pode enviar.
-    monkeypatch.delenv("SMTP_CREDENTIALS_KEY")
-    assert client.get("/api/agent/smtp").json()["ready"] is False
-    assert client.get("/api/agent/settings").json()["email_ready"] is False
-    monkeypatch.setenv("SMTP_CREDENTIALS_KEY", Fernet.generate_key().decode("ascii"))
-    # Restaura a chave original usada para cifrar a credencial.
-    from jobfinder.smtp_credentials import encrypt_password
-    account.encrypted_password = encrypt_password(payload["password"])
-    db.commit()
-
-    # Uma segunda conta não recebe nem os metadados SMTP da primeira.
-    second = User(
-        email="second-smtp@example.com", email_normalized="second-smtp@example.com",
-        full_name="Segunda conta", password_hash="not-used", role="user", is_active=True,
-    )
-    db.add(second)
-    db.flush()
-    db.add(SmtpAccount(
-        user_id=second.id, host="smtp.other.example", port=465,
-        username="other@example.com", encrypted_password=account.encrypted_password,
-        from_email="other@example.com", use_tls=True,
-    ))
-    db.commit()
-    second.password_hash = api_module.password_hasher.hash("OutraSenhaSegura123!")
-    db.commit()
-    assert client.get("/api/agent/smtp").json()["host"] == "smtp.gmail.com"
-    with TestClient(api_module.app, base_url="https://testserver") as second_client:
-        login = second_client.post("/api/auth/login", json={
-            "email": second.email, "password": "OutraSenhaSegura123!",
-        })
-        assert login.status_code == 200
-        csrf = second_client.get("/api/auth/me").json()["csrf_token"]
-        second_client.headers.update({"X-CSRF-Token": csrf})
-        assert second_client.get("/api/agent/smtp").json()["host"] == "smtp.other.example"
-        assert second_client.delete("/api/agent/smtp").status_code == 200
-    assert client.get("/api/agent/smtp").json()["host"] == "smtp.gmail.com"
-
-    captured = []
-    monkeypatch.setattr(applying, "_deliver", lambda msg, smtp_config=None: captured.append((msg, smtp_config)))
-    job = make_job(db)
-    attempt = client.post(f"/api/jobs/{job.id}/prepare").json()["attempt"]
-    assert attempt["channel"] == "manual" and attempt["status"] == "manual_required"
-    assert "currículo" in attempt["detail"]
-    blocked_send = client.post(f"/api/attempts/{attempt['id']}/approve")
-    assert blocked_send.status_code == 400
-    assert captured == []
-
-    deleted = client.delete("/api/agent/smtp")
-    assert deleted.status_code == 200
-    assert client.get("/api/agent/smtp").json() == {"configured": False}
-
-
-
-def test_user_resume_is_stored_encrypted_and_attached_only_to_owner(client, db, ready_profile, test_user, monkeypatch):
-    from cryptography.fernet import Fernet
-    from jobfinder.models import User, UserResume
-    from jobfinder.smtp_credentials import encrypt_password
-
-    monkeypatch.setenv("SMTP_CREDENTIALS_KEY", Fernet.generate_key().decode("ascii"))
     monkeypatch.setenv("RESUME_STORAGE_KEY", Fernet.generate_key().decode("ascii"))
-    smtp = {
-        "host": "smtp.gmail.com", "port": 587, "username": "ana@test.dev",
-        "password": "smtp-test-secret", "from_email": "ana@test.dev", "use_tls": True,
-    }
-    assert client.put("/api/agent/smtp", json=smtp).status_code == 200
+    platform_settings = dataclasses.replace(
+        api_module.settings,
+        smtp_host="smtp.platform.test",
+        smtp_port=587,
+        smtp_username="jobfinder",
+        smtp_password="platform-secret",
+        smtp_from="candidatura@jobfinder.test",
+        cv_path="",
+    )
+    monkeypatch.setattr(api_module, "settings", platform_settings)
+    monkeypatch.setattr(applying, "settings", platform_settings)
 
     document = Document()
-    document.add_paragraph("Ana Teste")
-    document.add_paragraph("FORMAÇÃO ACADÊMICA")
-    document.add_paragraph("Análise e Desenvolvimento de Sistemas | FAM")
-    document.add_paragraph("HABILIDADES TÉCNICAS")
-    document.add_paragraph("Python, FastAPI e Git")
+    document.add_paragraph("Currículo de teste")
     buffer = io.BytesIO()
     document.save(buffer)
     resume_bytes = buffer.getvalue()
@@ -192,58 +95,48 @@ def test_user_resume_is_stored_encrypted_and_attached_only_to_owner(client, db, 
     )
     assert upload.status_code == 200, upload.text
     assert upload.json()["resume_storage_saved"] is True
-
-    stored = db.query(UserResume).filter_by(user_id=test_user.id).one()
-    assert stored.encrypted_content.encode("ascii") != resume_bytes
-    assert "Ana Teste" not in stored.encrypted_content
-    assert client.get("/api/profile/resume").json()["configured"] is True
+    assert db.query(UserResume).filter_by(user_id=test_user.id).one()
     assert client.get("/api/agent/settings").json()["email_ready"] is True
 
-    # Uma segunda conta não enxerga o currículo da primeira.
-    second = User(
-        email="resume-other@example.com", email_normalized="resume-other@example.com",
-        full_name="Outra pessoa", password_hash=api_module.password_hasher.hash("OutraSenhaSegura123!"),
-        role="user", is_active=True,
-    )
-    db.add(second)
-    db.commit()
-    with TestClient(api_module.app, base_url="https://testserver") as other_client:
-        login = other_client.post("/api/auth/login", json={
-            "email": second.email, "password": "OutraSenhaSegura123!",
-        })
-        assert login.status_code == 200
-        csrf = other_client.get("/api/auth/me").json()["csrf_token"]
-        other_client.headers.update({"X-CSRF-Token": csrf})
-        assert other_client.get("/api/profile/resume").json()["configured"] is False
-
     delivered = []
-    monkeypatch.setattr(applying, "_deliver", lambda msg, smtp_config=None: delivered.append((msg, smtp_config)))
+    monkeypatch.setattr(applying, "_deliver", lambda msg: delivered.append(msg))
     job = make_job(db)
     prepared = client.post(f"/api/jobs/{job.id}/prepare").json()["attempt"]
     assert prepared["channel"] == "email" and prepared["status"] == "prepared"
     sent = client.post(f"/api/attempts/{prepared['id']}/approve")
     assert sent.status_code == 200, sent.text
     assert sent.json()["attempt"]["status"] == "sent"
-    assert delivered[0][1]["password"] == "smtp-test-secret"
-    attachments = list(delivered[0][0].iter_attachments())
+    assert delivered[0]["From"] == "candidatura@jobfinder.test"
+    assert delivered[0]["Reply-To"] == test_user.email
+    attachments = list(delivered[0].iter_attachments())
     assert len(attachments) == 1
     assert attachments[0].get_filename() == "curriculo.docx"
     assert attachments[0].get_payload(decode=True) == resume_bytes
 
-    assert client.delete("/api/profile/resume").status_code == 200
-    assert client.get("/api/profile/resume").json()["configured"] is False
-    assert client.get("/api/agent/settings").json()["email_ready"] is False
 
+def test_platform_smtp_falls_back_to_manual_without_resume(client, db, ready_profile, monkeypatch):
+    platform_settings = dataclasses.replace(
+        api_module.settings,
+        smtp_host="smtp.platform.test",
+        smtp_port=587,
+        smtp_username="jobfinder",
+        smtp_password="platform-secret",
+        smtp_from="candidatura@jobfinder.test",
+        cv_path="",
+    )
+    monkeypatch.setattr(api_module, "settings", platform_settings)
+    monkeypatch.setattr(applying, "settings", platform_settings)
+    delivered = []
+    monkeypatch.setattr(applying, "_deliver", lambda msg: delivered.append(msg))
 
-def test_saas_mode_never_uses_global_smtp_credentials(client, db, ready_profile, smtp_on):
     job = make_job(db)
-    response = client.post(f"/api/jobs/{job.id}/prepare")
-    assert response.status_code == 200
-    attempt = response.json()["attempt"]
-    assert attempt["channel"] == "manual"
+    attempt = client.post(f"/api/jobs/{job.id}/prepare").json()["attempt"]
     assert attempt["status"] == "manual_required"
-    assert "SMTP individual" in attempt["detail"]
-    assert smtp_on == []
+    assert attempt["channel"] == "manual"
+    assert "currículo" in attempt["detail"]
+    response = client.post(f"/api/attempts/{attempt['id']}/approve")
+    assert response.status_code == 400
+    assert delivered == []
 
 
 def test_job_filters(client, db):

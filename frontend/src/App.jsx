@@ -64,7 +64,6 @@ function WorkspaceApp({ user, onLogout }) {
   const [attemptFilter, setAttemptFilter] = useState('todas')
   const [attempts, setAttempts] = useState([])
   const [agentSettings, setAgentSettings] = useState({ auto_apply_enabled: false, require_approval: true, daily_limit: 5, min_score: 80, profile_ready: true })
-  const [smtpAccount, setSmtpAccount] = useState({ configured: false })
   const [agentRun, setAgentRun] = useState(null)
   const [sourcesInfo, setSourcesInfo] = useState(null)
 
@@ -84,14 +83,13 @@ function WorkspaceApp({ user, onLogout }) {
   const loadProfile = useCallback(async () => setProfile({ ...emptyProfile, ...(await api('/profile')) }), [])
   const loadAttempts = useCallback(async () => setAttempts(await api('/attempts')), [])
   const loadAgent = useCallback(async () => setAgentSettings(await api('/agent/settings')), [])
-  const loadSmtp = useCallback(async () => setSmtpAccount(await api('/agent/smtp')), [])
   const loadSources = useCallback(async () => setSourcesInfo(await api('/sources')), [])
   const loadNotifications = useCallback(async () => setNotificationHistory(await api('/notifications')), [])
 
   const refreshCurrent = useCallback(async () => {
     setLoading(true)
     try {
-      await Promise.all([loadDashboard(), loadJobs(), loadApps(), loadTasks(), loadProfile(), loadNotifications(), loadAttempts(), loadAgent(), loadSmtp(), loadSources()])
+      await Promise.all([loadDashboard(), loadJobs(), loadApps(), loadTasks(), loadProfile(), loadNotifications(), loadAttempts(), loadAgent(), loadSources()])
     } catch (e) { notify(`Não foi possível conectar à API: ${e.message}. Confira se o backend está iniciado.`, 'error') }
     finally { setLoading(false) }
   }, [loadDashboard, loadJobs, loadApps, loadTasks, loadProfile, loadNotifications, loadAttempts, loadAgent, loadSources, notify])
@@ -103,7 +101,7 @@ function WorkspaceApp({ user, onLogout }) {
   const changePage = (next) => { setPage(next); setSidebarOpen(false) }
   const doAction = async (action, success) => {
     setBusy(true)
-    try { await action(); await Promise.all([loadDashboard(), loadJobs(), loadApps(), loadTasks(), loadNotifications(), loadAttempts(), loadAgent(), loadSmtp()]); notify(success) }
+    try { await action(); await Promise.all([loadDashboard(), loadJobs(), loadApps(), loadTasks(), loadNotifications(), loadAttempts(), loadAgent()]); notify(success) }
     catch (e) { notify(e.message, 'error') }
     finally { setBusy(false) }
   }
@@ -139,26 +137,6 @@ function WorkspaceApp({ user, onLogout }) {
   }
   async function saveAgentSettings() {
     await doAction(async () => { const r = await api('/agent/settings', { method: 'PUT', body: JSON.stringify({ auto_apply_enabled: agentSettings.auto_apply_enabled, require_approval: agentSettings.require_approval, daily_limit: agentSettings.daily_limit, min_score: agentSettings.min_score }) }); setAgentSettings(r.settings) }, 'Configurações do agente salvas.')
-  }
-  async function saveSmtpAccount(payload) {
-    setBusy(true)
-    try {
-      const result = await api('/agent/smtp', { method: 'PUT', body: JSON.stringify(payload) })
-      await Promise.all([loadSmtp(), loadAgent(), loadDashboard()])
-      notify(result.message)
-      return true
-    } catch (e) { notify(e.message, 'error'); return false }
-    finally { setBusy(false) }
-  }
-  async function deleteSmtpAccount() {
-    if (!window.confirm('Remover a conexão SMTP desta conta? O envio automático será desativado.')) return
-    setBusy(true)
-    try {
-      const result = await api('/agent/smtp', { method: 'DELETE' })
-      await Promise.all([loadSmtp(), loadAgent(), loadDashboard()])
-      notify(result.message)
-    } catch (e) { notify(e.message, 'error') }
-    finally { setBusy(false) }
   }
   async function runAgent() {
     setBusy(true)
@@ -270,7 +248,7 @@ function WorkspaceApp({ user, onLogout }) {
         {loading && !dashboard ? <div className="loading-panel"><LoaderCircle className="spin" size={25}/><span>Carregando seu workspace...</span></div> : <>
           {page === 'Dashboard' && <DashboardPage dashboard={dashboard} jobs={jobs} onNavigate={changePage} onCreateTask={() => { setEditingTask(null); setTaskForm(emptyTask); setModal('task') }} onFavorite={toggleFavorite} />}
           {(page === 'Oportunidades' || page === 'Buscar vagas') && <JobsPage jobs={jobs} query={query} setQuery={setQuery} minScore={minScore} setMinScore={setMinScore} favoriteOnly={favoriteOnly} setFavoriteOnly={setFavoriteOnly} modality={modality} setModality={setModality} sort={sort} setSort={setSort} onCollect={collectJobs} sourceSelection={sourceSelection} setSourceSelection={setSourceSelection} sourceOptions={sourcesInfo?.sources?.filter(s => s.search_api).map(s => s.name) || ['Arbeitnow', 'OkEmprego', 'Nerdin', 'Empregare', 'Empregando Brasil', 'Jobicy', 'Remote OK']} busy={busy} onAdd={() => setModal('job')} onFavorite={toggleFavorite} onApply={applyJob} onPrepare={prepareJob} levelFilter={levelFilter} setLevelFilter={setLevelFilter} sourceFilter={sourceFilter} setSourceFilter={setSourceFilter} attemptFilter={attemptFilter} setAttemptFilter={setAttemptFilter} />}
-          {page === 'Agente' && <AgentPage settings={agentSettings} setSettings={setAgentSettings} onSave={saveAgentSettings} onRun={runAgent} runResult={agentRun} attempts={attempts} sources={sourcesInfo} onApprove={approveAttempt} onCancel={cancelAttempt} onConfirmManual={applyJob} smtp={smtpAccount} onSaveSmtp={saveSmtpAccount} onDeleteSmtp={deleteSmtpAccount} busy={busy} />}
+          {page === 'Agente' && <AgentPage settings={agentSettings} setSettings={setAgentSettings} onSave={saveAgentSettings} onRun={runAgent} runResult={agentRun} attempts={attempts} sources={sourcesInfo} onApprove={approveAttempt} onCancel={cancelAttempt} onConfirmManual={applyJob} busy={busy} />}
           {page === 'Candidaturas' && <ApplicationsPage applications={applications} onEdit={(a) => { setEditingApp(a); setAppForm({ status: a.status, applied_at: a.applied_at || '', deadline: a.deadline || '', recruiter: a.recruiter || '', notes: a.notes || '' }); setModal('application') }} />}
           {page === 'Tarefas' && <TasksPage tasks={tasks} view={taskView} setView={setTaskView} onCreate={() => { setEditingTask(null); setTaskForm(emptyTask); setModal('task') }} onEdit={(t) => { setEditingTask(t); setTaskForm({ title: t.title, description: t.description || '', due_date: t.due_date || '', priority: t.priority, notify: t.notify }); setModal('task') }} onComplete={completeTask} onDelete={deleteTask} onSendReminders={sendReminders} smtpReady={Boolean(dashboard?.smtp_ready)} notificationHistory={notificationHistory} busy={busy} />}
           {(page === 'Mercado' || page === 'Diagnóstico' || page === 'Desafios' || page === 'Plano' || page === 'Inteligência de mercado') && <MarketIntelligencePage focusSection={page === 'Diagnóstico' ? 'diagnosis' : page === 'Desafios' ? 'challenges' : page === 'Plano' ? 'plan' : 'market'} />}
