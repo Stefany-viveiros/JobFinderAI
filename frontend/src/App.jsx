@@ -243,6 +243,7 @@ function WorkspaceApp({ user, onLogout }) {
       <div className="workspace-label">WORKSPACE</div>
       <nav className="nav-list">
         <NavItem icon={LayoutDashboard} text="Visão geral" active={page === 'Dashboard'} onClick={() => changePage('Dashboard')} />
+        <NavItem icon={UserRound} text="Meu Perfil" active={page === 'Perfil e configurações'} onClick={() => changePage('Perfil e configurações')} />
         <NavItem icon={Search} text="Oportunidades" active={page === 'Oportunidades' || page === 'Buscar vagas'} onClick={() => changePage('Oportunidades')} count={metrics.new_jobs} />
         <NavItem icon={Bot} text="Agente" active={page === 'Agente'} onClick={() => changePage('Agente')} count={metrics.awaiting_approval} />
         <NavItem icon={BriefcaseBusiness} text="Candidaturas" active={page === 'Candidaturas'} onClick={() => changePage('Candidaturas')} />
@@ -253,7 +254,6 @@ function WorkspaceApp({ user, onLogout }) {
         <NavItem icon={Activity} text="Mercado" active={page === 'Mercado' || page === 'Inteligência de mercado'} onClick={() => changePage('Mercado')} />
         <NavItem icon={BookOpen} text="Plano" active={page === 'Plano'} onClick={() => changePage('Plano')} />
         <NavItem icon={CheckCircle2} text="Tarefas" active={page === 'Tarefas'} onClick={() => changePage('Tarefas')} count={metrics.pending_tasks} />
-        <NavItem icon={UserRound} text="Meu Perfil" active={page === 'Perfil e configurações'} onClick={() => changePage('Perfil e configurações')} />
       </nav>
       <div className="sidebar-bottom">
         <div className="upgrade-card"><div className="upgrade-icon"><Zap size={17}/></div><strong>Seu próximo passo</strong><p>Mantenha seu perfil atualizado para melhorar a compatibilidade das vagas.</p><button onClick={() => changePage('Perfil e configurações')}>Completar perfil <ArrowUpRight size={14}/></button></div>
