@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Bot, Check, CircleHelp, ExternalLink, LoaderCircle, Play, Send, X } from 'lucide-react'
 
 const ATTEMPT_LABEL = {
@@ -14,21 +14,9 @@ export function AttemptPill({ status }) {
   return <span className={`status-pill ${ATTEMPT_TONE[status] || 'gray'}`}><i/>{ATTEMPT_LABEL[status] || status}</span>
 }
 
-export default function AgentPage({ settings, setSettings, onSave, onRun, runResult, attempts, sources, onApprove, onCancel, onConfirmManual, smtp, onSaveSmtp, onDeleteSmtp, busy }) {
+export default function AgentPage({ settings, setSettings, onSave, onRun, runResult, attempts, sources, onApprove, onCancel, onConfirmManual, busy }) {
   const [filter, setFilter] = useState('todas')
   const [open, setOpen] = useState(null)
-  const [smtpPassword, setSmtpPassword] = useState('')
-  const [smtpForm, setSmtpForm] = useState({ host: '', port: 587, username: '', from_email: '', use_tls: true })
-  useEffect(() => {
-    setSmtpForm({
-      host: smtp?.host || '',
-      port: smtp?.port || 587,
-      username: smtp?.username || '',
-      from_email: smtp?.from_email || '',
-      use_tls: smtp?.use_tls ?? true,
-    })
-  }, [smtp])
-  const updateSmtp = (key, value) => setSmtpForm(current => ({ ...current, [key]: value }))
   const shown = attempts.filter(a => filter === 'todas' || a.status === filter)
   const set = (k, v) => setSettings(s => ({ ...s, [k]: v }))
   const noApproval = !settings.require_approval
@@ -39,7 +27,7 @@ export default function AgentPage({ settings, setSettings, onSave, onRun, runRes
       <div className="heading-actions"><button className="btn btn-primary" onClick={onRun} disabled={busy}>{busy ? <LoaderCircle size={16} className="spin"/> : <Play size={16}/>} Executar agente agora</button></div></div>
 
     {!settings.profile_ready && <div className="agent-alert"><CircleHelp size={16}/> Perfil incompleto: faltam {settings.profile_gaps?.join(', ')}. O agente coleta vagas, mas só prepara candidaturas com seus dados reais preenchidos em “Perfil profissional”.</div>}
-    {!settings.email_ready && <div className="agent-alert"><CircleHelp size={16}/> {settings.email_block_reason || 'Envio por e-mail indisponível: configure sua conexão SMTP individual abaixo. Sem isso, toda candidatura será preparada para finalização manual no site da vaga.'}</div>}
+    {!settings.email_ready && <div className="agent-alert"><CircleHelp size={16}/> {settings.email_block_reason || 'O envio por e-mail está temporariamente indisponível. Você ainda pode preparar a candidatura e finalizá-la no site da empresa.'}</div>}
     {noApproval && settings.auto_apply_enabled && <div className="agent-alert warn"><CircleHelp size={16}/> Aprovação desativada com envio automático ligado: o agente enviará e-mails sem revisão, até o limite diário.</div>}
 
     <div className="panel agent-settings">
@@ -52,20 +40,6 @@ export default function AgentPage({ settings, setSettings, onSave, onRun, runRes
       </div>
       <div className="modal-actions"><button className="btn btn-secondary" onClick={onSave} disabled={busy}><Check size={15}/> Salvar configurações</button></div>
     </div>
-
-    <section className="panel agent-settings">
-      <div className="panel-heading"><div><h2>Conexão de e-mail individual</h2><p>{smtp?.configured ? (smtp.ready ? 'Sua conta SMTP está cadastrada. A senha nunca é exibida novamente.' : 'A conta está cadastrada, mas a chave de criptografia do servidor não está disponível.') : 'Conecte seu próprio provedor para habilitar recursos de e-mail.'}{settings.email_block_reason ? ` ${settings.email_block_reason}` : ''}</p></div><span className={smtp?.ready ? 'status-pill green' : 'status-pill gray'}><i/>{smtp?.ready ? 'SMTP conectado' : smtp?.configured ? 'Chave indisponível' : 'Não configurado'}</span></div>
-      <div className="form-grid">
-        <label className="field"><span>Servidor SMTP</span><input value={smtpForm.host || smtp?.host || ''} onChange={e => updateSmtp('host', e.target.value)} placeholder="smtp.gmail.com" autoComplete="off"/></label>
-        <label className="field"><span>Porta</span><input type="number" min="1" max="65535" value={smtpForm.port} onChange={e => updateSmtp('port', Number(e.target.value))}/></label>
-        <label className="field"><span>Usuário / e-mail de autenticação</span><input value={smtpForm.username || smtp?.username || ''} onChange={e => updateSmtp('username', e.target.value)} autoComplete="username"/></label>
-        <label className="field"><span>Remetente</span><input type="email" value={smtpForm.from_email || smtp?.from_email || ''} onChange={e => updateSmtp('from_email', e.target.value)} placeholder="voce@exemplo.com"/></label>
-        <label className="field"><span>Senha de app SMTP</span><input type="password" value={smtpPassword} onChange={e => setSmtpPassword(e.target.value)} placeholder={smtp?.configured ? 'Informe uma nova senha para atualizar' : 'Senha de app do provedor'} autoComplete="new-password"/></label>
-      </div>
-      <p className="muted small">{Number(smtpForm.port) === 465 ? 'Porta 465: conexão SSL/TLS desde o início.' : Number(smtpForm.port) === 587 ? 'Porta 587: conexão STARTTLS antes da autenticação (recomendado para Gmail).' : 'A conexão será protegida com STARTTLS; o envio sem TLS é bloqueado.'} A proteção TLS é obrigatória.</p>
-      <div className="modal-actions"><button className="btn btn-primary" disabled={busy || !smtpPassword || !(smtpForm.host || smtp?.host) || !(smtpForm.username || smtp?.username) || !(smtpForm.from_email || smtp?.from_email)} onClick={async () => { const ok = await onSaveSmtp({ ...smtpForm, host: smtpForm.host || smtp?.host, username: smtpForm.username || smtp?.username, from_email: smtpForm.from_email || smtp?.from_email, password: smtpPassword }); if (ok) setSmtpPassword('') }}><Check size={15}/> Salvar conexão SMTP</button>{smtp?.configured && <button className="btn btn-secondary" disabled={busy} onClick={onDeleteSmtp}><X size={15}/> Remover conexão</button>}</div>
-      <p className="muted small">A senha é cifrada antes de ser salva. Use uma senha de app do provedor, nunca sua senha principal. O envio só ocorre após sua aprovação quando essa opção estiver ativada.</p>
-    </section>
 
     {runResult && <div className="panel agent-result"><div className="panel-heading"><div><h2>Última execução</h2><p>Resultado real da rodada</p></div></div>
       <div className="agent-result-grid">{[['Recebidas', runResult.received], ['Salvas', runResult.saved], ['Duplicadas', runResult.duplicates], ['Fora do perfil (nível/área)', runResult.filtered_out], ['Candidatas', runResult.candidates], ['Aguardando aprovação', runResult.awaiting_approval], ['Manuais', runResult.manual_required], ['Enviadas', runResult.sent], ['Falhas', runResult.failed], ['Limite diário', runResult.skipped_daily_limit]].map(([l, v]) => <div key={l}><strong>{v ?? 0}</strong><span>{l}</span></div>)}</div>
