@@ -45,28 +45,17 @@ def test_email_channel_unavailable_without_smtp(db, ready_profile):
     attempt = applying.prepare_attempt(db, make_job(db), ready_profile)
     assert attempt.channel == "manual" and "SMTP" in attempt.detail
 
-def test_multitenant_email_is_blocked_until_user_resume_can_be_attached(db, ready_profile, test_user, monkeypatch):
-    from cryptography.fernet import Fernet
-    from jobfinder.models import ApplicationAttempt, SmtpAccount
-    from jobfinder.smtp_credentials import encrypt_password
+def test_multitenant_email_is_blocked_until_user_resume_can_be_attached(db, ready_profile, test_user, smtp_on, monkeypatch):
+    from jobfinder.models import ApplicationAttempt
 
     monkeypatch.setenv("MULTITENANT_READY", "true")
-    monkeypatch.setenv("SMTP_CREDENTIALS_KEY", Fernet.generate_key().decode("ascii"))
-    account = SmtpAccount(
-        user_id=test_user.id, host="smtp.example.com", port=587,
-        username="ana@example.com", encrypted_password=encrypt_password("app-password"),
-        from_email="ana@example.com", use_tls=True,
-    )
-    db.add(account)
-    db.commit()
-
     job = make_job(db)
     available, reason = applying.email_channel_available(job, user_id=test_user.id, db=db)
     assert available is False
     assert "currículo" in reason
     assert "Perfil profissional" in reason
 
-    # Mesmo uma tentativa antiga não pode contornar a regra nem anexar CV global.
+    # Mesmo uma tentativa antiga não pode contornar a regra nem enviar sem currículo.
     attempt = ApplicationAttempt(
         user_id=test_user.id, job_id=job.id, status="prepared", channel="email",
         recipient="vagas@acme.com", subject="Candidatura", message="Olá",
