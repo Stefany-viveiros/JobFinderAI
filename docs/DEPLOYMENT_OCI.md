@@ -65,7 +65,7 @@ Guardar a chave de currículo e a chave SMTP em local seguro e inserir em `.env`
 - Criar backup verificável do banco de staging/cópia de teste.
 - Executar `scripts/preflight_release.py` contra staging, nunca contra produção como primeiro teste.
 - Revisar o estado Alembic e os registros sem proprietário.
-- Não executar migrações automaticamente no start dos containers.
+- A API OCI usa `AUTO_INIT_DB=false`: não executa `create_all()` nem alterações DDL na inicialização. Aplicar Alembic será uma etapa explícita, revisada e precedida por backup.
 
 ## Build e inicialização
 
