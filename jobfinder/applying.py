@@ -18,7 +18,7 @@ from sqlalchemy import func, select
 
 from .config import settings
 from .matching import normalize, profile_technology_terms
-from .models import Application, ApplicationAttempt, ApplicationEvent, Job, UserResume
+from .models import Application, ApplicationAttempt, ApplicationEvent, Job, User, UserResume
 from .resume_storage import decrypt_resume, digest_resume, ResumeStorageError
 
 OPEN_STATUSES = ("prepared", "awaiting_approval", "manual_required")
@@ -321,6 +321,9 @@ def send_attempt(db, attempt: ApplicationAttempt, daily_limit: int | None = None
 
     msg = EmailMessage()
     msg["Subject"], msg["From"], msg["To"] = attempt.subject, sender_email, attempt.recipient
+    applicant = db.get(User, user_id) if user_id is not None else None
+    if applicant and applicant.email:
+        msg["Reply-To"] = applicant.email
     msg.set_content(attempt.message)
     if resume_attachment:
         content, content_type, filename = resume_attachment
