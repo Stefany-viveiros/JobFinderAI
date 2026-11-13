@@ -224,16 +224,16 @@ function WorkspaceApp({ user, onLogout }) {
     Agente: 'Agente de candidaturas',
     Candidaturas: 'Minhas candidaturas',
     Tarefas: 'Tarefas e prazos',
-    'Meu Career Twin': 'Meu Career Twin',
+    'Meu Career Twin': 'Minha evolução profissional',
     Competências: 'Competências',
     Diagnóstico: 'Diagnóstico de compatibilidade',
     Desafios: 'Desafios práticos',
     Mercado: 'Inteligência de mercado',
     Plano: 'Plano de desenvolvimento',
-    'Perfil e configurações': 'Configurações',
+    'Perfil e configurações': 'Meu Perfil',
     'Buscar vagas': 'Oportunidades',
     'Inteligência de mercado': 'Inteligência de mercado',
-    'Career Twin': 'Meu Career Twin',
+    'Career Twin': 'Minha evolução profissional',
   }[page]
   const todayText = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })
 
@@ -246,17 +246,14 @@ function WorkspaceApp({ user, onLogout }) {
         <NavItem icon={Search} text="Oportunidades" active={page === 'Oportunidades' || page === 'Buscar vagas'} onClick={() => changePage('Oportunidades')} count={metrics.new_jobs} />
         <NavItem icon={Bot} text="Agente" active={page === 'Agente'} onClick={() => changePage('Agente')} count={metrics.awaiting_approval} />
         <NavItem icon={BriefcaseBusiness} text="Candidaturas" active={page === 'Candidaturas'} onClick={() => changePage('Candidaturas')} />
-        <NavItem icon={BrainCircuit} text="Meu Career Twin" active={page === 'Meu Career Twin' || page === 'Career Twin'} onClick={() => changePage('Meu Career Twin')} />
+        <NavItem icon={BrainCircuit} text="Minha evolução" active={page === 'Meu Career Twin' || page === 'Career Twin'} onClick={() => changePage('Meu Career Twin')} />
         <NavItem icon={Layers3} text="Competências" active={page === 'Competências'} onClick={() => changePage('Competências')} />
         <NavItem icon={Target} text="Diagnóstico" active={page === 'Diagnóstico'} onClick={() => changePage('Diagnóstico')} />
         <NavItem icon={Code2} text="Desafios" active={page === 'Desafios'} onClick={() => changePage('Desafios')} />
         <NavItem icon={Activity} text="Mercado" active={page === 'Mercado' || page === 'Inteligência de mercado'} onClick={() => changePage('Mercado')} />
         <NavItem icon={BookOpen} text="Plano" active={page === 'Plano'} onClick={() => changePage('Plano')} />
         <NavItem icon={CheckCircle2} text="Tarefas" active={page === 'Tarefas'} onClick={() => changePage('Tarefas')} count={metrics.pending_tasks} />
-      </nav>
-      <div className="workspace-label nav-spacer">PREFERÊNCIAS</div>
-      <nav className="nav-list">
-        <NavItem icon={Settings} text="Configurações" active={page === 'Perfil e configurações'} onClick={() => changePage('Perfil e configurações')} />
+        <NavItem icon={UserRound} text="Meu Perfil" active={page === 'Perfil e configurações'} onClick={() => changePage('Perfil e configurações')} />
       </nav>
       <div className="sidebar-bottom">
         <div className="upgrade-card"><div className="upgrade-icon"><Zap size={17}/></div><strong>Seu próximo passo</strong><p>Mantenha seu perfil atualizado para melhorar a compatibilidade das vagas.</p><button onClick={() => changePage('Perfil e configurações')}>Completar perfil <ArrowUpRight size={14}/></button></div>
@@ -270,7 +267,7 @@ function WorkspaceApp({ user, onLogout }) {
         {loading && !dashboard ? <div className="loading-panel"><LoaderCircle className="spin" size={25}/><span>Carregando seu workspace...</span></div> : <>
           {page === 'Dashboard' && <DashboardPage dashboard={dashboard} jobs={jobs} onNavigate={changePage} onCreateTask={() => { setEditingTask(null); setTaskForm(emptyTask); setModal('task') }} onFavorite={toggleFavorite} />}
           {(page === 'Oportunidades' || page === 'Buscar vagas') && <JobsPage jobs={jobs} query={query} setQuery={setQuery} minScore={minScore} setMinScore={setMinScore} favoriteOnly={favoriteOnly} setFavoriteOnly={setFavoriteOnly} modality={modality} setModality={setModality} sort={sort} setSort={setSort} onCollect={collectJobs} sourceSelection={sourceSelection} setSourceSelection={setSourceSelection} sourceOptions={sourcesInfo?.sources?.filter(s => s.search_api).map(s => s.name) || ['Arbeitnow', 'OkEmprego', 'Nerdin', 'Empregare', 'Empregando Brasil', 'Jobicy', 'Remote OK']} busy={busy} onAdd={() => setModal('job')} onFavorite={toggleFavorite} onApply={applyJob} onPrepare={prepareJob} levelFilter={levelFilter} setLevelFilter={setLevelFilter} sourceFilter={sourceFilter} setSourceFilter={setSourceFilter} attemptFilter={attemptFilter} setAttemptFilter={setAttemptFilter} />}
-          {page === 'Agente' && <AgentPage settings={agentSettings} setSettings={setAgentSettings} onSave={saveAgentSettings} onRun={runAgent} runResult={agentRun} attempts={attempts} sources={sourcesInfo} onApprove={approveAttempt} onCancel={cancelAttempt} onConfirmManual={applyJob} smtp={smtpAccount} onSaveSmtp={saveSmtpAccount} onDeleteSmtp={deleteSmtpAccount} busy={busy} />}
+          {page === 'Agente' && <AgentPage settings={agentSettings} setSettings={setAgentSettings} onSave={saveAgentSettings} onRun={runAgent} runResult={agentRun} attempts={attempts} sources={sourcesInfo} onApprove={approveAttempt} onCancel={cancelAttempt} onConfirmManual={applyJob} busy={busy} />}
           {page === 'Candidaturas' && <ApplicationsPage applications={applications} onEdit={(a) => { setEditingApp(a); setAppForm({ status: a.status, applied_at: a.applied_at || '', deadline: a.deadline || '', recruiter: a.recruiter || '', notes: a.notes || '' }); setModal('application') }} />}
           {page === 'Tarefas' && <TasksPage tasks={tasks} view={taskView} setView={setTaskView} onCreate={() => { setEditingTask(null); setTaskForm(emptyTask); setModal('task') }} onEdit={(t) => { setEditingTask(t); setTaskForm({ title: t.title, description: t.description || '', due_date: t.due_date || '', priority: t.priority, notify: t.notify }); setModal('task') }} onComplete={completeTask} onDelete={deleteTask} onSendReminders={sendReminders} smtpReady={Boolean(dashboard?.smtp_ready)} notificationHistory={notificationHistory} busy={busy} />}
           {(page === 'Mercado' || page === 'Diagnóstico' || page === 'Desafios' || page === 'Plano' || page === 'Inteligência de mercado') && <MarketIntelligencePage focusSection={page === 'Diagnóstico' ? 'diagnosis' : page === 'Desafios' ? 'challenges' : page === 'Plano' ? 'plan' : 'market'} />}
@@ -439,8 +436,6 @@ function ProfilePage({ profile, setProfile, onSave, onResumeChanged, busy }) {
   const [importing, setImporting] = useState(false)
   const [importMessage, setImportMessage] = useState('')
   const [importError, setImportError] = useState('')
-  const [allowExternalAI, setAllowExternalAI] = useState(false)
-  const [storeResumeForApplications, setStoreResumeForApplications] = useState(false)
   const [storedResume, setStoredResume] = useState(null)
   useEffect(() => { api('/profile/resume').then(setStoredResume).catch(() => setStoredResume({ configured: false })) }, [])
   const set = (field, value) => setProfile(p => ({ ...p, [field]: value }))
@@ -461,8 +456,8 @@ function ProfilePage({ profile, setProfile, onSave, onResumeChanged, busy }) {
     if (file.size > 5 * 1024 * 1024) { setImportError('O arquivo deve ter no máximo 5 MB.'); return }
     const form = new FormData()
     form.append('file', file)
-    form.append('allow_external_ai', String(allowExternalAI))
-    form.append('store_for_applications', String(storeResumeForApplications))
+    form.append('allow_external_ai', 'false')
+    form.append('store_for_applications', 'false')
     setImporting(true); setImportError(''); setImportMessage('')
     try {
       const response = await fetch(`${API}/profile/import`, { method: 'POST', body: form, credentials: 'include', headers: csrfToken ? { 'X-CSRF-Token': csrfToken } : {} })
@@ -472,7 +467,20 @@ function ProfilePage({ profile, setProfile, onSave, onResumeChanged, busy }) {
         const extracted = body.extracted || {}
         const next = { ...current, ...extracted }
         for (const key of ['educations', 'experiences', 'courses', 'certifications_items', 'portfolio_projects']) {
-          if (Array.isArray(extracted[key])) next[key] = [...(current[key] || []), ...extracted[key]]
+          if (Array.isArray(extracted[key])) {
+            const existing = current[key] || []
+            const identity = item => Object.entries(item || {})
+              .filter(([field, value]) => !['id', '_key'].includes(field) && String(value ?? '').trim())
+              .map(([field, value]) => `${field}:${String(value).trim().toLocaleLowerCase('pt-BR')}`)
+              .sort().join('|')
+            const known = new Set(existing.map(identity))
+            next[key] = [...existing, ...extracted[key].filter(item => {
+              const keyValue = identity(item)
+              if (!keyValue || known.has(keyValue)) return false
+              known.add(keyValue)
+              return true
+            })]
+          }
         }
         return next
       })
@@ -485,22 +493,14 @@ function ProfilePage({ profile, setProfile, onSave, onResumeChanged, busy }) {
     finally { setImporting(false) }
   }
   return <>
-    <SectionHeading eyebrow="PERSONALIZE SUA BUSCA" title="Perfil profissional" subtitle="Mantenha seu histórico acadêmico e profissional organizado. O agente usa essas informações para avaliar oportunidades."/>
+    <SectionHeading eyebrow="PERSONALIZE SUA BUSCA" title="Meu Perfil" subtitle="Envie seu currículo para preencher seus dados e depois revise, edite ou complemente cada informação. O agente usa seu perfil para avaliar oportunidades."/>
     <section className="panel resume-import-panel">
-      <div className="resume-import-copy"><div className="resume-import-icon"><Sparkles size={19}/></div><div><strong>Preencher com meu currículo</strong><p>Envie PDF ou DOCX. A extração sugere registros separados para você revisar antes de salvar.</p></div></div>
+      <div className="resume-import-copy"><div className="resume-import-icon"><Sparkles size={19}/></div><div><strong>Importar currículo</strong><p>Envie seu currículo em PDF ou DOCX. Vamos ler as informações e preencher os campos para você revisar, editar e complementar.</p></div></div>
       <label className="btn btn-secondary resume-upload-button">{importing ? <LoaderCircle size={16} className="spin"/> : <UserRound size={16}/>} {importing ? 'Analisando currículo...' : 'Selecionar currículo'}<input type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={importResume} disabled={importing} hidden/></label>
-      <label className="resume-ai-consent">
-        <input type="checkbox" checked={allowExternalAI} onChange={e => setAllowExternalAI(e.target.checked)} disabled={importing}/>
-        <span><strong>Autorizar análise externa com Google Gemini</strong><small>Quando marcada e houver chave configurada no servidor, somente o texto extraído do currículo será enviado ao Google para análise.</small></span>
-      </label>
-      <label className="resume-ai-consent">
-        <input type="checkbox" checked={storeResumeForApplications} onChange={e => setStoreResumeForApplications(e.target.checked)} disabled={importing}/>
-        <span><strong>Guardar o arquivo cifrado para candidaturas por e-mail</strong><small>Opcional. O PDF/DOCX será cifrado com uma chave exclusiva do armazenamento e vinculado somente à sua conta. Você pode removê-lo quando quiser.</small></span>
-      </label>
       {storedResume?.configured && <div className="resume-import-success"><CheckCircle2 size={15}/>Currículo protegido: {storedResume.filename}<button type="button" className="text-action" onClick={async () => { try { await api('/profile/resume', { method: 'DELETE' }); setStoredResume({ configured: false }); await onResumeChanged?.(); setImportMessage('Arquivo de currículo removido com sucesso.'); } catch (error) { setImportError(error.message || 'Não foi possível remover o arquivo.'); } }}>Remover arquivo</button></div>}
       {importMessage && <p className="resume-import-success"><CheckCircle2 size={15}/>{importMessage}</p>}
       {importError && <p className="resume-import-error">{importError}</p>}
-      <small>Limite de 5 MB. Sem autorização, a extração é feita localmente. O arquivo original só é armazenado se você marcar a opção de armazenamento cifrado. Nada é salvo no perfil até você revisar e clicar em “Salvar perfil”.</small>
+      <small>PDF ou DOCX de até 5 MB. Depois da leitura, confira os dados e clique em “Salvar perfil” para atualizar seu cadastro. Você também pode adicionar, editar ou remover informações manualmente.</small>
     </section>
     <form className="profile-form" onSubmit={onSave}>
       <div className="profile-header-card"><div className="profile-large-avatar">{initials(profile.name)}</div><div><strong>{profile.name || 'Seu nome'}</strong><span>{profile.course || 'Área profissional'}{profile.institution ? ` · ${profile.institution}` : ''}</span><p>Informações revisáveis utilizadas pelo mecanismo de compatibilidade.</p></div><div className="profile-status"><span className="status-dot"/>Perfil editável</div></div>
