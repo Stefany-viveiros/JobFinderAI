@@ -18,8 +18,7 @@ from sqlalchemy import func, select
 
 from .config import settings
 from .matching import normalize, profile_technology_terms
-from .models import Application, ApplicationAttempt, ApplicationEvent, Job, SmtpAccount, UserResume
-from .smtp_credentials import decrypt_password, CredentialEncryptionError
+from .models import Application, ApplicationAttempt, ApplicationEvent, Job, UserResume
 from .resume_storage import decrypt_resume, digest_resume, ResumeStorageError
 
 OPEN_STATUSES = ("prepared", "awaiting_approval", "manual_required")
@@ -164,32 +163,24 @@ def extract_apply_email(text: str) -> str | None:
 def email_channel_available(job, user_id: int | None = None, db=None) -> tuple[bool, str]:
     if not extract_apply_email(job.description):
         return False, "A vaga não publica e-mail de candidatura; finalize no site original."
+    if not settings.smtp_can_send_applications:
+        return False, (
+            "O envio por e-mail está temporariamente indisponível. "
+            "Você ainda pode preparar a candidatura e finalizá-la no site da empresa."
+        )
     import os
     if os.getenv("MULTITENANT_READY", "false").strip().lower() == "true":
         if user_id is None or db is None:
-            return False, "Conexão SMTP individual indisponível sem identidade autenticada."
-        account = db.scalar(select(SmtpAccount).where(SmtpAccount.user_id == user_id))
-        if account is None:
-            return False, "Configure sua conexão SMTP individual para habilitar o envio automático."
-        try:
-            decrypt_password(account.encrypted_password)
-        except CredentialEncryptionError:
-            return False, "Credencial SMTP indisponível; revise a chave de criptografia do servidor."
+            return False, "Não foi possível validar o currículo desta conta."
         resume = db.scalar(select(UserResume).where(UserResume.user_id == user_id))
         if resume is None:
-            return False, (
-                "Guarde seu currículo com a opção de armazenamento cifrado no Perfil profissional "
-                "antes de habilitar o envio por e-mail."
-            )
+            return False, "Adicione seu currículo ao Perfil profissional para habilitar o envio por e-mail."
         try:
             content = decrypt_resume(resume.encrypted_content)
         except ResumeStorageError:
-            return False, "Arquivo de currículo indisponível; envie-o novamente com armazenamento cifrado."
+            return False, "Arquivo de currículo indisponível; envie-o novamente."
         if not content or digest_resume(content) != resume.sha256:
-            return False, "A integridade do currículo armazenado não pôde ser confirmada; envie-o novamente."
-        return True, ""
-    if not settings.smtp_can_send_applications:
-        return False, "SMTP não configurado no .env (SMTP_HOST, SMTP_FROM, SMTP_USERNAME, SMTP_PASSWORD)."
+            return False, "A integridade do currículo não pôde ser confirmada; envie-o novamente."
     return True, ""
 
 
@@ -305,37 +296,26 @@ def send_attempt(db, attempt: ApplicationAttempt, daily_limit: int | None = None
     if attempt.channel != "email" or not attempt.recipient:
         raise ApplyError("Esta candidatura não tem canal de envio automático; finalize no site original.")
     import os
-    smtp_config = None
+    if not settings.smtp_can_send_applications:
+        raise ApplyError(
+            "O envio por e-mail está temporariamente indisponível. "
+            "Finalize esta candidatura no site da empresa."
+        )
     resume_attachment = None
+    sender_email = settings.smtp_from
     if os.getenv("MULTITENANT_READY", "false").strip().lower() == "true":
         if user_id is None:
-            raise ApplyError("Envio SMTP exige identidade autenticada.")
-        account = db.scalar(select(SmtpAccount).where(SmtpAccount.user_id == user_id))
-        if account is None:
-            raise ApplyError("Configure sua conexão SMTP individual antes de aprovar o envio.")
-        try:
-            smtp_password = decrypt_password(account.encrypted_password)
-        except CredentialEncryptionError as exc:
-            raise ApplyError(str(exc)) from exc
+            raise ApplyError("Não foi possível validar a conta para anexar o currículo.")
         resume = db.scalar(select(UserResume).where(UserResume.user_id == user_id))
         if resume is None:
-            raise ApplyError("Guarde seu currículo com armazenamento cifrado antes de enviar.")
+            raise ApplyError("Adicione seu currículo ao Perfil profissional antes de enviar.")
         try:
             resume_content = decrypt_resume(resume.encrypted_content)
         except ResumeStorageError as exc:
             raise ApplyError("Currículo indisponível; envie o arquivo novamente.") from exc
         if not resume_content or digest_resume(resume_content) != resume.sha256:
             raise ApplyError("A integridade do currículo não pôde ser confirmada; envie-o novamente.")
-        smtp_config = {
-            "host": account.host, "port": account.port, "username": account.username,
-            "password": smtp_password, "use_tls": account.use_tls,
-        }
-        sender_email = account.from_email
         resume_attachment = (resume_content, resume.content_type, resume.filename)
-    else:
-        if not settings.smtp_can_send_applications:
-            raise ApplyError("SMTP não configurado no .env.")
-        sender_email = settings.smtp_from
     if daily_limit is not None and sent_today_count(db, user_id=user_id) >= daily_limit:
         raise ApplyError(f"Limite diário de {daily_limit} candidatura(s) automática(s) atingido.")
 
@@ -354,10 +334,7 @@ def send_attempt(db, attempt: ApplicationAttempt, daily_limit: int | None = None
             return attempt
         msg.add_attachment(cv.read_bytes(), maintype="application", subtype="pdf", filename=cv.name)
     try:
-        if smtp_config is None:
-            _deliver(msg)  # compatibilidade com o transporte legado/local
-        else:
-            _deliver(msg, smtp_config=smtp_config)
+        _deliver(msg)  # usa exclusivamente o serviço de e-mail configurado pela plataforma
     except Exception as exc:  # qualquer falha de rede/autenticação: nada é registrado como enviado
         attempt.status, attempt.detail = "failed", f"{type(exc).__name__}: {exc}"
         db.commit()
