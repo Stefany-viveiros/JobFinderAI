@@ -224,7 +224,7 @@ function WorkspaceApp({ user, onLogout }) {
     Agente: 'Agente de candidaturas',
     Candidaturas: 'Minhas candidaturas',
     Tarefas: 'Tarefas e prazos',
-    'Meu Career Twin': 'Meu Career Twin',
+    'Meu Career Twin': 'Minha evolução profissional',
     Competências: 'Competências',
     Diagnóstico: 'Diagnóstico de compatibilidade',
     Desafios: 'Desafios práticos',
@@ -233,7 +233,7 @@ function WorkspaceApp({ user, onLogout }) {
     'Perfil e configurações': 'Meu Perfil',
     'Buscar vagas': 'Oportunidades',
     'Inteligência de mercado': 'Inteligência de mercado',
-    'Career Twin': 'Meu Career Twin',
+    'Career Twin': 'Minha evolução profissional',
   }[page]
   const todayText = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })
 
@@ -246,17 +246,14 @@ function WorkspaceApp({ user, onLogout }) {
         <NavItem icon={Search} text="Oportunidades" active={page === 'Oportunidades' || page === 'Buscar vagas'} onClick={() => changePage('Oportunidades')} count={metrics.new_jobs} />
         <NavItem icon={Bot} text="Agente" active={page === 'Agente'} onClick={() => changePage('Agente')} count={metrics.awaiting_approval} />
         <NavItem icon={BriefcaseBusiness} text="Candidaturas" active={page === 'Candidaturas'} onClick={() => changePage('Candidaturas')} />
-        <NavItem icon={BrainCircuit} text="Meu Career Twin" active={page === 'Meu Career Twin' || page === 'Career Twin'} onClick={() => changePage('Meu Career Twin')} />
+        <NavItem icon={BrainCircuit} text="Minha evolução" active={page === 'Meu Career Twin' || page === 'Career Twin'} onClick={() => changePage('Meu Career Twin')} />
         <NavItem icon={Layers3} text="Competências" active={page === 'Competências'} onClick={() => changePage('Competências')} />
         <NavItem icon={Target} text="Diagnóstico" active={page === 'Diagnóstico'} onClick={() => changePage('Diagnóstico')} />
         <NavItem icon={Code2} text="Desafios" active={page === 'Desafios'} onClick={() => changePage('Desafios')} />
         <NavItem icon={Activity} text="Mercado" active={page === 'Mercado' || page === 'Inteligência de mercado'} onClick={() => changePage('Mercado')} />
         <NavItem icon={BookOpen} text="Plano" active={page === 'Plano'} onClick={() => changePage('Plano')} />
         <NavItem icon={CheckCircle2} text="Tarefas" active={page === 'Tarefas'} onClick={() => changePage('Tarefas')} count={metrics.pending_tasks} />
-      </nav>
-      <div className="workspace-label nav-spacer">PREFERÊNCIAS</div>
-      <nav className="nav-list">
-        <NavItem icon={Settings} text="Meu Perfil" active={page === 'Perfil e configurações'} onClick={() => changePage('Perfil e configurações')} />
+        <NavItem icon={UserRound} text="Meu Perfil" active={page === 'Perfil e configurações'} onClick={() => changePage('Perfil e configurações')} />
       </nav>
       <div className="sidebar-bottom">
         <div className="upgrade-card"><div className="upgrade-icon"><Zap size={17}/></div><strong>Seu próximo passo</strong><p>Mantenha seu perfil atualizado para melhorar a compatibilidade das vagas.</p><button onClick={() => changePage('Perfil e configurações')}>Completar perfil <ArrowUpRight size={14}/></button></div>
