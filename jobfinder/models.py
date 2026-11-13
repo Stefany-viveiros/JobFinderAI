@@ -92,7 +92,7 @@ class JobMatch(Base):
 
 class Profile(Base):
     __tablename__ = "profile"
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, unique=True, index=True)
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(150), default="")
     course: Mapped[str] = mapped_column(String(200), default="")
@@ -194,7 +194,7 @@ class Application(Base):
     __tablename__ = "applications"
     __table_args__ = (UniqueConstraint("user_id", "job_id", name="uq_user_application_job"),)
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"))
     status: Mapped[str] = mapped_column(String(80), default="Candidatura enviada")
     applied_at: Mapped[date | None] = mapped_column(Date, nullable=True)
@@ -220,7 +220,7 @@ class ApplicationEvent(Base):
 class Task(Base):
     __tablename__ = "tasks"
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     job_id: Mapped[int | None] = mapped_column(ForeignKey("jobs.id"), nullable=True)
     title: Mapped[str] = mapped_column(String(300))
     description: Mapped[str] = mapped_column(Text, default="")
@@ -236,7 +236,7 @@ class NotificationLog(Base):
     __tablename__ = "notification_log"
     __table_args__ = (UniqueConstraint("user_id", "task_id", "recipient", "send_date", name="uq_user_task_recipient_day"),)
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     task_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     recipient: Mapped[str] = mapped_column(String(300))
     send_date: Mapped[str] = mapped_column(String(20))
@@ -248,7 +248,7 @@ class NotificationLog(Base):
 class AgentSettings(Base):
     """Configuração individual do agente por usuário."""
     __tablename__ = "agent_settings"
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, unique=True, index=True)
     id: Mapped[int] = mapped_column(primary_key=True)
     auto_apply_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     require_approval: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -260,7 +260,7 @@ class ApplicationAttempt(Base):
     """Histórico de candidaturas. 'sent' só existe quando houve envio real ou confirmação explícita do usuário."""
     __tablename__ = "application_attempts"
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"))
     # prepared | awaiting_approval | manual_required | sent | failed | cancelled
     status: Mapped[str] = mapped_column(String(30), default="prepared")
@@ -368,7 +368,7 @@ class DevelopmentPlanItem(Base):
     """Meta individual de desenvolvimento ligada a uma competência do catálogo."""
     __tablename__ = "development_plan_items"
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     skill_id: Mapped[int] = mapped_column(ForeignKey("market_skills.id"), index=True)
     source_run_id: Mapped[int | None] = mapped_column(
         ForeignKey("market_analysis_runs.id", ondelete="SET NULL"), nullable=True
@@ -391,7 +391,7 @@ class SkillAssessmentAttempt(Base):
     """Registro de desafio prático e autoavaliação de uma competência."""
     __tablename__ = "skill_assessment_attempts"
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     skill_id: Mapped[int] = mapped_column(ForeignKey("market_skills.id"), index=True)
     plan_item_id: Mapped[int | None] = mapped_column(
         ForeignKey("development_plan_items.id", ondelete="SET NULL"), nullable=True, index=True
