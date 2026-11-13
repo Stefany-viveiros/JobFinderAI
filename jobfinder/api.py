@@ -596,12 +596,6 @@ def readiness():
     except ResumeStorageError:
         checks["resume_storage_key"] = "missing_or_invalid"
 
-    try:
-        encrypt_password("readiness-probe")
-        checks["smtp_credentials_key"] = "configured"
-    except CredentialEncryptionError:
-        checks["smtp_credentials_key"] = "missing_or_invalid"
-
     payload = {"status": "ready" if ready else "not_ready", "checks": checks}
     return JSONResponse(status_code=200 if ready else 503, content=payload)
 
