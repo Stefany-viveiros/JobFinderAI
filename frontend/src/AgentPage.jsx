@@ -39,6 +39,7 @@ export default function AgentPage({ settings, setSettings, onSave, onRun, runRes
         <label className="field"><span>Compatibilidade mínima para preparar (%)</span><input type="number" min="0" max="100" value={settings.min_score ?? 80} onChange={e => set('min_score', Number(e.target.value))}/></label>
       </div>
       <div className="modal-actions"><button className="btn btn-secondary" onClick={onSave} disabled={busy}><Check size={15}/> Salvar configurações</button></div>
+      <p className="muted small">O envio por e-mail é operado pelo próprio JobFinder AI. Você não precisa configurar uma conta de e-mail. Quando o envio direto não estiver disponível, a candidatura ficará pronta para você finalizar no site da empresa.</p>
     </div>
 
     {runResult && <div className="panel agent-result"><div className="panel-heading"><div><h2>Última execução</h2><p>Resultado real da rodada</p></div></div>
