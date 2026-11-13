@@ -1,4 +1,7 @@
 from datetime import datetime
+import json
+
+import pytest
 import uuid
 
 from sqlalchemy import select
@@ -163,6 +166,12 @@ def test_profile_gap_distinguishes_project_course_declaration_and_missing(db, te
     assert by_name["JavaScript"]["status"] == "declarada"
     assert by_name["Docker"]["status"] == "nao_identificada"
     assert gap["available"] is True
+    assert gap["market"]["level_scope"] == "estagio"
+    assert gap["market"]["valid_jobs"] == 1
+    assert gap["market"]["sample_minimum"] == 1
+    assert gap["market"]["sample_sufficient"] is True
+    assert gap["market"]["period_start"]
+    assert gap["market"]["period_end"]
     assert "não significa falta de conhecimento" in gap["notice"]
 
 
@@ -353,3 +362,98 @@ def test_profile_evidence_keeps_precedence_over_self_assessment(db, test_user):
 
     assert react["status"] == "praticada"
     assert react["assessment"]["score"] == 100
+
+
+
+def test_profile_gap_rejects_snapshot_that_is_not_completed(db, test_user):
+    from jobfinder.market_service import build_profile_gap
+    from jobfinder.models import MarketAnalysisRun, Profile
+
+    db.add(Profile(user_id=test_user.id, technologies="Python"))
+    run = MarketAnalysisRun(
+        level_scope="estagio",
+        area_scope="technology",
+        filters_json='{"days": 30, "levels": ["estagio"]}',
+        status="running",
+    )
+    db.add(run)
+    db.commit()
+
+    gap = build_profile_gap(db, user_id=test_user.id, run_id=run.id)
+    assert gap["available"] is False
+    assert "concluída" in gap["message"]
+
+
+
+def test_market_trends_compare_only_equivalent_snapshots(db):
+    from jobfinder.market_service import compare_market_trends
+
+    make_job(
+        db,
+        title="Estágio Python",
+        description="Python e FastAPI para desenvolvimento backend.",
+    )
+    previous = create_market_snapshot(db, level_scope="estagio", days=30, min_jobs=1)
+
+    make_job(
+        db,
+        title="Estágio JavaScript",
+        description="JavaScript, React e CSS para desenvolvimento frontend.",
+    )
+    current = create_market_snapshot(db, level_scope="estagio", days=30, min_jobs=1)
+
+    trends = compare_market_trends(db, limit=20)
+    assert trends["available"] is True
+    assert trends["current"]["run_id"] == current["run_id"]
+    assert trends["previous"]["run_id"] == previous["run_id"]
+    assert trends["scope"]["days"] == 30
+    assert trends["scope"]["level_scope"] == "estagio"
+    assert trends["sample_sufficient"] is True
+
+    by_name = {item["name"]: item for item in trends["items"]}
+    assert by_name["Python"]["previous_mention_rate"] == 100.0
+    assert by_name["Python"]["current_mention_rate"] == 50.0
+    assert by_name["Python"]["direction"] == "falling"
+    assert by_name["JavaScript"]["previous_mention_rate"] == 0.0
+    assert by_name["JavaScript"]["current_mention_rate"] == 50.0
+    assert by_name["JavaScript"]["direction"] == "rising"
+    assert "não previsão estatística" in trends["notice"]
+
+
+def test_market_trends_do_not_mix_different_snapshot_scopes(db):
+    from jobfinder.market_service import compare_market_trends
+
+    make_job(db, title="Estágio Python", description="Python e FastAPI.")
+    create_market_snapshot(db, level_scope="estagio", days=30, min_jobs=1)
+    create_market_snapshot(db, level_scope="estagio", days=60, min_jobs=1)
+
+    trends = compare_market_trends(db)
+    assert trends["available"] is False
+    assert "mesmo período, nível e versões" in trends["message"]
+
+
+@pytest.mark.parametrize("unsafe_url", [
+    "javascript:alert(1)",
+    "data:text/html,<script>alert(1)</script>",
+    "http://example.com/evidence",
+    "https://user:password@example.com/evidence",
+    "https://example.com/with space",
+])
+def test_skill_assessment_rejects_unsafe_evidence_urls(db, test_user, unsafe_url):
+    from jobfinder.market_service import create_skill_assessment, submit_skill_assessment
+
+    skill = db.scalar(select(Skill).where(Skill.canonical_name == "python"))
+    if skill is None:
+        skill = Skill(
+            canonical_name="python", category="language",
+            aliases_json="[]", taxonomy_version="test", active=True,
+        )
+        db.add(skill)
+        db.flush()
+    attempt = create_skill_assessment(db, user_id=test_user.id, skill_id=skill.id)
+    answers = {item["id"]: True for item in attempt["criteria"]}
+    with pytest.raises(ValueError, match="URL HTTPS válida"):
+        submit_skill_assessment(
+            db, attempt["id"], response_text="Minha solução foi documentada e testada.",
+            evidence_url=unsafe_url, rubric_answers=answers, user_id=test_user.id,
+        )

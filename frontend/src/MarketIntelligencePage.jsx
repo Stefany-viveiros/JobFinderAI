@@ -8,9 +8,21 @@ import {
 const API = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api').replace(/\/$/, '')
 
 async function request(path, options = {}) {
+  const method = (options.method || 'GET').toUpperCase()
+  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) }
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+    // Renova o token por operação para não reutilizar CSRF de uma sessão anterior.
+    const sessionResponse = await fetch(`${API}/auth/me`, { credentials: 'include' })
+    const sessionBody = await sessionResponse.json().catch(() => ({}))
+    if (!sessionResponse.ok || !sessionBody.csrf_token) {
+      throw new Error(sessionBody.detail || 'Sua sessão expirou. Entre novamente para continuar.')
+    }
+    headers['X-CSRF-Token'] = sessionBody.csrf_token
+  }
   const response = await fetch(`${API}${path}`, {
     ...options,
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    credentials: 'include',
+    headers,
   })
   const body = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(body.detail || body.message || `Erro ${response.status}`)
@@ -20,10 +32,11 @@ async function request(path, options = {}) {
 const number = (value) => new Intl.NumberFormat('pt-BR').format(value || 0)
 const date = (value) => value ? new Date(value).toLocaleDateString('pt-BR') : 'Não informado'
 
-export default function MarketIntelligencePage() {
+export default function MarketIntelligencePage({ focusSection = null } = {}) {
   const [analysis, setAnalysis] = useState(null)
   const [combinations, setCombinations] = useState([])
   const [gap, setGap] = useState(null)
+  const [trends, setTrends] = useState(null)
   const [plan, setPlan] = useState({ items: [], summary: {} })
   const [planLoading, setPlanLoading] = useState(true)
   const [addingSkill, setAddingSkill] = useState(null)
@@ -49,15 +62,18 @@ export default function MarketIntelligencePage() {
       const latest = await request('/market/analysis/latest')
       setAnalysis(latest.available ? latest : null)
       if (latest.available) {
-        const [pairs, profileGap] = await Promise.all([
+        const [pairs, profileGap, trendResult] = await Promise.all([
           request(`/market/combinations?run_id=${latest.run.id}&limit=8`),
           request(`/market/profile-gap?run_id=${latest.run.id}`),
+          request('/market/trends?limit=8').catch(() => ({ available: false, message: 'Não foi possível comparar o histórico agora.' })),
         ])
         setCombinations(pairs.combinations || [])
         setGap(profileGap.available ? profileGap : null)
+        setTrends(trendResult)
       } else {
         setCombinations([])
         setGap(null)
+        setTrends(null)
       }
     } catch (err) {
       setError(err.message || 'Não foi possível carregar a análise.')
@@ -88,6 +104,17 @@ export default function MarketIntelligencePage() {
   }, [])
 
   useEffect(() => { loadAnalysis(); loadPlan(); loadAssessments() }, [loadAnalysis, loadPlan, loadAssessments])
+  useEffect(() => {
+    if (!focusSection || loading) return
+    const targetIds = {
+      market: 'market-overview',
+      diagnosis: 'market-diagnosis',
+      challenges: 'market-challenges',
+      plan: 'market-plan',
+    }
+    const target = document.getElementById(targetIds[focusSection] || 'market-overview')
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [focusSection, loading, analysis])
 
   async function addToPlan(skill) {
     setAddingSkill(skill.skill_id)
@@ -193,14 +220,16 @@ export default function MarketIntelligencePage() {
         method: 'POST',
         body: JSON.stringify({ level_scope: level, days: Number(days) }),
       })
-      const [latest, pairs, profileGap] = await Promise.all([
+      const [latest, pairs, profileGap, trendResult] = await Promise.all([
         request('/market/analysis/latest'),
         request(`/market/combinations?run_id=${result.run_id}&limit=8`),
         request(`/market/profile-gap?run_id=${result.run_id}`),
+        request('/market/trends?limit=8').catch(() => ({ available: false, message: 'Não foi possível comparar o histórico agora.' })),
       ])
       setAnalysis(latest.available ? latest : null)
       setCombinations(pairs.combinations || [])
       setGap(profileGap.available ? profileGap : null)
+      setTrends(trendResult)
       setMessage(`Análise concluída: ${number(result.total_jobs)} vagas analisadas e ${number(result.skills_detected)} competências identificadas.`)
     } catch (err) {
       setError(err.message || 'Não foi possível executar a análise.')
@@ -214,7 +243,7 @@ export default function MarketIntelligencePage() {
   const maxRate = Math.max(1, ...skills.map(skill => skill.mention_rate || 0))
 
   return <>
-    <div className="section-heading market-heading">
+    <div className="section-heading market-heading" id="market-overview">
       <div>
         <div className="eyebrow">DADOS PARA DECISÕES DE CARREIRA</div>
         <h1>Inteligência de mercado</h1>
@@ -273,6 +302,26 @@ export default function MarketIntelligencePage() {
         </div>
 
         {run.quality_notes && <div className="market-alert warning"><TriangleAlert size={17}/><span>{run.quality_notes}</span></div>}
+
+        <section className="panel market-panel market-trends-panel">
+          <div className="panel-heading">
+            <div><h2>Tendências observadas entre snapshots</h2><p>Variação da frequência de competências em duas análises comparáveis.</p></div>
+            <span className="market-count">{trends?.available ? 'Comparação histórica' : 'Histórico insuficiente'}</span>
+          </div>
+          {!trends?.available ? <div className="market-inline-empty">{trends?.message || 'Gere snapshots em momentos diferentes, mantendo período e nível equivalentes, para observar tendências.'}</div> : <>
+            <div className="market-trend-context">
+              <span>Anterior: {date(trends.previous.period_start)} a {date(trends.previous.period_end)} · {number(trends.previous.valid_jobs)} vagas</span>
+              <span>Atual: {date(trends.current.period_start)} a {date(trends.current.period_end)} · {number(trends.current.valid_jobs)} vagas</span>
+              <span>Recorte: {trends.scope.level_scope === 'both' ? 'Estágio e júnior' : trends.scope.level_scope === 'estagio' ? 'Estágio' : 'Júnior'} · {trends.scope.days} dias</span>
+            </div>
+            {!trends.sample_sufficient && <div className="market-sample-note">Uma ou ambas as amostras estão abaixo do mínimo configurado. As variações são apenas exploratórias.</div>}
+            {trends.items?.length ? <div className="market-trend-list">{trends.items.map(item => <div className="market-trend-row" key={item.name}>
+              <div><strong>{item.name}</strong><small>{item.category} · {number(item.current_jobs_count)} vagas na análise atual</small></div>
+              <div className="market-trend-rates"><span>{item.previous_mention_rate.toLocaleString('pt-BR')}% → {item.current_mention_rate.toLocaleString('pt-BR')}%</span><strong className={item.direction}>{item.delta_percentage_points > 0 ? '+' : ''}{item.delta_percentage_points.toLocaleString('pt-BR')} p.p.</strong></div>
+            </div>)}</div> : <div className="market-inline-empty">Não há competências classificadas em nenhum dos dois snapshots.</div>}
+            <p className="market-footnote">{trends.notice}</p>
+          </>}
+        </section>
         {run.total_jobs < 30 && <div className="market-sample-note">A amostra ainda é pequena. Os resultados abaixo são observações das vagas coletadas, não um ranking representativo de todo o mercado.</div>}
 
         <div className="market-content-grid">
@@ -300,12 +349,18 @@ export default function MarketIntelligencePage() {
           </section>
         </div>
 
-        <section className="panel market-panel market-gap-panel">
+        <section className="panel market-panel market-gap-panel" id="market-diagnosis">
           <div className="panel-heading">
             <div><h2>Skill Gap: mercado × seu perfil</h2><p>O que as vagas pedem e quais evidências já aparecem no seu perfil profissional.</p></div>
             <span className="market-count">{gap ? `${gap.total_skills} competências` : 'Perfil não analisado'}</span>
           </div>
           {!gap ? <div className="market-inline-empty">Cadastre ou complete seu perfil profissional para comparar as competências com o mercado.</div> : <>
+            {gap.market && <div className="market-gap-sample" aria-label="Amostra usada no diagnóstico">
+              <span>Período: {date(gap.market.period_start)} a {date(gap.market.period_end)}</span>
+              <span>Nível: {gap.market.level_scope === 'both' ? 'Estágio e júnior' : gap.market.level_scope === 'estagio' ? 'Estágio' : 'Júnior'}</span>
+              <span>Amostra: {number(gap.market.valid_jobs)} vagas · mínimo {number(gap.market.sample_minimum)}</span>
+              {!gap.market.sample_sufficient && <strong>Amostra abaixo do mínimo; recomendações são exploratórias.</strong>}
+            </div>}
             <div className="market-gap-summary">
               <div><strong>{gap.counts?.experiencia || 0}</strong><span>Experiência</span></div>
               <div><strong>{(gap.counts?.projeto || 0) + (gap.counts?.praticada || 0)}</strong><span>Projetos e prática</span></div>
@@ -336,7 +391,7 @@ export default function MarketIntelligencePage() {
           </>}
         </section>
 
-        <section className="panel market-panel market-development-panel">
+        <section className="panel market-panel market-development-panel" id="market-plan">
           <div className="panel-heading">
             <div><h2>Meu plano de desenvolvimento</h2><p>Transforme competências relevantes em atividades práticas e acompanhe seu progresso.</p></div>
             <span className="market-count">{plan.summary?.completion_rate || 0}% concluído</span>
@@ -372,12 +427,16 @@ export default function MarketIntelligencePage() {
           }
         </section>
 
-        <section className="panel market-panel market-assessment-panel">
+        <section className="panel market-panel market-assessment-panel" id="market-challenges">
           <div className="panel-heading">
             <div><h2>Desafios e validação prática</h2><p>Resolva desafios, registre sua entrega e faça uma autoavaliação baseada em critérios objetivos.</p></div>
             <span className="market-count">{assessments.summary?.submitted || 0} avaliações registradas</span>
           </div>
           <div className="market-assessment-notice"><ClipboardCheck size={17}/><span>A pontuação é uma autoavaliação. Ela registra sua percepção e suas evidências, mas não certifica nem comprova domínio técnico de forma independente.</span></div>
+          <div className="market-assessment-runner-notice" role="status">
+            <strong>Avaliação automática de código: não disponível.</strong>
+            <span>Os desafios usam checklist e autoavaliação. O código ou arquivo enviado nunca é executado no servidor.</span>
+          </div>
           {selectedAssessment && <div className="market-assessment-editor">
             <div className="market-assessment-editor-head"><div><span className="market-assessment-kicker">DESAFIO PRÁTICO · {selectedAssessment.skill_name}</span><h3>{selectedAssessment.title}</h3></div>
               {selectedAssessment.status === 'draft' && <span className="market-status-pill status-em-estudo">Em aberto</span>}

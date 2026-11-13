@@ -1,4 +1,5 @@
 from datetime import date, datetime
+import os
 from email.message import EmailMessage
 import smtplib
 from sqlalchemy import select
@@ -25,6 +26,13 @@ def build_email(tasks, today=None):
 
 
 def send_daily_reminder(db, now=None):
+    # Este runner legado consulta tarefas sem escopo por usuário e usa SMTP_TO global.
+    # Bloqueia também execução direta pelo Agendador do Windows quando o modo multiusuário está ativo.
+    if os.getenv("MULTITENANT_READY", "false").lower() == "true":
+        return {
+            "status": "blocked",
+            "detail": "Lembretes globais desativados no modo multiusuário; configure destinatários e envio individual por conta.",
+        }
     now=now or datetime.now()
     recipient=settings.smtp_to.strip()
     tasks=pending_tasks(db,now.date())

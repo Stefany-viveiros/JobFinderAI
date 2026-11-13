@@ -8,6 +8,7 @@ Regras de integridade:
 import html
 import re
 import smtplib
+import ssl
 from datetime import date, datetime, timedelta, timezone
 from email.message import EmailMessage
 from pathlib import Path
@@ -17,12 +18,19 @@ from sqlalchemy import func, select
 
 from .config import settings
 from .matching import normalize, profile_technology_terms
-from .models import Application, ApplicationAttempt, Job
+from .models import Application, ApplicationAttempt, ApplicationEvent, Job, SmtpAccount, UserResume
+from .smtp_credentials import decrypt_password, CredentialEncryptionError
+from .resume_storage import decrypt_resume, digest_resume, ResumeStorageError
 
 OPEN_STATUSES = ("prepared", "awaiting_approval", "manual_required")
 SENDABLE_STATUSES = ("prepared", "awaiting_approval", "failed")
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 BLOCKED_LOCAL_PARTS = ("noreply", "no-reply", "donotreply", "do-not-reply", "mailer-daemon", "privacy", "abuse")
+APPLY_CONTEXT_RE = re.compile(
+    r"\b(candidatura|candidatar|curr[ií]culo|curriculo|selec[aã]o|recrutamento|"
+    r"\brh\b|talentos|vagas|trabalhe conosco|apply|careers|career|jobs|hiring)\b",
+    re.IGNORECASE,
+)
 
 
 class ApplyError(Exception):
@@ -138,31 +146,77 @@ def build_cover_letter(job, profile) -> tuple[str, str]:
 
 # --------------------------------------------------------------- conectores
 def extract_apply_email(text: str) -> str | None:
-    """Primeiro e-mail de contato publicado na descrição da vaga (ignora no-reply e similares)."""
+    """Retorna e-mail somente quando o contexto o identifica como canal de candidatura."""
     clean = html.unescape(re.sub(r"<[^>]+>", " ", str(text or "")))
-    for match in EMAIL_RE.findall(clean):
-        local = match.split("@")[0].lower()
-        if not any(block in local for block in BLOCKED_LOCAL_PARTS):
-            return match
+    for match in EMAIL_RE.finditer(clean):
+        local = match.group(0).split("@")[0].lower()
+        if any(block in local for block in BLOCKED_LOCAL_PARTS):
+            continue
+        # Um endereço genérico de contato/suporte não é autorização para enviar currículo.
+        # Exigimos indicação explícita de recrutamento/candidatura próxima ao endereço.
+        context_start = max(0, match.start() - 140)
+        context = clean[context_start:match.start()]
+        if APPLY_CONTEXT_RE.search(context):
+            return match.group(0)
     return None
 
 
-def email_channel_available(job) -> tuple[bool, str]:
+def email_channel_available(job, user_id: int | None = None, db=None) -> tuple[bool, str]:
     if not extract_apply_email(job.description):
         return False, "A vaga não publica e-mail de candidatura; finalize no site original."
+    import os
+    if os.getenv("MULTITENANT_READY", "false").strip().lower() == "true":
+        if user_id is None or db is None:
+            return False, "Conexão SMTP individual indisponível sem identidade autenticada."
+        account = db.scalar(select(SmtpAccount).where(SmtpAccount.user_id == user_id))
+        if account is None:
+            return False, "Configure sua conexão SMTP individual para habilitar o envio automático."
+        try:
+            decrypt_password(account.encrypted_password)
+        except CredentialEncryptionError:
+            return False, "Credencial SMTP indisponível; revise a chave de criptografia do servidor."
+        resume = db.scalar(select(UserResume).where(UserResume.user_id == user_id))
+        if resume is None:
+            return False, (
+                "Guarde seu currículo com a opção de armazenamento cifrado no Perfil profissional "
+                "antes de habilitar o envio por e-mail."
+            )
+        try:
+            content = decrypt_resume(resume.encrypted_content)
+        except ResumeStorageError:
+            return False, "Arquivo de currículo indisponível; envie-o novamente com armazenamento cifrado."
+        if not content or digest_resume(content) != resume.sha256:
+            return False, "A integridade do currículo armazenado não pôde ser confirmada; envie-o novamente."
+        return True, ""
     if not settings.smtp_can_send_applications:
         return False, "SMTP não configurado no .env (SMTP_HOST, SMTP_FROM, SMTP_USERNAME, SMTP_PASSWORD)."
     return True, ""
 
 
-def _deliver(msg: EmailMessage):
-    """Isolado para facilitar testes. Levanta exceção se o SMTP recusar."""
-    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=25) as server:
-        server.ehlo()
-        if settings.smtp_use_tls:
-            server.starttls()
+def _deliver(msg: EmailMessage, smtp_config: dict | None = None):
+    """Entrega SMTP sempre cifrada: SSL implícito em 465 ou STARTTLS nos demais ports."""
+    config = smtp_config or {
+        "host": settings.smtp_host, "port": settings.smtp_port,
+        "username": settings.smtp_username, "password": settings.smtp_password,
+        "use_tls": settings.smtp_use_tls,
+    }
+    if not config.get("use_tls", False):
+        raise ApplyError("Envio SMTP sem TLS foi bloqueado para proteger suas credenciais.")
+
+    host, port = config["host"], int(config["port"])
+    context = ssl.create_default_context()
+    if port == 465:
+        with smtplib.SMTP_SSL(host, port, timeout=25, context=context) as server:
             server.ehlo()
-        server.login(settings.smtp_username, settings.smtp_password)
+            server.login(config["username"], config["password"])
+            server.send_message(msg)
+        return
+
+    with smtplib.SMTP(host, port, timeout=25) as server:
+        server.ehlo()
+        server.starttls(context=context)
+        server.ehlo()
+        server.login(config["username"], config["password"])
         server.send_message(msg)
 
 
@@ -202,7 +256,7 @@ def prepare_attempt(db, job: Job, profile, user_id: int | None = None) -> Applic
     if existing:
         raise ApplyError("Esta vaga já tem uma candidatura em andamento ou enviada.")
     subject, body = build_cover_letter(job, profile)
-    ok, reason = email_channel_available(job)
+    ok, reason = email_channel_available(job, user_id=user_id, db=db)
     if ok:
         attempt = ApplicationAttempt(user_id=user_id, job_id=job.id, status="prepared", channel="email", subject=subject,
                                      message=body, recipient=extract_apply_email(job.description),
@@ -216,12 +270,32 @@ def prepare_attempt(db, job: Job, profile, user_id: int | None = None) -> Applic
     return attempt
 
 
-def _ensure_application(db, job_id, user_id=None):
+def _ensure_application(db, job_id, user_id=None, source="manual_confirmed"):
     stmt = select(Application).where(Application.job_id == job_id)
     if user_id is not None:
         stmt = stmt.where(Application.user_id == user_id)
-    if not db.scalar(stmt):
-        db.add(Application(user_id=user_id, job_id=job_id, status="Candidatura enviada", applied_at=local_today()))
+    application = db.scalar(stmt)
+    if application is None:
+        application = Application(
+            user_id=user_id,
+            job_id=job_id,
+            status="Candidatura enviada",
+            applied_at=local_today(),
+        )
+        db.add(application)
+        db.flush()
+        # Histórico novo é estritamente por conta; registros legados sem dono não
+        # recebem eventos que possam ser expostos a qualquer usuário.
+        if user_id is not None:
+            db.add(ApplicationEvent(
+                user_id=user_id,
+                application_id=application.id,
+                previous_status="",
+                new_status=application.status,
+                source=source,
+                note="",
+            ))
+    return application
 
 
 def send_attempt(db, attempt: ApplicationAttempt, daily_limit: int | None = None, user_id: int | None = None) -> ApplicationAttempt:
@@ -230,15 +304,49 @@ def send_attempt(db, attempt: ApplicationAttempt, daily_limit: int | None = None
         raise ApplyError(f"Candidatura com status '{attempt.status}' não pode ser enviada.")
     if attempt.channel != "email" or not attempt.recipient:
         raise ApplyError("Esta candidatura não tem canal de envio automático; finalize no site original.")
-    if not settings.smtp_can_send_applications:
-        raise ApplyError("SMTP não configurado no .env.")
+    import os
+    smtp_config = None
+    resume_attachment = None
+    if os.getenv("MULTITENANT_READY", "false").strip().lower() == "true":
+        if user_id is None:
+            raise ApplyError("Envio SMTP exige identidade autenticada.")
+        account = db.scalar(select(SmtpAccount).where(SmtpAccount.user_id == user_id))
+        if account is None:
+            raise ApplyError("Configure sua conexão SMTP individual antes de aprovar o envio.")
+        try:
+            smtp_password = decrypt_password(account.encrypted_password)
+        except CredentialEncryptionError as exc:
+            raise ApplyError(str(exc)) from exc
+        resume = db.scalar(select(UserResume).where(UserResume.user_id == user_id))
+        if resume is None:
+            raise ApplyError("Guarde seu currículo com armazenamento cifrado antes de enviar.")
+        try:
+            resume_content = decrypt_resume(resume.encrypted_content)
+        except ResumeStorageError as exc:
+            raise ApplyError("Currículo indisponível; envie o arquivo novamente.") from exc
+        if not resume_content or digest_resume(resume_content) != resume.sha256:
+            raise ApplyError("A integridade do currículo não pôde ser confirmada; envie-o novamente.")
+        smtp_config = {
+            "host": account.host, "port": account.port, "username": account.username,
+            "password": smtp_password, "use_tls": account.use_tls,
+        }
+        sender_email = account.from_email
+        resume_attachment = (resume_content, resume.content_type, resume.filename)
+    else:
+        if not settings.smtp_can_send_applications:
+            raise ApplyError("SMTP não configurado no .env.")
+        sender_email = settings.smtp_from
     if daily_limit is not None and sent_today_count(db, user_id=user_id) >= daily_limit:
         raise ApplyError(f"Limite diário de {daily_limit} candidatura(s) automática(s) atingido.")
 
     msg = EmailMessage()
-    msg["Subject"], msg["From"], msg["To"] = attempt.subject, settings.smtp_from, attempt.recipient
+    msg["Subject"], msg["From"], msg["To"] = attempt.subject, sender_email, attempt.recipient
     msg.set_content(attempt.message)
-    if settings.cv_path:
+    if resume_attachment:
+        content, content_type, filename = resume_attachment
+        maintype, subtype = content_type.split("/", 1)
+        msg.add_attachment(content, maintype=maintype, subtype=subtype, filename=filename)
+    elif settings.cv_path:
         cv = Path(settings.cv_path)
         if not cv.is_file():
             attempt.status, attempt.detail = "failed", f"CV_PATH aponta para um arquivo inexistente: {cv.name}"
@@ -246,14 +354,17 @@ def send_attempt(db, attempt: ApplicationAttempt, daily_limit: int | None = None
             return attempt
         msg.add_attachment(cv.read_bytes(), maintype="application", subtype="pdf", filename=cv.name)
     try:
-        _deliver(msg)
+        if smtp_config is None:
+            _deliver(msg)  # compatibilidade com o transporte legado/local
+        else:
+            _deliver(msg, smtp_config=smtp_config)
     except Exception as exc:  # qualquer falha de rede/autenticação: nada é registrado como enviado
         attempt.status, attempt.detail = "failed", f"{type(exc).__name__}: {exc}"
         db.commit()
         return attempt
     attempt.status, attempt.sent_at = "sent", datetime.utcnow()
     attempt.detail = f"E-mail aceito pelo servidor SMTP para {attempt.recipient}."
-    _ensure_application(db, attempt.job_id, user_id)
+    _ensure_application(db, attempt.job_id, user_id, source="email")
     db.commit()
     return attempt
 
@@ -276,7 +387,7 @@ def confirm_manual_send(db, job: Job, note: str = "", user_id: int | None = None
     attempt.detail = "Confirmado manualmente pelo usuário." + (f" {note}" if note else "")
     if attempt.id is None:
         db.add(attempt)
-    _ensure_application(db, job.id, user_id)
+    _ensure_application(db, job.id, user_id, source="manual_confirmed")
     db.commit()
     db.refresh(attempt)
     return attempt

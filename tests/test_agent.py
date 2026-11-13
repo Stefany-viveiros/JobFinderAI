@@ -1,3 +1,4 @@
+import pytest
 from jobfinder import applying
 from jobfinder.agent import get_agent_settings, run_agent
 from jobfinder.models import ApplicationAttempt
@@ -7,7 +8,7 @@ from sqlalchemy import select
 def feed(*extra):
     items = [
         {"source": "Remotive", "title": "Estágio Backend Python", "company": "ACME", "url": "https://a.test/1",
-         "description": "Python FastAPI Git APIs REST. Envie para vagas@acme.com", "location": "Brasil", "modality": "Remoto", "job_type": "Estágio"},
+         "description": "Python FastAPI Git APIs REST. Envie seu currículo para vagas@acme.com", "location": "Brasil", "modality": "Remoto", "job_type": "Estágio"},
         {"source": "OkEmprego", "title": "Estagio  Backend Python", "company": "ACME Ltda", "url": "https://b.test/9",
          "description": "mesma vaga em outra fonte", "location": "Brasil", "modality": "Remoto", "job_type": "Estágio"},
         {"source": "Remotive", "title": "Senior Python Developer", "company": "Big", "url": "https://a.test/2",
@@ -38,7 +39,7 @@ def test_auto_send_respects_toggle_and_daily_limit(db, ready_profile, smtp_on, t
     cfg.require_approval, cfg.auto_apply_enabled, cfg.daily_limit = False, False, 1
     db.commit()
     extra = {"source": "Remotive", "title": "Estágio Dados Python", "company": "Gama", "url": "https://a.test/4",
-             "description": "Python FastAPI Git APIs REST. rh@gama.com", "location": "Brasil", "modality": "Remoto", "job_type": "Estágio"}
+             "description": "Python FastAPI Git APIs REST. Envie seu currículo para rh@gama.com", "location": "Brasil", "modality": "Remoto", "job_type": "Estágio"}
     r = run_agent(db, collector=feed(extra), user_id=test_user.id)
     assert r["sent"] == 0 and smtp_on == []                       # envio automático desativado
     assert r["prepared"] == 2
@@ -102,3 +103,49 @@ def test_agent_does_not_prepare_job_with_unconfirmed_mandatory_technology(db, re
 def test_default_agent_threshold_is_80(db, test_user):
     cfg = get_agent_settings(db, user_id=test_user.id)
     assert cfg.min_score == 80
+
+
+
+def test_agent_rejects_missing_identity_before_loading_global_settings(db, monkeypatch):
+    from jobfinder import agent
+
+    monkeypatch.setattr(
+        agent, "get_agent_settings",
+        lambda *args, **kwargs: pytest.fail("não deve carregar configuração global"),
+    )
+    monkeypatch.setattr(
+        agent, "get_profile",
+        lambda *args, **kwargs: pytest.fail("não deve carregar perfil sem identidade"),
+    )
+    with pytest.raises(ValueError, match="usuário autenticado"):
+        run_agent(db, collector=lambda names: pytest.fail("não deve coletar vagas"))
+
+
+def test_legacy_agent_runner_blocks_before_database_when_multitenant(monkeypatch):
+    from jobfinder import agent_runner
+
+    monkeypatch.setenv("MULTITENANT_READY", "true")
+    monkeypatch.setattr(agent_runner, "init_db", lambda: pytest.fail("não deve inicializar o banco"))
+    monkeypatch.setattr(agent_runner, "run_agent", lambda *args, **kwargs: pytest.fail("não deve executar o agente global"))
+
+    result = agent_runner.main()
+    assert result["status"] == "blocked"
+    assert "execução individual por conta" in result["detail"]
+
+
+
+def test_cancelled_attempt_can_be_prepared_again_by_agent(db, ready_profile, smtp_on, test_user):
+    # Reutiliza o cenário completo já validado do pipeline: uma vaga por e-mail
+    # e outra manual. O teste isola somente a transição cancelada -> nova tentativa.
+    first = run_agent(db, collector=feed(), user_id=test_user.id)
+    assert first["awaiting_approval"] == 1
+    attempt = db.scalar(select(ApplicationAttempt).where(ApplicationAttempt.channel == "email"))
+    assert attempt is not None
+    applying.cancel_attempt(db, attempt)
+
+    second = run_agent(db, collect=False, user_id=test_user.id)
+    assert second["awaiting_approval"] == 1
+    all_attempts = db.scalars(select(ApplicationAttempt).order_by(ApplicationAttempt.id)).all()
+    assert sorted(row.status for row in all_attempts) == [
+        "awaiting_approval", "cancelled", "manual_required"
+    ]

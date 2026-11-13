@@ -150,13 +150,14 @@ Não combinar estágio e júnior silenciosamente: mostrar comparativo lado a lad
 - `POST /api/market/analysis/run`: inicia análise/snapshot com filtros e janela.
 - `GET /api/market/analysis/latest`: metadados e métricas da última análise.
 - `GET /api/market/analysis/history`: lista de snapshots para comparar períodos.
+- `GET /api/market/trends`: compara os dois snapshots concluídos mais recentes com nível, janela, mínimo de amostra e versões de taxonomia/extrator equivalentes.
 - `GET /api/market/skills`: catálogo e categorias.
 - `GET /api/market/skills/{skill_id}`: detalhe, evidências agregadas e vagas relacionadas.
 - `GET /api/market/combinations`: pares de competências mais recorrentes.
 - `GET /api/market/profile-gap`: cruzamento entre demanda e evidências do perfil.
 - `POST /api/market/skills/{skill_id}/progress`: registrar estudo/prática/validação, sem converter estudo automaticamente em domínio.
 
-Os endpoints devem validar filtros e limitar o volume processado. A primeira versão pode executar a análise de forma síncrona para o volume local; filas e agendamento recorrente ficam para a fase de implantação em nuvem.
+Os endpoints devem validar filtros e limitar o volume processado. A primeira versão pode executar a análise de forma síncrona para o volume local; filas ficam para uma fase posterior; o runner quinzenal e o workflow diário de verificação já foram implementados na branch, com ativação condicionada à integração na branch padrão e ao segredo de banco.
 
 ## 8. Regras de qualidade e amostra
 
@@ -217,7 +218,7 @@ Gráficos e cartões devem manter tipografia legível, percentuais acompanhados 
 4. Criar endpoints e testes de API/cálculo.
 5. Criar a página React e integrar filtros.
 6. Implementar cruzamento com perfil e plano de desenvolvimento (primeira versão publicada na branch).
-7. Adicionar histórico comparável e agendamento após infraestrutura de execução contínua estar definida.
+7. Comparação entre dois snapshots equivalentes implementada; agendamento recorrente permanece dependente de infraestrutura de execução contínua definida.
 
 ## 12. Critérios de aceite da primeira versão
 
@@ -319,3 +320,20 @@ O Skill Gap agora considera também os desafios práticos enviados:
 - Uma nova tentativa enviada atualiza o resultado mais recente exibido, preservando a contagem de tentativas.
 
 A classificação é recalculada a partir dos registros atuais do perfil e dos desafios enviados sempre que o endpoint de Skill Gap é consultado. Rascunhos não alteram a classificação.
+
+
+## 14. Atualização — comparação histórica
+
+A função `compare_market_trends` e o endpoint `GET /api/market/trends` comparam somente os dois snapshots concluídos mais recentes do mesmo recorte: níveis, janela em dias, mínimo de amostra, versão da taxonomia e versão do extrator. O resultado calcula mudança em pontos percentuais e inclui metadados de ambas as amostras.
+
+O frontend mostra altas, quedas e estabilidade observadas, além de um aviso quando uma das amostras fica abaixo do mínimo. Não há agendamento quinzenal ativo nem histórico de observações individuais de uma mesma vaga. Não apresentar esses dados como previsão.
+
+## 13. Agendamento recorrente de snapshots
+
+- `jobfinder.market_snapshot_runner` verifica diariamente o último snapshot concluído de nível `both`, janela de 30 dias, taxonomia e extrator atuais.
+- Um snapshot novo só é criado quando não existe snapshot comparável nos últimos 15 dias; se taxonomia/extrator mudarem, uma nova execução é permitida imediatamente.
+- O workflow `.github/workflows/market-snapshot.yml` executa diariamente às 09:15 UTC e também permite disparo manual.
+- A concorrência do workflow impede duas execuções simultâneas do mesmo job.
+- O workflow precisa do segredo GitHub Actions `MARKET_DATABASE_URL`; sem ele, o runner interrompe com erro explícito. O segredo não está no repositório.
+- O agendamento automático só passa a funcionar após o workflow chegar à branch padrão e o segredo ser configurado. Nesta branch de desenvolvimento não houve execução contra Neon/produção.
+- O runner processa apenas vagas públicas já coletadas; não consulta dados pessoais de perfis nem envia currículos.

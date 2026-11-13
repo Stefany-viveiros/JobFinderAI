@@ -7,6 +7,7 @@ import {
   Check, CheckCircle2, ChevronDown, CircleHelp, Clock3, ExternalLink, Filter,
   LayoutDashboard, LoaderCircle, LogOut, Menu, Plus, Search, Send, Settings,
   SlidersHorizontal, Sparkles, Star, Target, Trash2, UserRound, X, Zap,
+  Layers3, Code2, BookOpen,
 } from 'lucide-react'
 
 const API = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '')
@@ -57,12 +58,13 @@ function WorkspaceApp({ user, onLogout }) {
   const [editingTask, setEditingTask] = useState(null)
   const [editingApp, setEditingApp] = useState(null)
   const [appForm, setAppForm] = useState({})
-  const [sourceSelection, setSourceSelection] = useState(['Remotive', 'Arbeitnow', 'OkEmprego', 'Nerdin'])
+  const [sourceSelection, setSourceSelection] = useState(['Arbeitnow', 'OkEmprego', 'Nerdin', 'Empregare', 'Empregando Brasil', 'Jobicy', 'Remote OK'])
   const [levelFilter, setLevelFilter] = useState('alvo')
   const [sourceFilter, setSourceFilter] = useState('Todas')
   const [attemptFilter, setAttemptFilter] = useState('todas')
   const [attempts, setAttempts] = useState([])
   const [agentSettings, setAgentSettings] = useState({ auto_apply_enabled: false, require_approval: true, daily_limit: 5, min_score: 80, profile_ready: true })
+  const [smtpAccount, setSmtpAccount] = useState({ configured: false })
   const [agentRun, setAgentRun] = useState(null)
   const [sourcesInfo, setSourcesInfo] = useState(null)
 
@@ -82,13 +84,14 @@ function WorkspaceApp({ user, onLogout }) {
   const loadProfile = useCallback(async () => setProfile({ ...emptyProfile, ...(await api('/profile')) }), [])
   const loadAttempts = useCallback(async () => setAttempts(await api('/attempts')), [])
   const loadAgent = useCallback(async () => setAgentSettings(await api('/agent/settings')), [])
+  const loadSmtp = useCallback(async () => setSmtpAccount(await api('/agent/smtp')), [])
   const loadSources = useCallback(async () => setSourcesInfo(await api('/sources')), [])
   const loadNotifications = useCallback(async () => setNotificationHistory(await api('/notifications')), [])
 
   const refreshCurrent = useCallback(async () => {
     setLoading(true)
     try {
-      await Promise.all([loadDashboard(), loadJobs(), loadApps(), loadTasks(), loadProfile(), loadNotifications(), loadAttempts(), loadAgent(), loadSources()])
+      await Promise.all([loadDashboard(), loadJobs(), loadApps(), loadTasks(), loadProfile(), loadNotifications(), loadAttempts(), loadAgent(), loadSmtp(), loadSources()])
     } catch (e) { notify(`Não foi possível conectar à API: ${e.message}. Confira se o backend está iniciado.`, 'error') }
     finally { setLoading(false) }
   }, [loadDashboard, loadJobs, loadApps, loadTasks, loadProfile, loadNotifications, loadAttempts, loadAgent, loadSources, notify])
@@ -100,7 +103,7 @@ function WorkspaceApp({ user, onLogout }) {
   const changePage = (next) => { setPage(next); setSidebarOpen(false) }
   const doAction = async (action, success) => {
     setBusy(true)
-    try { await action(); await Promise.all([loadDashboard(), loadJobs(), loadApps(), loadTasks(), loadNotifications(), loadAttempts(), loadAgent()]); notify(success) }
+    try { await action(); await Promise.all([loadDashboard(), loadJobs(), loadApps(), loadTasks(), loadNotifications(), loadAttempts(), loadAgent(), loadSmtp()]); notify(success) }
     catch (e) { notify(e.message, 'error') }
     finally { setBusy(false) }
   }
@@ -136,6 +139,26 @@ function WorkspaceApp({ user, onLogout }) {
   }
   async function saveAgentSettings() {
     await doAction(async () => { const r = await api('/agent/settings', { method: 'PUT', body: JSON.stringify({ auto_apply_enabled: agentSettings.auto_apply_enabled, require_approval: agentSettings.require_approval, daily_limit: agentSettings.daily_limit, min_score: agentSettings.min_score }) }); setAgentSettings(r.settings) }, 'Configurações do agente salvas.')
+  }
+  async function saveSmtpAccount(payload) {
+    setBusy(true)
+    try {
+      const result = await api('/agent/smtp', { method: 'PUT', body: JSON.stringify(payload) })
+      await Promise.all([loadSmtp(), loadAgent(), loadDashboard()])
+      notify(result.message)
+      return true
+    } catch (e) { notify(e.message, 'error'); return false }
+    finally { setBusy(false) }
+  }
+  async function deleteSmtpAccount() {
+    if (!window.confirm('Remover a conexão SMTP desta conta? O envio automático será desativado.')) return
+    setBusy(true)
+    try {
+      const result = await api('/agent/smtp', { method: 'DELETE' })
+      await Promise.all([loadSmtp(), loadAgent(), loadDashboard()])
+      notify(result.message)
+    } catch (e) { notify(e.message, 'error') }
+    finally { setBusy(false) }
   }
   async function runAgent() {
     setBusy(true)
@@ -195,7 +218,23 @@ function WorkspaceApp({ user, onLogout }) {
   }
 
   const metrics = dashboard?.metrics || {}
-  const pageLabel = { Dashboard: 'Visão geral', 'Buscar vagas': 'Buscar oportunidades', Candidaturas: 'Minhas candidaturas', Agente: 'Agente de candidaturas', Tarefas: 'Tarefas e prazos', 'Inteligência de mercado': 'Inteligência de mercado', 'Career Twin': 'Career Twin', 'Perfil e configurações': 'Perfil profissional' }[page]
+  const pageLabel = {
+    Dashboard: 'Visão geral',
+    Oportunidades: 'Oportunidades',
+    Agente: 'Agente de candidaturas',
+    Candidaturas: 'Minhas candidaturas',
+    Tarefas: 'Tarefas e prazos',
+    'Meu Career Twin': 'Meu Career Twin',
+    Competências: 'Competências',
+    Diagnóstico: 'Diagnóstico de compatibilidade',
+    Desafios: 'Desafios práticos',
+    Mercado: 'Inteligência de mercado',
+    Plano: 'Plano de desenvolvimento',
+    'Perfil e configurações': 'Configurações',
+    'Buscar vagas': 'Oportunidades',
+    'Inteligência de mercado': 'Inteligência de mercado',
+    'Career Twin': 'Meu Career Twin',
+  }[page]
   const todayText = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })
 
   return <div className="app-shell">
@@ -204,15 +243,21 @@ function WorkspaceApp({ user, onLogout }) {
       <div className="workspace-label">WORKSPACE</div>
       <nav className="nav-list">
         <NavItem icon={LayoutDashboard} text="Visão geral" active={page === 'Dashboard'} onClick={() => changePage('Dashboard')} />
-        <NavItem icon={Search} text="Buscar vagas" active={page === 'Buscar vagas'} onClick={() => changePage('Buscar vagas')} count={metrics.new_jobs} />
+        <NavItem icon={Search} text="Oportunidades" active={page === 'Oportunidades' || page === 'Buscar vagas'} onClick={() => changePage('Oportunidades')} count={metrics.new_jobs} />
         <NavItem icon={Bot} text="Agente" active={page === 'Agente'} onClick={() => changePage('Agente')} count={metrics.awaiting_approval} />
         <NavItem icon={BriefcaseBusiness} text="Candidaturas" active={page === 'Candidaturas'} onClick={() => changePage('Candidaturas')} />
+        <NavItem icon={BrainCircuit} text="Meu Career Twin" active={page === 'Meu Career Twin' || page === 'Career Twin'} onClick={() => changePage('Meu Career Twin')} />
+        <NavItem icon={Layers3} text="Competências" active={page === 'Competências'} onClick={() => changePage('Competências')} />
+        <NavItem icon={Target} text="Diagnóstico" active={page === 'Diagnóstico'} onClick={() => changePage('Diagnóstico')} />
+        <NavItem icon={Code2} text="Desafios" active={page === 'Desafios'} onClick={() => changePage('Desafios')} />
+        <NavItem icon={Activity} text="Mercado" active={page === 'Mercado' || page === 'Inteligência de mercado'} onClick={() => changePage('Mercado')} />
+        <NavItem icon={BookOpen} text="Plano" active={page === 'Plano'} onClick={() => changePage('Plano')} />
         <NavItem icon={CheckCircle2} text="Tarefas" active={page === 'Tarefas'} onClick={() => changePage('Tarefas')} count={metrics.pending_tasks} />
-        <NavItem icon={Activity} text="Inteligência de mercado" active={page === 'Inteligência de mercado'} onClick={() => changePage('Inteligência de mercado')} />
-        <NavItem icon={BrainCircuit} text="Career Twin" active={page === 'Career Twin'} onClick={() => changePage('Career Twin')} />
       </nav>
       <div className="workspace-label nav-spacer">PREFERÊNCIAS</div>
-      <nav className="nav-list"><NavItem icon={UserRound} text="Perfil profissional" active={page === 'Perfil e configurações'} onClick={() => changePage('Perfil e configurações')} /><NavItem icon={Settings} text="Configurações" active={false} onClick={() => changePage('Perfil e configurações')} /></nav>
+      <nav className="nav-list">
+        <NavItem icon={Settings} text="Configurações" active={page === 'Perfil e configurações'} onClick={() => changePage('Perfil e configurações')} />
+      </nav>
       <div className="sidebar-bottom">
         <div className="upgrade-card"><div className="upgrade-icon"><Zap size={17}/></div><strong>Seu próximo passo</strong><p>Mantenha seu perfil atualizado para melhorar a compatibilidade das vagas.</p><button onClick={() => changePage('Perfil e configurações')}>Completar perfil <ArrowUpRight size={14}/></button></div>
         <div className="user-card"><div className="avatar">{initials(profile.name)}</div><div className="user-info"><strong>{profile.name || 'Seu perfil'}</strong><span>{profile.course || 'Candidata a tecnologia'}</span></div><button className="icon-btn user-settings" onClick={() => changePage('Perfil e configurações')} aria-label="Editar perfil"><Settings size={17}/></button></div>
@@ -224,13 +269,14 @@ function WorkspaceApp({ user, onLogout }) {
       <div className="content-wrap">
         {loading && !dashboard ? <div className="loading-panel"><LoaderCircle className="spin" size={25}/><span>Carregando seu workspace...</span></div> : <>
           {page === 'Dashboard' && <DashboardPage dashboard={dashboard} jobs={jobs} onNavigate={changePage} onCreateTask={() => { setEditingTask(null); setTaskForm(emptyTask); setModal('task') }} onFavorite={toggleFavorite} />}
-          {page === 'Buscar vagas' && <JobsPage jobs={jobs} query={query} setQuery={setQuery} minScore={minScore} setMinScore={setMinScore} favoriteOnly={favoriteOnly} setFavoriteOnly={setFavoriteOnly} modality={modality} setModality={setModality} sort={sort} setSort={setSort} onCollect={collectJobs} sourceSelection={sourceSelection} setSourceSelection={setSourceSelection} busy={busy} onAdd={() => setModal('job')} onFavorite={toggleFavorite} onApply={applyJob} onPrepare={prepareJob} levelFilter={levelFilter} setLevelFilter={setLevelFilter} sourceFilter={sourceFilter} setSourceFilter={setSourceFilter} attemptFilter={attemptFilter} setAttemptFilter={setAttemptFilter} />}
-          {page === 'Agente' && <AgentPage settings={agentSettings} setSettings={setAgentSettings} onSave={saveAgentSettings} onRun={runAgent} runResult={agentRun} attempts={attempts} sources={sourcesInfo} onApprove={approveAttempt} onCancel={cancelAttempt} onConfirmManual={applyJob} busy={busy} />}
+          {(page === 'Oportunidades' || page === 'Buscar vagas') && <JobsPage jobs={jobs} query={query} setQuery={setQuery} minScore={minScore} setMinScore={setMinScore} favoriteOnly={favoriteOnly} setFavoriteOnly={setFavoriteOnly} modality={modality} setModality={setModality} sort={sort} setSort={setSort} onCollect={collectJobs} sourceSelection={sourceSelection} setSourceSelection={setSourceSelection} sourceOptions={sourcesInfo?.sources?.filter(s => s.search_api).map(s => s.name) || ['Arbeitnow', 'OkEmprego', 'Nerdin', 'Empregare', 'Empregando Brasil', 'Jobicy', 'Remote OK']} busy={busy} onAdd={() => setModal('job')} onFavorite={toggleFavorite} onApply={applyJob} onPrepare={prepareJob} levelFilter={levelFilter} setLevelFilter={setLevelFilter} sourceFilter={sourceFilter} setSourceFilter={setSourceFilter} attemptFilter={attemptFilter} setAttemptFilter={setAttemptFilter} />}
+          {page === 'Agente' && <AgentPage settings={agentSettings} setSettings={setAgentSettings} onSave={saveAgentSettings} onRun={runAgent} runResult={agentRun} attempts={attempts} sources={sourcesInfo} onApprove={approveAttempt} onCancel={cancelAttempt} onConfirmManual={applyJob} smtp={smtpAccount} onSaveSmtp={saveSmtpAccount} onDeleteSmtp={deleteSmtpAccount} busy={busy} />}
           {page === 'Candidaturas' && <ApplicationsPage applications={applications} onEdit={(a) => { setEditingApp(a); setAppForm({ status: a.status, applied_at: a.applied_at || '', deadline: a.deadline || '', recruiter: a.recruiter || '', notes: a.notes || '' }); setModal('application') }} />}
           {page === 'Tarefas' && <TasksPage tasks={tasks} view={taskView} setView={setTaskView} onCreate={() => { setEditingTask(null); setTaskForm(emptyTask); setModal('task') }} onEdit={(t) => { setEditingTask(t); setTaskForm({ title: t.title, description: t.description || '', due_date: t.due_date || '', priority: t.priority, notify: t.notify }); setModal('task') }} onComplete={completeTask} onDelete={deleteTask} onSendReminders={sendReminders} smtpReady={Boolean(dashboard?.smtp_ready)} notificationHistory={notificationHistory} busy={busy} />}
-          {page === 'Inteligência de mercado' && <MarketIntelligencePage />}
-          {page === 'Career Twin' && <CareerTwinPage />}
-          {page === 'Perfil e configurações' && <ProfilePage profile={profile} setProfile={setProfile} onSave={saveProfile} busy={busy} />}
+          {(page === 'Mercado' || page === 'Diagnóstico' || page === 'Desafios' || page === 'Plano' || page === 'Inteligência de mercado') && <MarketIntelligencePage focusSection={page === 'Diagnóstico' ? 'diagnosis' : page === 'Desafios' ? 'challenges' : page === 'Plano' ? 'plan' : 'market'} />}
+          {(page === 'Meu Career Twin' || page === 'Career Twin') && <CareerTwinPage />}
+          {page === 'Competências' && <CareerTwinPage focusSection="skills" />}
+          {page === 'Perfil e configurações' && <ProfilePage profile={profile} setProfile={setProfile} onSave={saveProfile} onResumeChanged={loadAgent} busy={busy} />}
         </>}
       </div>
       <footer className="footer"><span>© {new Date().getFullYear()} JobFinder AI</span><span><span className="status-dot"/> Seus dados ficam vinculados à sua conta <CircleHelp size={14}/></span></footer>
@@ -261,12 +307,12 @@ function DashboardPage({ dashboard, jobs, onNavigate, onCreateTask, onFavorite }
     <div className="bottom-insight"><div className="insight-icon"><Target size={20}/></div><div><strong>Seu perfil influencia a compatibilidade</strong><span>Adicione tecnologias, habilidades e áreas de interesse para calcular uma pontuação mais útil.</span></div><button className="text-action" onClick={() => onNavigate('Perfil e configurações')}>Revisar perfil <ArrowUpRight size={15}/></button></div>
   </>
 }
-function JobsPage({ jobs, query, setQuery, minScore, setMinScore, favoriteOnly, setFavoriteOnly, modality, setModality, sort, setSort, onCollect, sourceSelection, setSourceSelection, busy, onAdd, onFavorite, onApply, onPrepare, levelFilter, setLevelFilter, sourceFilter, setSourceFilter, attemptFilter, setAttemptFilter }) {
+function JobsPage({ jobs, query, setQuery, minScore, setMinScore, favoriteOnly, setFavoriteOnly, modality, setModality, sort, setSort, onCollect, sourceSelection, setSourceSelection, sourceOptions, busy, onAdd, onFavorite, onApply, onPrepare, levelFilter, setLevelFilter, sourceFilter, setSourceFilter, attemptFilter, setAttemptFilter }) {
   const [showSources, setShowSources] = useState(false)
   return <><SectionHeading eyebrow="DESCUBRA SEU PRÓXIMO PASSO" title="Buscar oportunidades" subtitle="Encontre vagas, compare a compatibilidade e organize suas candidaturas."><button className="btn btn-secondary" onClick={onAdd}><Plus size={16}/> Adicionar manualmente</button><button className="btn btn-primary" onClick={onCollect} disabled={busy}><span className={busy ? 'spin-wrap' : ''}>{busy ? <LoaderCircle size={16}/> : <Search size={16}/>}</span> Buscar agora</button></SectionHeading>
     <div className="search-banner"><div className="search-banner-icon"><Sparkles size={19}/></div><div><strong>Encontre vagas alinhadas ao seu perfil</strong><span>Busque nas fontes públicas configuradas ou use os filtros para refinar sua lista.</span></div><button className="banner-tune" onClick={() => setShowSources(!showSources)}><SlidersHorizontal size={15}/> Fontes</button></div>
-    {showSources && <div className="source-picker">{['Remotive', 'Arbeitnow', 'OkEmprego', 'Nerdin'].map(s => <label key={s} className="check-row"><input type="checkbox" checked={sourceSelection.includes(s)} onChange={e => setSourceSelection(e.target.checked ? [...sourceSelection, s] : sourceSelection.filter(x => x !== s))}/>{s}</label>)}<span className="muted small">Indeed e Vagas.com não permitem coleta automática: veja os links na página Agente. Só vagas de estágio/júnior em tecnologia são salvas.</span></div>}
-    <div className="panel job-filter-panel"><div className="search-input-wrap"><Search size={18}/><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Buscar por cargo, empresa ou tecnologia..."/><kbd>Buscar</kbd></div><div className="filter-row"><label className="filter-control"><span>Compatibilidade mínima</span><div className="range-field"><input type="range" min="0" max="100" step="5" value={minScore} onChange={e => setMinScore(Number(e.target.value))}/><strong>{minScore}%</strong></div></label><label className="filter-control"><span>Modalidade</span><select value={modality} onChange={e => setModality(e.target.value)}><option>Todas</option><option>Remoto</option><option>Híbrido</option><option>Presencial</option></select></label><label className="filter-control"><span>Ordenar por</span><select value={sort} onChange={e => setSort(e.target.value)}><option>Compatibilidade</option><option>Mais recentes</option></select></label><label className="filter-control"><span>Nível</span><select value={levelFilter} onChange={e => setLevelFilter(e.target.value)}><option value="alvo">Estágio + Júnior (tecnologia)</option><option value="estagio">Estágio</option><option value="junior">Júnior</option><option value="todas">Todas as vagas salvas</option></select></label><label className="filter-control"><span>Fonte</span><select value={sourceFilter} onChange={e => setSourceFilter(e.target.value)}>{['Todas', 'Remotive', 'Arbeitnow', 'OkEmprego', 'Nerdin', 'Manual'].map(x => <option key={x}>{x}</option>)}</select></label><label className="filter-control"><span>Candidatura</span><select value={attemptFilter} onChange={e => setAttemptFilter(e.target.value)}><option value="todas">Todas</option><option value="sem_tentativa">Sem candidatura</option><option value="awaiting_approval">Aguardando aprovação</option><option value="manual_required">Finalizar manualmente</option><option value="sent">Enviadas</option><option value="failed">Com falha</option></select></label><label className="favorite-filter"><input type="checkbox" checked={favoriteOnly} onChange={e => setFavoriteOnly(e.target.checked)}/><Star size={16}/> Favoritas</label></div></div>
+    {showSources && <div className="source-picker">{sourceOptions.map(s => <label key={s} className="check-row"><input type="checkbox" checked={sourceSelection.includes(s)} onChange={e => setSourceSelection(e.target.checked ? [...sourceSelection, s] : sourceSelection.filter(x => x !== s))}/>{s}</label>)}<span className="muted small">Selecione as fontes com coleta ativa. Portais sem API/feed autorizado aparecem como atalhos na página Agente. O filtro de estágio/júnior em tecnologia continua aplicado.</span></div>}
+    <div className="panel job-filter-panel"><div className="search-input-wrap"><Search size={18}/><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Buscar por cargo, empresa ou tecnologia..."/><kbd>Buscar</kbd></div><div className="filter-row"><label className="filter-control"><span>Compatibilidade mínima</span><div className="range-field"><input type="range" min="0" max="100" step="5" value={minScore} onChange={e => setMinScore(Number(e.target.value))}/><strong>{minScore}%</strong></div></label><label className="filter-control"><span>Modalidade</span><select value={modality} onChange={e => setModality(e.target.value)}><option>Todas</option><option>Remoto</option><option>Híbrido</option><option>Presencial</option></select></label><label className="filter-control"><span>Ordenar por</span><select value={sort} onChange={e => setSort(e.target.value)}><option>Compatibilidade</option><option>Mais recentes</option></select></label><label className="filter-control"><span>Nível</span><select value={levelFilter} onChange={e => setLevelFilter(e.target.value)}><option value="alvo">Estágio + Júnior (tecnologia)</option><option value="estagio">Estágio</option><option value="junior">Júnior</option><option value="todas">Todas as vagas salvas</option></select></label><label className="filter-control"><span>Fonte</span><select value={sourceFilter} onChange={e => setSourceFilter(e.target.value)}>{['Todas', ...sourceOptions, 'Manual'].map(x => <option key={x}>{x}</option>)}</select></label><label className="filter-control"><span>Candidatura</span><select value={attemptFilter} onChange={e => setAttemptFilter(e.target.value)}><option value="todas">Todas</option><option value="sem_tentativa">Sem candidatura</option><option value="awaiting_approval">Aguardando aprovação</option><option value="manual_required">Finalizar manualmente</option><option value="sent">Enviadas</option><option value="failed">Com falha</option></select></label><label className="favorite-filter"><input type="checkbox" checked={favoriteOnly} onChange={e => setFavoriteOnly(e.target.checked)}/><Star size={16}/> Favoritas</label></div></div>
     <div className="list-toolbar"><div><strong>{jobs.length}</strong> oportunidade(s) encontradas <span>· Até 250 resultados</span></div><div className="toolbar-status"><span className="status-dot"/>Pontuação explicável</div></div>
     {jobs.length ? <div className="job-results">{jobs.map(j => <JobCard key={j.id} job={j} onFavorite={() => onFavorite(j.id)} onApply={() => onApply(j.id)} onPrepare={() => onPrepare(j.id)}/>)}</div> : <div className="panel"><EmptyState icon={Filter} title="Nenhuma vaga com esses filtros" text="Tente reduzir a compatibilidade mínima ou remover algum filtro." action={<button className="btn btn-secondary btn-sm" onClick={() => {setQuery('');setMinScore(0);setFavoriteOnly(false);setModality('Todas');setLevelFilter('todas');setSourceFilter('Todas');setAttemptFilter('todas')}}>Limpar filtros</button>}/></div>}
   </>
@@ -274,18 +320,114 @@ function JobsPage({ jobs, query, setQuery, minScore, setMinScore, favoriteOnly, 
 function JobRow({ job, compact = false, onFavorite }) { return <div className="recent-job"><div className="company-avatar">{initials(job.company)}</div><div className="recent-job-copy"><strong>{job.title}</strong><span>{job.company} <i>·</i> {job.location || 'Local não informado'}</span></div><div className={`score-mini ${job.compatibility >= 70 ? 'score-good' : job.compatibility >= 40 ? 'score-mid' : 'score-low'}`}>{job.compatibility}%</div>{onFavorite && <button className={`tiny-star ${job.is_favorite ? 'selected' : ''}`} onClick={onFavorite} title="Favoritar"><Star size={16} fill={job.is_favorite ? 'currentColor' : 'none'}/></button>}</div> }
 function JobCard({ job, onFavorite, onApply, onPrepare }) {
   const [expanded, setExpanded] = useState(false)
-  const reasons = (job.match_reasons || '').split('\n').filter(Boolean)
-  const missing = (job.missing_reasons || '').split('\n').filter(Boolean)
+  const [diagnosis, setDiagnosis] = useState(null)
+  const [diagnosisLoading, setDiagnosisLoading] = useState(false)
+  const [diagnosisError, setDiagnosisError] = useState('')
+  const reasons = (job.match_reasons || '').split('\\n').filter(Boolean)
+  const missing = (job.missing_reasons || '').split('\\n').filter(Boolean)
+
+  async function toggleDetails() {
+    const next = !expanded
+    setExpanded(next)
+    if (!next || diagnosis || diagnosisLoading) return
+    setDiagnosisLoading(true)
+    setDiagnosisError('')
+    try {
+      setDiagnosis(await api(`/jobs/${job.id}/diagnosis`))
+    } catch (error) {
+      setDiagnosisError(error.message || 'Não foi possível carregar o diagnóstico.')
+    } finally {
+      setDiagnosisLoading(false)
+    }
+  }
+
+  const requirementTypeLabel = {
+    mandatory: 'Obrigatório',
+    desirable: 'Desejável',
+    unspecified: 'Não especificado',
+    ambiguous: 'Ambíguo',
+  }
+  const statusClass = status => ({
+    evidenced: 'evidenced',
+    declared: 'declared',
+    in_development: 'in-development',
+    self_assessed: 'self-assessed',
+    not_identified: 'not-identified',
+    ambiguous: 'ambiguous',
+  }[status] || 'not-identified')
+
   return <article className="job-card"><div className="job-card-main"><div className="company-avatar job-company-avatar">{initials(job.company)}</div><div className="job-title-wrap"><div className="job-title-line"><h3>{job.title}</h3>{job.is_favorite && <span className="saved-badge"><Star size={12} fill="currentColor"/> Salva</span>}</div><div className="job-company-line">{job.company} <span>·</span> {job.location || 'Local não informado'}</div><div className="job-tags"><span><BriefcaseBusiness size={13}/>{job.job_type || 'Tipo não informado'}</span><span><Activity size={13}/>{job.modality || 'Modalidade não informada'}</span><span className="source-tag">{job.source}</span>{job.level && job.level !== 'outro' && <span className="level-tag">{job.level === 'estagio' ? 'Estágio' : 'Júnior'}</span>}{job.latest_attempt && <AttemptPill status={job.latest_attempt.status}/>}</div></div><div className="compatibility-block"><div className={`compatibility-ring ${job.compatibility >= 70 ? 'ring-good' : job.compatibility >= 40 ? 'ring-mid' : 'ring-low'}`}><strong>{job.compatibility}%</strong></div><span>compatibilidade</span></div></div>
     <div className="score-track"><div style={{ width: `${job.compatibility}%` }} className={job.compatibility >= 70 ? 'fill-good' : job.compatibility >= 40 ? 'fill-mid' : 'fill-low'}/></div>
-    {expanded && <div className="job-details"><div className="description-text">{job.description ? <p>{job.description.replace(/<[^>]*>/g, ' ').slice(0, 6000)}</p> : <p className="muted">Descrição não fornecida pela fonte.</p>}</div><div className="match-columns"><div><strong className="match-title good"><CheckCircle2 size={15}/> Critérios encontrados</strong>{reasons.length ? <ul>{reasons.map((r,i) => <li key={i}>{r}</li>)}</ul> : <p className="muted small">Nenhum critério identificado.</p>}</div><div><strong className="match-title warn"><CircleHelp size={15}/> Pontos a verificar</strong>{missing.length ? <ul>{missing.map((r,i) => <li key={i}>{r}</li>)}</ul> : <p className="muted small">Nenhum alerta calculado.</p>}</div></div></div>}
-    <div className="job-card-actions"><button className="text-action" onClick={() => setExpanded(!expanded)}>{expanded ? 'Ocultar detalhes' : 'Ver detalhes'} <ChevronDown size={14} className={expanded ? 'rotate-180' : ''}/></button><div className="job-action-right"><button className={`icon-btn favorite-action ${job.is_favorite ? 'selected' : ''}`} onClick={onFavorite} title={job.is_favorite ? 'Remover dos favoritos' : 'Favoritar'}><Star size={17} fill={job.is_favorite ? 'currentColor' : 'none'}/></button>{job.application ? <span className="application-status"><Check size={14}/>{job.application.status}</span> : <>{!job.latest_attempt && <button className="btn btn-secondary btn-sm" onClick={onPrepare}><Bot size={14}/> Preparar candidatura</button>}<button className="btn btn-secondary btn-sm" onClick={onApply} title="Use somente depois de enviar no site da vaga"><Check size={14}/> Já enviei</button></>}<a href={job.url} target="_blank" rel="noreferrer" className="btn btn-primary btn-sm">Abrir vaga <ExternalLink size={14}/></a></div></div>
+    {expanded && <div className="job-details" id={`job-details-${job.id}`}><div className="description-text">{job.description ? <p>{job.description.replace(/<[^>]*>/g, ' ').slice(0, 6000)}</p> : <p className="muted">Descrição não fornecida pela fonte.</p>}</div><div className="match-columns"><div><strong className="match-title good"><CheckCircle2 size={15}/> Critérios encontrados</strong>{reasons.length ? <ul>{reasons.map((r,i) => <li key={i}>{r}</li>)}</ul> : <p className="muted small">Nenhum critério identificado.</p>}</div><div><strong className="match-title warn"><CircleHelp size={15}/> Pontos a verificar</strong>{missing.length ? <ul>{missing.map((r,i) => <li key={i}>{r}</li>)}</ul> : <p className="muted small">Nenhum alerta calculado.</p>}</div></div>
+      <section className="job-requirement-panel" aria-live="polite">
+        <div className="job-requirement-heading"><div><strong>Diagnóstico por requisito</strong><p>Origem das competências e classificação extraída da descrição da vaga.</p></div><span>Score heurístico: {diagnosis?.compatibility?.score ?? job.compatibility}%</span></div>
+        {diagnosisLoading && <p className="job-requirement-state">Analisando requisitos e evidências do seu perfil...</p>}
+        {diagnosisError && <p className="job-requirement-error" role="alert">{diagnosisError}</p>}
+        {diagnosis && <>{diagnosis.requirements?.length ? <div className="job-requirement-list">{diagnosis.requirements.map(item => <article className="job-requirement-item" key={item.name}>
+          <div className="job-requirement-top"><strong>{item.name}</strong><div><span className={`requirement-type ${item.requirement_type}`}>{requirementTypeLabel[item.requirement_type] || 'Não especificado'}</span><span className={`requirement-status ${statusClass(item.status)}`}>{item.status_label}</span></div></div>
+          {item.evidence?.length > 0 && <ul className="job-requirement-evidence">{item.evidence.map((evidence,index) => <li key={`${item.name}-${evidence.source_type}-${evidence.source_id ?? index}`}><strong>{evidence.source_label}</strong><span>{evidence.excerpt}</span></li>)}</ul>}
+          <p>{item.recommendation}</p>
+        </article>)}</div> : <p className="job-requirement-state">A descrição disponível não contém tecnologias reconhecidas pela taxonomia atual. Isso não significa que a vaga não tenha requisitos.</p>}
+        <p className="job-requirement-notice">{diagnosis.notice}</p></>}
+      </section>
+    </div>}
+    <div className="job-card-actions"><button className="text-action" onClick={toggleDetails} aria-expanded={expanded} aria-controls={`job-details-${job.id}`}>{expanded ? 'Ocultar detalhes' : 'Ver detalhes'} <ChevronDown size={14} className={expanded ? 'rotate-180' : ''}/></button><div className="job-action-right"><button className={`icon-btn favorite-action ${job.is_favorite ? 'selected' : ''}`} onClick={onFavorite} title={job.is_favorite ? 'Remover dos favoritos' : 'Favoritar'}><Star size={17} fill={job.is_favorite ? 'currentColor' : 'none'}/></button>{job.application ? <span className="application-status"><Check size={14}/>{job.application.status}</span> : <>{!job.latest_attempt && <button className="btn btn-secondary btn-sm" onClick={onPrepare}><Bot size={14}/> Preparar candidatura</button>}<button className="btn btn-secondary btn-sm" onClick={onApply} title="Use somente depois de enviar no site da vaga"><Check size={14}/> Já enviei</button></>}<a href={job.url} target="_blank" rel="noreferrer" className="btn btn-primary btn-sm">Abrir vaga <ExternalLink size={14}/></a></div></div>
   </article>
 }
+
 function ApplicationsPage({ applications, onEdit }) {
   const [filter, setFilter] = useState('Todas')
+  const [selectedHistory, setSelectedHistory] = useState(null)
+  const [history, setHistory] = useState(null)
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState('')
   const shown = useMemo(() => applications.filter(a => filter === 'Todas' || a.status === filter), [applications, filter])
-  return <><SectionHeading eyebrow="ACOMPANHE SEU PROGRESSO" title="Minhas candidaturas" subtitle="Registre cada etapa para não perder o fio da sua busca."/><div className="app-stats-row"><div className="app-stat"><span>Total de candidaturas</span><strong>{applications.length}</strong></div><div className="app-stat"><span>Entrevistas</span><strong>{applications.filter(a => a.status === 'Entrevista').length}</strong></div><div className="app-stat"><span>Em andamento</span><strong>{applications.filter(a => !['Aprovada','Reprovada','Encerrada'].includes(a.status)).length}</strong></div><div className="app-stat"><span>Aprovadas</span><strong>{applications.filter(a => a.status === 'Aprovada').length}</strong></div></div><div className="panel applications-panel"><div className="panel-heading"><div><h2>Pipeline de candidaturas</h2><p>Atualize a etapa sempre que houver uma novidade</p></div><select className="compact-select" value={filter} onChange={e => setFilter(e.target.value)}><option>Todas</option>{STATUS.map(s => <option key={s}>{s}</option>)}</select></div>{shown.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Oportunidade</th><th>Etapa</th><th>Data de envio</th><th>Prazo</th><th></th></tr></thead><tbody>{shown.map(a => <tr key={a.id}><td><div className="table-job"><div className="company-avatar small-avatar">{initials(a.job?.company)}</div><div><strong>{a.job?.title}</strong><span>{a.job?.company}</span></div></div></td><td><StatusPill status={a.status}/></td><td>{datePt(a.applied_at)}</td><td>{datePt(a.deadline)}</td><td><button className="btn btn-secondary btn-sm" onClick={() => onEdit(a)}>Atualizar <ChevronDown size={13}/></button></td></tr>)}</tbody></table></div> : <EmptyState icon={BriefcaseBusiness} title="Sua jornada começa com uma candidatura" text="Candidaturas enviadas (pelo agente ou confirmadas por você) aparecem aqui para acompanhar cada etapa."/>}</div></>
+
+  async function openHistory(application) {
+    setSelectedHistory(application)
+    setHistory(null)
+    setHistoryError('')
+    setHistoryLoading(true)
+    try {
+      setHistory(await api(`/applications/${application.id}/history`))
+    } catch (error) {
+      setHistoryError(error.message || 'Não foi possível carregar o histórico desta candidatura.')
+    } finally {
+      setHistoryLoading(false)
+    }
+  }
+
+  return <>
+    <SectionHeading eyebrow="ACOMPANHE SEU PROGRESSO" title="Minhas candidaturas" subtitle="Registre cada etapa e acompanhe como cada oportunidade evoluiu."/>
+    <div className="app-stats-row">
+      <div className="app-stat"><span>Total de candidaturas</span><strong>{applications.length}</strong></div>
+      <div className="app-stat"><span>Entrevistas</span><strong>{applications.filter(a => a.status === 'Entrevista').length}</strong></div>
+      <div className="app-stat"><span>Em andamento</span><strong>{applications.filter(a => !['Aprovada','Reprovada','Encerrada'].includes(a.status)).length}</strong></div>
+      <div className="app-stat"><span>Aprovadas</span><strong>{applications.filter(a => a.status === 'Aprovada').length}</strong></div>
+    </div>
+    <div className="panel applications-panel">
+      <div className="panel-heading"><div><h2>Pipeline de candidaturas</h2><p>Atualize a etapa sempre que houver uma novidade</p></div><select className="compact-select" value={filter} onChange={e => setFilter(e.target.value)}><option>Todas</option>{STATUS.map(s => <option key={s}>{s}</option>)}</select></div>
+      {shown.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Oportunidade</th><th>Etapa</th><th>Data de envio</th><th>Prazo</th><th>Histórico</th><th></th></tr></thead><tbody>{shown.map(a => <tr key={a.id}>
+        <td><div className="table-job"><div className="company-avatar small-avatar">{initials(a.job?.company)}</div><div><strong>{a.job?.title}</strong><span>{a.job?.company}</span></div></div></td>
+        <td><StatusPill status={a.status}/></td><td>{datePt(a.applied_at)}</td><td>{datePt(a.deadline)}</td>
+        <td><button className="btn btn-secondary btn-sm" onClick={() => openHistory(a)}><Clock3 size={13}/> Ver histórico</button></td>
+        <td><button className="btn btn-secondary btn-sm" onClick={() => onEdit(a)}>Atualizar <ChevronDown size={13}/></button></td>
+      </tr>)}</tbody></table></div> : <EmptyState icon={BriefcaseBusiness} title="Sua jornada começa com uma candidatura" text="Candidaturas enviadas (pelo agente ou confirmadas por você) aparecem aqui para acompanhar cada etapa."/>}
+    </div>
+    {selectedHistory && <section className="panel application-history-panel" aria-live="polite">
+      <div className="panel-heading"><div><h2>Histórico de etapas</h2><p>{selectedHistory.job?.title} · {selectedHistory.job?.company}</p></div><button className="icon-btn" onClick={() => {setSelectedHistory(null);setHistory(null)}} aria-label="Fechar histórico"><X size={17}/></button></div>
+      {historyLoading ? <div className="application-history-state"><LoaderCircle className="spin" size={19}/> Carregando histórico...</div> :
+        historyError ? <div className="application-history-error" role="alert">{historyError}</div> :
+        history && (history.has_history ? <ol className="application-history-list">{history.events.map(event => <li key={event.id}>
+          <span className="application-history-marker"/>
+          <div><div className="application-history-event-head"><strong>{event.new_status}</strong><time>{event.occurred_at ? new Date(event.occurred_at).toLocaleString('pt-BR') : 'Data não informada'}</time></div>
+            <p>{event.previous_status ? `Etapa anterior: ${event.previous_status}` : 'Registro inicial da candidatura'}</p>
+            <small>{event.source === 'email' ? 'Envio por e-mail' : event.source === 'manual_confirmed' ? 'Envio confirmado manualmente' : 'Atualização manual'}{event.note ? ` · ${event.note}` : ''}</small>
+          </div>
+        </li>)}</ol> : <div className="application-history-state"><Clock3 size={19}/><span>Nenhum evento foi registrado ainda. O histórico passa a contar a partir desta atualização do JobFinder AI.</span></div>)}
+      {history?.notice && <p className="application-history-notice">{history.notice}</p>}
+    </section>}
+  </>
 }
 function StatusPill({ status }) { const cls = status === 'Entrevista' ? 'purple' : status === 'Aprovada' ? 'green' : ['Reprovada','Encerrada'].includes(status) ? 'gray' : status === 'Teste técnico' ? 'blue' : 'amber'; return <span className={`status-pill ${cls}`}><i/>{status}</span> }
 function TasksPage({ tasks, view, setView, onCreate, onEdit, onComplete, onDelete, onSendReminders, smtpReady, notificationHistory, busy }) {
@@ -293,10 +435,14 @@ function TasksPage({ tasks, view, setView, onCreate, onEdit, onComplete, onDelet
   return <><SectionHeading eyebrow="ORGANIZAÇÃO E FOCO" title="Tarefas e prazos" subtitle="Transforme cada candidatura em próximos passos claros."><button className="btn btn-primary" onClick={onCreate}><Plus size={16}/> Nova tarefa</button></SectionHeading><div className="task-overview"><div className="task-overview-icon"><CheckCircle2 size={20}/></div><div><strong>Um passo de cada vez</strong><span>Defina prazos realistas e priorize o que vai aproximar você da próxima oportunidade.</span></div><strong className="task-overview-count">{tasks.filter(t => t.status !== 'Concluída').length}<small>visíveis pendentes</small></strong></div><div className="task-tabs">{views.map(v => <button key={v} className={view === v ? 'active' : ''} onClick={() => setView(v)}>{v}</button>)}</div>{tasks.length ? <div className="task-list">{tasks.map(t => <article className={`task-card ${t.status === 'Concluída' ? 'completed' : ''}`} key={t.id}><button className={`task-check ${t.status === 'Concluída' ? 'checked' : ''}`} onClick={() => t.status !== 'Concluída' && onComplete(t.id)} aria-label="Concluir tarefa">{t.status === 'Concluída' && <Check size={15}/>}</button><div className="task-main"><div className="task-title-row"><h3>{t.title}</h3><PriorityPill priority={t.priority}/></div>{t.description && <p>{t.description}</p>}<div className="task-meta"><span><CalendarDays size={14}/>{datePt(t.due_date)}</span>{t.job_title && <span><BriefcaseBusiness size={14}/>{t.job_title}</span>}{t.notify && <span><Bell size={13}/>Lembrete ativado</span>}{t.due_date && t.due_date < new Date().toISOString().slice(0,10) && t.status !== 'Concluída' && <span className="overdue-text">Prazo vencido</span>}</div></div><div className="task-actions"><button className="icon-btn" onClick={() => onEdit(t)} title="Editar"><Settings size={16}/></button><button className="icon-btn delete-action" onClick={() => onDelete(t.id)} title="Excluir"><Trash2 size={16}/></button></div></article>)}</div> : <div className="panel"><EmptyState icon={CheckCircle2} title="Tudo em dia por aqui" text="Não encontramos tarefas nesta visualização. Você pode adicionar uma nova tarefa a qualquer momento." action={<button className="btn btn-primary btn-sm" onClick={onCreate}><Plus size={14}/> Criar tarefa</button>}/></div>}<div className="reminder-note"><Bell size={17}/><div><strong>Lembretes por e-mail</strong><span>{smtpReady ? 'SMTP detectado. O botão envia um resumo das tarefas pendentes para o destinatário configurado.' : <>Configure SMTP no arquivo <code>.env</code> antes de enviar lembretes.</>}</span></div><button className="btn btn-secondary btn-sm" onClick={onSendReminders} disabled={busy || !smtpReady}>{busy ? <LoaderCircle size={14} className="spin"/> : <Send size={14}/>} Enviar resumo</button></div>{notificationHistory?.length > 0 && <section className="panel notification-panel"><div className="panel-heading"><div><h2>Histórico de lembretes</h2><p>Últimas tentativas registradas</p></div></div><div className="notification-list">{notificationHistory.slice(0,8).map(log => <div className="notification-row" key={log.id}><span className={`notification-status ${log.status === 'sent' ? 'sent' : 'failed'}`}>{log.status === 'sent' ? 'Enviado' : log.status}</span><span className="notification-detail">{log.detail}</span><time>{log.created_at ? new Date(log.created_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : ''}</time></div>)}</div></section>}</>
 }
 function PriorityPill({ priority }) { const c = priority === 'Urgente' ? 'urgent' : priority === 'Alta' ? 'high' : priority === 'Baixa' ? 'low' : 'medium'; return <span className={`priority-pill ${c}`}><i/>{priority}</span> }
-function ProfilePage({ profile, setProfile, onSave, busy }) {
+function ProfilePage({ profile, setProfile, onSave, onResumeChanged, busy }) {
   const [importing, setImporting] = useState(false)
   const [importMessage, setImportMessage] = useState('')
   const [importError, setImportError] = useState('')
+  const [allowExternalAI, setAllowExternalAI] = useState(false)
+  const [storeResumeForApplications, setStoreResumeForApplications] = useState(false)
+  const [storedResume, setStoredResume] = useState(null)
+  useEffect(() => { api('/profile/resume').then(setStoredResume).catch(() => setStoredResume({ configured: false })) }, [])
   const set = (field, value) => setProfile(p => ({ ...p, [field]: value }))
   const updateRecord = (collection, index, field, value) => setProfile(p => ({
     ...p, [collection]: (p[collection] || []).map((item, i) => i === index ? { ...item, [field]: value } : item),
@@ -315,6 +461,8 @@ function ProfilePage({ profile, setProfile, onSave, busy }) {
     if (file.size > 5 * 1024 * 1024) { setImportError('O arquivo deve ter no máximo 5 MB.'); return }
     const form = new FormData()
     form.append('file', file)
+    form.append('allow_external_ai', String(allowExternalAI))
+    form.append('store_for_applications', String(storeResumeForApplications))
     setImporting(true); setImportError(''); setImportMessage('')
     try {
       const response = await fetch(`${API}/profile/import`, { method: 'POST', body: form, credentials: 'include', headers: csrfToken ? { 'X-CSRF-Token': csrfToken } : {} })
@@ -328,6 +476,10 @@ function ProfilePage({ profile, setProfile, onSave, busy }) {
         }
         return next
       })
+      if (body.resume_storage_saved) {
+        setStoredResume({ configured: true, filename: file.name, updated_at: new Date().toISOString() })
+        await onResumeChanged?.()
+      }
       setImportMessage(body.message || 'Informações extraídas. Revise os registros e clique em “Salvar perfil”.')
     } catch (error) { setImportError(error.message || 'Não foi possível importar o currículo.') }
     finally { setImporting(false) }
@@ -337,9 +489,18 @@ function ProfilePage({ profile, setProfile, onSave, busy }) {
     <section className="panel resume-import-panel">
       <div className="resume-import-copy"><div className="resume-import-icon"><Sparkles size={19}/></div><div><strong>Preencher com meu currículo</strong><p>Envie PDF ou DOCX. A extração sugere registros separados para você revisar antes de salvar.</p></div></div>
       <label className="btn btn-secondary resume-upload-button">{importing ? <LoaderCircle size={16} className="spin"/> : <UserRound size={16}/>} {importing ? 'Analisando currículo...' : 'Selecionar currículo'}<input type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={importResume} disabled={importing} hidden/></label>
+      <label className="resume-ai-consent">
+        <input type="checkbox" checked={allowExternalAI} onChange={e => setAllowExternalAI(e.target.checked)} disabled={importing}/>
+        <span><strong>Autorizar análise externa com Google Gemini</strong><small>Quando marcada e houver chave configurada no servidor, somente o texto extraído do currículo será enviado ao Google para análise.</small></span>
+      </label>
+      <label className="resume-ai-consent">
+        <input type="checkbox" checked={storeResumeForApplications} onChange={e => setStoreResumeForApplications(e.target.checked)} disabled={importing}/>
+        <span><strong>Guardar o arquivo cifrado para candidaturas por e-mail</strong><small>Opcional. O PDF/DOCX será cifrado com uma chave exclusiva do armazenamento e vinculado somente à sua conta. Você pode removê-lo quando quiser.</small></span>
+      </label>
+      {storedResume?.configured && <div className="resume-import-success"><CheckCircle2 size={15}/>Currículo protegido: {storedResume.filename}<button type="button" className="text-action" onClick={async () => { try { await api('/profile/resume', { method: 'DELETE' }); setStoredResume({ configured: false }); await onResumeChanged?.(); setImportMessage('Arquivo de currículo removido com sucesso.'); } catch (error) { setImportError(error.message || 'Não foi possível remover o arquivo.'); } }}>Remover arquivo</button></div>}
       {importMessage && <p className="resume-import-success"><CheckCircle2 size={15}/>{importMessage}</p>}
       {importError && <p className="resume-import-error">{importError}</p>}
-      <small>Limite de 5 MB. Com Gemini configurado, o texto extraído é enviado ao Google Gemini para análise. O arquivo original não é armazenado pelo JobFinder AI. Nada é salvo no perfil até você clicar em “Salvar perfil”.</small>
+      <small>Limite de 5 MB. Sem autorização, a extração é feita localmente. O arquivo original só é armazenado se você marcar a opção de armazenamento cifrado. Nada é salvo no perfil até você revisar e clicar em “Salvar perfil”.</small>
     </section>
     <form className="profile-form" onSubmit={onSave}>
       <div className="profile-header-card"><div className="profile-large-avatar">{initials(profile.name)}</div><div><strong>{profile.name || 'Seu nome'}</strong><span>{profile.course || 'Área profissional'}{profile.institution ? ` · ${profile.institution}` : ''}</span><p>Informações revisáveis utilizadas pelo mecanismo de compatibilidade.</p></div><div className="profile-status"><span className="status-dot"/>Perfil editável</div></div>

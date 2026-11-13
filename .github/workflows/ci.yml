@@ -9,6 +9,12 @@ on:
 permissions:
   contents: read
 
+# Mantém apenas a validação mais recente por branch, evitando filas de CI
+# redundantes quando vários commits são enviados em sequência.
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   backend-sqlite:
     name: Backend tests (SQLite)

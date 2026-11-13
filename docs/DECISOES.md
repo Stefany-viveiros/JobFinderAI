@@ -1,6 +1,6 @@
 # Decisões técnicas — JobFinder AI
 
-Atualizado em: 11/11/2026  
+Atualizado em: 12/11/2026  
 Branch de trabalho: `feature/proof-to-opportunity-engine`
 
 Este documento registra decisões de segurança e produto tomadas durante a finalização do MVP. Nenhuma decisão autoriza deploy, alteração na `main` ou acesso ao banco de produção.
@@ -73,3 +73,152 @@ A inspeção foi realizada por leitura dos arquivos da branch no GitHub. O ambie
 | Mercado | Snapshot e métricas existentes | Comparação equivalente e relatório quinzenal |
 | Migrações | `init_db` contém alterações aditivas; Alembic configurado | Validar histórico Alembic em SQLite e PostgreSQL |
 | Documentação | README contém trechos desatualizados sobre autenticação e publicação | Atualizar após validação do código e dos testes |
+
+
+## 9. Importação de currículo — privacidade e abuso
+
+**Contexto:** a implementação anterior acionava o Gemini sempre que `GEMINI_API_KEY` estava configurada, sem consentimento específico na importação, e não limitava tentativas desse endpoint.
+
+**Alternativas consideradas:** (a) manter envio automático com base apenas na existência da chave; (b) exigir consentimento por importação e manter extração local como padrão.
+
+**Decisão:** adotar (b). A autorização externa vem desmarcada por padrão na interface e é transmitida como campo de formulário. O backend só chama Gemini quando a chave existe e `allow_external_ai=true`. Sem consentimento, usa o extrator local. O backend também aplica limite de cinco importações por conta por hora, valida extensão, MIME quando informado, assinatura inicial PDF/DOCX e o limite de 5 MB.
+
+**Consequências:** pessoas que desejarem análise Gemini devem autorizar explicitamente cada solicitação. A limitação de tentativas é persistida na tabela de rate limit existente, sem serviço externo ou nova dependência. A validação de assinatura é uma barreira básica, não uma análise antivírus nem garantia contra arquivos maliciosos; bibliotecas de leitura continuam sujeitas a atualizações de segurança.
+
+
+## 10. Diagnóstico por requisito de oportunidade
+
+**Contexto:** a compatibilidade original retornava score e motivos gerais, sem relacionar cada tecnologia citada na descrição a uma origem concreta no perfil.
+
+**Alternativas:** (a) usar apenas comparação de palavras e score; (b) apresentar um diagnóstico por requisito com origem e trecho, sem inferir proficiência.
+
+**Decisão:** implementar `diagnose_job_requirements` e `GET /api/jobs/{job_id}/diagnosis`. O acesso é permitido somente quando a vaga está vinculada ao JobMatch da conta. A classificação obrigatório/desejável utiliza marcadores explícitos na frase; conflitos são ambíguos e ausência de marcador é não especificado. As origens são retornadas separadamente para experiência, projeto, curso, certificação, formação, campo legado, declaração e autoavaliação.
+
+**Consequências:** uma menção prova apenas que a informação aparece no registro; não é uma validação de proficiência. Descrições livres podem produzir classificação incorreta ou incompleta; a interface mostra aviso e não substitui a leitura humana.
+
+## 11. Linha do tempo do Career Twin
+
+**Contexto:** o serviço mostrava competências e evidências, mas não consolidava a evolução em uma trilha visual.
+
+**Decisão:** construir a linha do tempo como read model derivado de registros existentes: educação, experiências, projetos, cursos, certificações, metas e desafios. Eventos de conclusão e autoavaliação são rotulados separadamente e não são transformados em prova independente. Campos de data ausentes permanecem vazios/“Data não informada”.
+
+**Consequências:** não foi criada tabela duplicada nem um ledger persistente. Alterações passadas de um registro não são reconstituídas. Projetos ainda não têm campo de data próprio no schema.
+
+## 12. Tendências de mercado entre snapshots
+
+**Contexto:** snapshots imutáveis existiam, mas a UI não comparava séries históricas.
+
+**Decisão:** implementar `compare_market_trends` e `GET /api/market/trends`. Apenas snapshots concluídos com período, níveis, mínimo de amostra e versões de taxonomia/extrator equivalentes entram no mesmo grupo. O delta é exibido em pontos percentuais. O endpoint retorna indisponibilidade quando há menos de dois snapshots comparáveis.
+
+**Consequências:** não mistura janelas nem versões incompatíveis. A variação é descritiva, não preditiva. Não há agendador quinzenal ativo; a geração de snapshots segue manual até configurar infraestrutura de execução recorrente.
+
+
+## 13. Histórico das etapas de candidatura
+
+**Contexto:** o modelo `Application` mantinha apenas a etapa atual e a data de atualização, sem permitir reconstruir a sequência de entrevista, teste técnico, aprovação ou encerramento.
+
+**Alternativas:** (a) inferir o histórico a partir de `updated_at` e notas; (b) criar uma tabela aditiva de eventos, sem fabricar eventos anteriores.
+
+**Decisão:** criar `ApplicationEvent` e a migração Alembic `20261112_0002`. O backend registra a etapa inicial quando uma candidatura é criada após o recurso, as transições feitas pela pessoa usuária e a origem do envio por SMTP ou confirmação manual. O endpoint `GET /api/applications/{application_id}/history` valida primeiro a titularidade da candidatura e filtra novamente por `user_id`. A tela de Candidaturas permite abrir a linha do tempo.
+
+**Consequências:** os registros históricos existentes permanecem intocados; não são reconstruídos por inferência. Eventos são imutáveis pela API. A migração é aditiva; downgrade só remove uma tabela vazia e se recusa a continuar quando há eventos.
+
+## 14. Proteção do runner de lembretes global
+
+**Contexto:** a rota HTTP de notificações já estava bloqueada no modo multiusuário, mas o script legado do Agendador chamava diretamente `send_daily_reminder`, que consultava tarefas globais e usava `SMTP_TO` compartilhado.
+
+**Decisão:** bloquear o serviço de envio também quando `MULTITENANT_READY=true`, antes de consultar tarefas ou abrir conexão SMTP.
+
+**Consequências:** o agendador local permanece disponível no modo individual; no modo multiusuário, lembretes só poderão ser liberados após configuração e envio individual por conta.
+
+## 15. Limites de arquivo DOCX
+
+**Contexto:** o tamanho comprimido do upload não limita o volume que um pacote ZIP pode expandir durante a leitura.
+
+**Decisão:** validar o pacote DOCX antes de chamar a biblioteca de documentos: número de entradas, nomes duplicados, presença dos componentes essenciais, criptografia, tamanho de cada entrada, volume total descompactado e taxa de compressão.
+
+**Consequências:** essa é uma defesa de consumo de recursos, não um antivírus ou sandbox. O limite binário de upload permanece 5 MB; o texto extraído continua limitado a 60 mil caracteres.
+
+
+## 16. Autoavaliação vinculada ao plano e avaliação automática indisponível
+
+**Contexto:** o Career Twin apresentava a autoavaliação de um desafio, mas não deixava visível a meta do plano relacionada; a interface também precisava comunicar claramente a ausência de runner.
+
+**Alternativas:** (a) apresentar a autoavaliação como validação; (b) manter a classificação de autoavaliação, relacionar a meta quando houver vínculo e declarar a indisponibilidade de execução automática.
+
+**Decisão:** incluir `plan_item_id` na evidência derivada do desafio e no detalhe do evento da linha do tempo. A interface mostra a meta vinculada. A página de desafios informa que avaliação automática de código não está disponível e que os arquivos/códigos enviados não são executados.
+
+**Consequências:** a relação é rastreável quando o desafio foi criado a partir de uma meta. Não cria evidência independente, não atribui proficiência e não executa código do usuário. O ledger persistente e a validação por avaliador permanecem pendentes.
+
+## 17. Navegação por módulos sem duplicação de telas
+
+**Contexto:** as capacidades de Career Twin, Skill Gap, desafios e plano já existiam em duas páginas React principais, mas a navegação não refletia os módulos do produto.
+
+**Alternativas:** (a) criar páginas independentes com novos estados e chamadas duplicadas; (b) expor atalhos para as seções dos componentes existentes.
+
+**Decisão:** reorganizar o menu lateral e reutilizar `CareerTwinPage` e `MarketIntelligencePage`, com rolagem para as seções de competências, diagnóstico, desafios e plano.
+
+**Consequências:** reduz duplicação e preserva APIs e estados atuais. Os módulos Competências/Diagnóstico/Desafios/Plano são pontos de entrada para seções existentes, não subsistemas independentes. O painel de candidaturas mostra contagens reais, mas não estima conversão sem amostra/coorte suficiente.
+
+
+## 18. Vínculo obrigatório entre oportunidade e conta nas ações privadas
+
+**Contexto:** o catálogo de vagas é compartilhado, mas favoritos, candidaturas, tentativas e tarefas pertencem à conta. Algumas rotas aceitavam um ID de vaga existente no catálogo sem exigir que houvesse vínculo ativo em `JobMatch` para a sessão autenticada.
+
+**Decisão:** antes de favoritar, preparar candidatura, confirmar candidatura manual ou criar tarefa associada, exigir um `JobMatch` com o mesmo `job_id`, `user_id` autenticado e `is_archived=false`. A ausência do vínculo retorna 404. O endpoint de favorito deixa de criar vínculo implicitamente a partir de um ID global arbitrário.
+
+**Consequências:** conhecer ou adivinhar o identificador global de uma vaga não concede acesso às ações privadas. O catálogo permanece compartilhado e a pessoa precisa ter a oportunidade vinculada ao próprio painel. Teste de regressão cobre as quatro operações e verifica ausência de efeitos colaterais. O gate multiusuário continua fechado até a auditoria integral.
+
+
+## 19. Validação fail-closed do schema multiusuário
+
+**Contexto:** o validador anterior verificava apenas a constraint de unicidade da tabela `applications`, sem confirmar as demais relações de propriedade ou a existência de registros privados legados sem proprietário.
+
+**Decisão:** antes de iniciar em modo multiusuário, verificar tabelas privadas, colunas `user_id`, chaves estrangeiras para `users.id`, ausência de linhas sem proprietário e constraints de unicidade por conta para candidaturas, vínculos de vagas, perfil e configurações do agente. A verificação é executada no startup quando `MULTITENANT_READY=true`.
+
+**Consequências:** bancos com dados legados sem proprietário permanecem bloqueados até procedimento explícito, auditável e respaldado. A coluna pode continuar nullable durante a transição para preservar compatibilidade, mas nenhuma linha sem dono pode existir quando o gate for habilitado. Não há atribuição automática de dados.
+
+
+## 20. Rollback de migrações com preservação de dados
+
+**Contexto:** testar somente upgrade não demonstra que um rollback seja seguro. A migração de histórico não pode apagar eventos; a migração de unicidade por usuário não pode restaurar a constraint global quando duas contas possuem a mesma vaga.
+
+**Decisão:** testar em schemas PostgreSQL efêmeros tanto o upgrade quanto os caminhos de downgrade. A migração de eventos deve recusar rollback com histórico e permitir remover a tabela apenas quando vazia. A migração de candidaturas deve recusar a restauração da unicidade global se houver mais de uma candidatura para o mesmo job_id, preservando registros e constraint composta.
+
+**Consequências:** o rollback é uma operação condicionada ao estado real dos dados, não um botão sempre disponível. Os testes não usam nem alteram o banco de produção.
+
+
+## 21. Configuração fail-closed de sessão por ambiente
+
+**Contexto:** a duração da sessão e a flag de cookie seguro eram interpretadas diretamente em `auth.py`, sem validar valores inválidos ou impedir cookie não seguro em produção.
+
+**Decisão:** centralizar `APP_ENV`, `SESSION_HOURS` e `COOKIE_SECURE` na configuração da aplicação. Aceitar apenas ambientes conhecidos, duração de 1 a 720 horas e booleano estrito; exigir cookie seguro em staging e production.
+
+**Consequências:** configuração insegura ou malformada interrompe o startup em vez de degradar silenciosamente. Desenvolvimento local pode usar HTTP e cookie não seguro, mas a configuração de hospedagem deve manter HTTPS e `COOKIE_SECURE=true`.
+
+
+## 22. Bloqueio de agendadores legados sem identidade de conta
+
+**Contexto:** os runners de agente e lembretes foram concebidos para um perfil único/global. Executá-los em modo multiusuário sem identidade explícita poderia consultar configurações legadas, iniciar coletas sem escopo ou acionar operações globais.
+
+**Decisão:** ambos os entrypoints devem verificar `MULTITENANT_READY` antes de inicializar o banco. Se o gate estiver ativo, retornam status bloqueado e registram o motivo. Não tentar adaptar silenciosamente o runner global para todas as contas.
+
+**Consequências:** automação SaaS exige um scheduler novo que itere usuários elegíveis e execute cada tarefa com `user_id`, limites e configurações individuais. Até lá, os agendadores globais permanecem desativados.
+## 20. Revisão humana append-only do ledger
+
+**Contexto:** evidências persistentes precisavam permitir correção contextual pela pessoa sem sobrescrever a origem nem sugerir que uma confirmação de texto prova domínio técnico.
+
+**Decisão:** registrar cada decisão em `CareerEvidenceReview`, com `user_id`, `evidence_id`, decisão (`confirmed` ou `dismissed`), observação opcional e data. Expor a revisão por `POST /api/career-evidence/{evidence_id}/review` e o histórico completo por `GET /api/career-evidence/{evidence_id}/reviews`. Ambos usam exclusivamente a identidade autenticada e verificam titularidade da evidência.
+
+**Consequências:** cada revisão é um novo evento; a evidência e seu `verification_level` não são alterados. “Confirmar origem” significa que a pessoa reconhece a menção/contexto, não que um avaliador independente atestou proficiência. O downgrade da migração `20261112_0004` recusa remover histórico existente. A interface permite observação livre de até 1.000 caracteres e consulta da trilha cronológica.
+**Complemento de segurança — 12/11/2026:** `validate_multitenant_schema()` inclui `career_evidence` e `career_evidence_reviews`, exige `user_id` não nulo e FKs válidas, confirma a FK da revisão para a evidência e rejeita revisões órfãs ou cujo `user_id` difere do proprietário da evidência. O gate permanece fechado por padrão; essa validação não atribui nem corrige automaticamente dados legados.
+
+## 12/11/2026 — credenciais SMTP individuais
+
+- O modo multiusuário não utiliza credenciais SMTP globais para enviar candidaturas.
+- Cada conta tem no máximo uma conexão SMTP própria, cifrada com Fernet antes da persistência. A chave `SMTP_CREDENTIALS_KEY` é segredo de ambiente, nunca é gravada no banco ou versionada.
+- A API não retorna senha nem ciphertext. A ausência ou invalidade da chave torna o envio indisponível.
+- Hostnames são limitados a provedores conhecidos ou à allowlist explícita `SMTP_ALLOWED_HOSTS`; não aceitar hosts arbitrários enviados pelo usuário reduz o risco de SSRF.
+- A configuração SMTP administrativa permanece exclusiva para lembretes locais; ela não é uma alternativa para envio de candidaturas de contas SaaS.
+- Antes de ativar em produção, definir cofre/backup e rotação da chave Fernet, configurar os segredos de ambiente, validar conexão com provedor real e manter egress de rede restrito.
+- A implementação permanece na branch de trabalho; nenhum deploy ou alteração no Neon foi realizado.

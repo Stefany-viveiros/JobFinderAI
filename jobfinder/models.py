@@ -204,6 +204,19 @@ class Application(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     job: Mapped[Job] = relationship(back_populates="applications")
 
+class ApplicationEvent(Base):
+    """Evento imutável de mudança de etapa de uma candidatura por usuário."""
+    __tablename__ = "application_events"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    application_id: Mapped[int] = mapped_column(ForeignKey("applications.id", ondelete="CASCADE"), nullable=False, index=True)
+    previous_status: Mapped[str] = mapped_column(String(80), default="")
+    new_status: Mapped[str] = mapped_column(String(80), nullable=False)
+    source: Mapped[str] = mapped_column(String(30), default="manual")
+    note: Mapped[str] = mapped_column(Text, default="")
+    occurred_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
 class Task(Base):
     __tablename__ = "tasks"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -394,3 +407,82 @@ class SkillAssessmentAttempt(Base):
     status: Mapped[str] = mapped_column(String(24), default="draft")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class CareerEvidence(Base):
+    """Evidência versionada de competência, sempre pertencente a uma conta."""
+    __tablename__ = "career_evidence"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "source_key", "skill_name", "evidence_hash",
+            name="uq_career_evidence_version",
+        ),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    skill_name: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    category: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    source_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    source_key: Mapped[str] = mapped_column(String(240), nullable=False, index=True)
+    source_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_label: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    excerpt: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    verification_level: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="self_reported"
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+
+class CareerEvidenceReview(Base):
+    """Decisão humana append-only sobre uma evidência, sem alterar sua origem."""
+    __tablename__ = "career_evidence_reviews"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    evidence_id: Mapped[int] = mapped_column(
+        ForeignKey("career_evidence.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    decision: Mapped[str] = mapped_column(String(24), nullable=False)
+    note: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+
+class SmtpAccount(Base):
+    """Conexão SMTP individual; a senha é persistida somente cifrada."""
+    __tablename__ = "smtp_accounts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True
+    )
+    host: Mapped[str] = mapped_column(String(255), nullable=False)
+    port: Mapped[int] = mapped_column(Integer, nullable=False, default=587)
+    username: Mapped[str] = mapped_column(String(320), nullable=False)
+    encrypted_password: Mapped[str] = mapped_column(Text, nullable=False)
+    from_email: Mapped[str] = mapped_column(String(320), nullable=False)
+    use_tls: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
+
+class UserResume(Base):
+    """Arquivo de currículo individual, cifrado em repouso e isolado por usuário."""
+    __tablename__ = "user_resumes"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True
+    )
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(120), nullable=False)
+    encrypted_content: Mapped[str] = mapped_column(Text, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )

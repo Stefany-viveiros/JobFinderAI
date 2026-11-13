@@ -55,3 +55,24 @@ def test_expanded_technology_roles_are_included(title):
 def test_non_technology_roles_are_still_excluded():
     assert not is_target_job({"title": "Estágio em Recursos Humanos"})
     assert not is_target_job({"title": "Analista Financeiro Júnior"})
+
+
+
+def test_url_normalization_preserves_case_sensitive_path_and_query_values():
+    upper_path = normalize_url("https://example.com/Jobs/ABC?id=Python")
+    lower_path = normalize_url("https://example.com/jobs/abc?id=Python")
+    other_value = normalize_url("https://example.com/Jobs/ABC?id=python")
+    assert upper_path != lower_path
+    assert upper_path != other_value
+
+
+def test_url_normalization_removes_only_known_tracking_parameters():
+    tracked = normalize_url("https://example.com/job/ABC?ref=linkedin&role=Data%20Engineer")
+    clean = normalize_url("https://EXAMPLE.com:443/job/ABC?role=Data+Engineer#apply")
+    assert tracked == clean
+
+
+def test_url_normalization_keeps_non_tracking_referral_like_parameters():
+    a = normalize_url("https://example.com/job?id=1&reference=internal")
+    b = normalize_url("https://example.com/job?id=1&reference=external")
+    assert a != b

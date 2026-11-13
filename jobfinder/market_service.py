@@ -2,6 +2,7 @@
 import json
 from collections import Counter
 from datetime import datetime, timedelta
+from urllib.parse import urlsplit
 
 from sqlalchemy import select, delete
 from sqlalchemy.orm import Session
@@ -121,7 +122,7 @@ def create_market_snapshot(
 
     run = MarketAnalysisRun(
         period_start=start, period_end=now, level_scope=level_scope,
-        area_scope="technology", filters_json=json.dumps({"days": days, "levels": levels}),
+        area_scope="technology", filters_json=json.dumps({"days": days, "levels": levels, "min_jobs": max(1, int(min_jobs))}),
         total_jobs=len(jobs), valid_jobs=len(jobs), jobs_with_description=with_description,
         sources_json=json.dumps(sources, ensure_ascii=False),
         taxonomy_version=taxonomy_version(), extractor_version=EXTRACTOR_VERSION,
@@ -214,8 +215,25 @@ def build_profile_gap(db: Session, *, user_id: int, run_id: int | None = None) -
         .order_by(MarketAnalysisRun.created_at.desc(), MarketAnalysisRun.id.desc())
         .limit(1)
     )
-    if run is None:
-        return {"available": False, "message": "Gere uma análise de mercado antes de consultar o Skill Gap."}
+    if run is None or run.status != "completed":
+        return {"available": False, "message": "Gere uma análise de mercado concluída antes de consultar o Skill Gap."}
+
+    try:
+        filters = json.loads(run.filters_json or "{}")
+    except (TypeError, ValueError):
+        filters = {}
+    sample_minimum = max(1, int(filters.get("min_jobs", 30) or 30))
+    market_context = {
+        "run_id": run.id,
+        "period_start": run.period_start.isoformat() if run.period_start else None,
+        "period_end": run.period_end.isoformat() if run.period_end else None,
+        "level_scope": run.level_scope,
+        "valid_jobs": run.valid_jobs,
+        "jobs_with_description": run.jobs_with_description,
+        "sample_minimum": sample_minimum,
+        "sample_sufficient": run.valid_jobs >= sample_minimum,
+        "quality_notes": run.quality_notes or "",
+    }
 
     metric_rows = db.execute(
         select(MarketSkillMetric, Skill)
@@ -366,6 +384,7 @@ def build_profile_gap(db: Session, *, user_id: int, run_id: int | None = None) -
     return {
         "available": True,
         "run_id": run.id,
+        "market": market_context,
         "total_skills": len(items),
         "counts": counts,
         "items": items,
@@ -642,6 +661,23 @@ def submit_skill_assessment(
         raise ValueError("Responda a todos os critérios da autoavaliação.")
     if len((response_text or "").strip()) < 30 and not (evidence_url or "").strip():
         raise ValueError("Descreva sua solução ou informe um link de evidência.")
+    clean_url = (evidence_url or "").strip()
+    if clean_url:
+        try:
+            parsed_url = urlsplit(clean_url)
+            valid_https_url = (
+                parsed_url.scheme == "https"
+                and bool(parsed_url.hostname)
+                and parsed_url.username is None
+                and parsed_url.password is None
+                and not any(ord(char) < 32 or char.isspace() for char in clean_url)
+            )
+            # Acessar .port também valida portas malformadas.
+            _ = parsed_url.port
+        except ValueError:
+            valid_https_url = False
+        if not valid_https_url:
+            raise ValueError("O link de evidência precisa ser uma URL HTTPS válida, sem credenciais.")
     passed = [item for item in criteria if rubric_answers[item["id"]]]
     pending = [item["label"] for item in criteria if not rubric_answers[item["id"]]]
     score = round((len(passed) / len(criteria)) * 100) if criteria else 0
@@ -654,7 +690,7 @@ def submit_skill_assessment(
     if pending:
         feedback += " Pontos para revisar: " + " ".join(pending)
     attempt.response_text = (response_text or "").strip()
-    attempt.evidence_url = (evidence_url or "").strip()
+    attempt.evidence_url = clean_url
     attempt.rubric_answers_json = json.dumps(rubric_answers, ensure_ascii=False)
     attempt.score = score
     attempt.feedback = feedback
@@ -690,4 +726,131 @@ def list_skill_assessments(db: Session, *, user_id: int, skill_id: int | None = 
             ),
         },
         "notice": "Pontuações são autoavaliações baseadas nos critérios marcados pela própria pessoa; não equivalem a validação independente de proficiência.",
+    }
+
+
+def compare_market_trends(db: Session, *, limit: int = 10) -> dict:
+    """Compara os dois snapshots concluídos mais recentes com escopo equivalente."""
+    runs = db.scalars(
+        select(MarketAnalysisRun)
+        .where(MarketAnalysisRun.status == "completed")
+        .order_by(MarketAnalysisRun.created_at.desc(), MarketAnalysisRun.id.desc())
+        .limit(100)
+    ).all()
+
+    groups = {}
+    for run in runs:
+        try:
+            filters = json.loads(run.filters_json or "{}")
+        except (TypeError, ValueError):
+            continue
+        try:
+            days = int(filters.get("days", 30))
+            minimum = max(1, int(filters.get("min_jobs", 30)))
+        except (TypeError, ValueError):
+            continue
+        levels = tuple(sorted(filters.get("levels") or ()))
+        key = (
+            run.level_scope, days, levels,
+            run.taxonomy_version, run.extractor_version, minimum,
+        )
+        groups.setdefault(key, []).append(run)
+
+    comparable = [
+        (key, items) for key, items in groups.items() if len(items) >= 2
+    ]
+    if not comparable:
+        return {
+            "available": False,
+            "message": "Ainda não existem dois snapshots concluídos com o mesmo período, nível e versões de taxonomia para comparar tendências.",
+            "items": [],
+        }
+
+    # Escolhe o grupo cuja execução mais recente é a mais atual, sem misturar recortes.
+    key, selected = max(
+        comparable,
+        key=lambda pair: (
+            pair[1][0].created_at or datetime.min,
+            pair[1][0].id,
+        ),
+    )
+    current, previous = selected[0], selected[1]
+
+    metric_rows = db.execute(
+        select(MarketSkillMetric, Skill)
+        .join(Skill, Skill.id == MarketSkillMetric.skill_id)
+        .where(MarketSkillMetric.run_id.in_([current.id, previous.id]))
+    ).all()
+    by_run = {current.id: {}, previous.id: {}}
+    skill_categories = {}
+    for metric, skill in metric_rows:
+        by_run[metric.run_id][skill.canonical_name] = metric
+        skill_categories[skill.canonical_name] = skill.category
+
+    skill_names = set(by_run[current.id]) | set(by_run[previous.id])
+    items = []
+    for name in skill_names:
+        current_metric = by_run[current.id].get(name)
+        previous_metric = by_run[previous.id].get(name)
+        current_rate = round((current_metric.mention_rate if current_metric else 0) * 100, 1)
+        previous_rate = round((previous_metric.mention_rate if previous_metric else 0) * 100, 1)
+        delta = round(current_rate - previous_rate, 1)
+        direction = "rising" if delta > 0 else "falling" if delta < 0 else "stable"
+        items.append({
+            "name": name,
+            "category": skill_categories.get(name, ""),
+            "previous_mention_rate": previous_rate,
+            "current_mention_rate": current_rate,
+            "delta_percentage_points": delta,
+            "previous_jobs_count": previous_metric.jobs_count if previous_metric else 0,
+            "current_jobs_count": current_metric.jobs_count if current_metric else 0,
+            "previous_rank": previous_metric.rank if previous_metric else None,
+            "current_rank": current_metric.rank if current_metric else None,
+            "direction": direction,
+        })
+
+    items.sort(
+        key=lambda item: (
+            abs(item["delta_percentage_points"]),
+            item["current_jobs_count"],
+            item["name"].casefold(),
+        ),
+        reverse=True,
+    )
+    minimum = key[5]
+    return {
+        "available": True,
+        "scope": {
+            "level_scope": current.level_scope,
+            "days": key[1],
+            "levels": list(key[2]),
+            "taxonomy_version": current.taxonomy_version,
+            "extractor_version": current.extractor_version,
+            "minimum_sample": minimum,
+        },
+        "sample_sufficient": (
+            current.valid_jobs >= minimum and previous.valid_jobs >= minimum
+        ),
+        "current": {
+            "run_id": current.id,
+            "created_at": current.created_at.isoformat() if current.created_at else None,
+            "period_start": current.period_start.isoformat() if current.period_start else None,
+            "period_end": current.period_end.isoformat() if current.period_end else None,
+            "valid_jobs": current.valid_jobs,
+            "quality_notes": current.quality_notes or "",
+        },
+        "previous": {
+            "run_id": previous.id,
+            "created_at": previous.created_at.isoformat() if previous.created_at else None,
+            "period_start": previous.period_start.isoformat() if previous.period_start else None,
+            "period_end": previous.period_end.isoformat() if previous.period_end else None,
+            "valid_jobs": previous.valid_jobs,
+            "quality_notes": previous.quality_notes or "",
+        },
+        "items": items[:max(1, min(int(limit), 50))],
+        "notice": (
+            "A variação representa diferença em pontos percentuais entre snapshots comparáveis. "
+            "É uma tendência observada na amostra local, não previsão estatística nem garantia de demanda futura. "
+            "Snapshots com janelas, níveis ou versões diferentes não são misturados."
+        ),
     }

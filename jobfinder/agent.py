@@ -33,7 +33,10 @@ def pick_candidates(db, min_score, limit=MAX_PREPARE_PER_RUN, user_id=None):
     """Seleciona vagas pelo score privado do usuário e exclui suas tentativas/candidaturas."""
     if user_id is None:
         return []
-    attempted = select(ApplicationAttempt.job_id).where(ApplicationAttempt.user_id == user_id)
+    attempted = select(ApplicationAttempt.job_id).where(
+        ApplicationAttempt.user_id == user_id,
+        ApplicationAttempt.status != "cancelled",
+    )
     applied = select(Application.job_id).where(Application.user_id == user_id)
     stmt = (select(Job).join(JobMatch, JobMatch.job_id == Job.id).where(
                 JobMatch.user_id == user_id,
@@ -47,6 +50,11 @@ def pick_candidates(db, min_score, limit=MAX_PREPARE_PER_RUN, user_id=None):
     return list(db.scalars(stmt).all())
 
 def run_agent(db, sources=None, limit=80, collect=True, collector=collect_selected, user_id=None):
+    # Falha antes de ler/criar configuração global ou carregar perfil legado.
+    # O agente é uma operação individual: não pode executar sem identidade autenticada.
+    if user_id is None:
+        raise ValueError("Execução SaaS exige usuário autenticado.")
+
     settings_row = get_agent_settings(db, user_id=user_id)
     profile = get_profile(db, user_id=user_id)
     result = {"received": 0, "saved": 0, "duplicates": 0, "filtered_out": 0, "errors": [],
@@ -57,8 +65,6 @@ def run_agent(db, sources=None, limit=80, collect=True, collector=collect_select
     if collect:
         names = sources or list(SOURCES.keys())
         items, errors = collector(names)
-        if user_id is None:
-            raise ValueError("Execução SaaS exige usuário autenticado.")
         saved = collect_for_user(db, items, user_id=user_id, limit=limit, only_target=True)
         result.update(received=len(items), saved=saved["saved"], duplicates=saved["duplicates"],
                       filtered_out=saved["filtered_out"], errors=errors)

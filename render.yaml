@@ -13,10 +13,22 @@ services:
     envVars:
       - key: DATABASE_URL
         sync: false
+      - key: SMTP_CREDENTIALS_KEY
+        sync: false
+      - key: RESUME_STORAGE_KEY
+        sync: false
       - key: CORS_ORIGINS
         value: https://jobfinder-ai-web-imux.onrender.com
       - key: DEMO_READ_ONLY
         value: "true"
+      - key: MULTITENANT_READY
+        value: "false"
+      - key: APP_ENV
+        value: production
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: SESSION_HOURS
+        value: "24"
       - key: PYTHON_VERSION
         value: 3.12.8
 

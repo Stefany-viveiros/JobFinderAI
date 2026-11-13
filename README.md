@@ -6,14 +6,14 @@ O JobFinder AI é um projeto de portfólio em evolução que reúne busca de vag
 
 A aplicação evoluiu de uma interface construída com Streamlit para uma arquitetura com **React + Vite no frontend** e **FastAPI no backend**, utilizando Python para a lógica de negócio e SQLite para persistência local.
 
-> **Estado atual:** o projeto está em desenvolvimento e sua execução documentada é local. Ainda não há uma versão pública hospedada para acesso pela internet. A arquitetura de avaliação objetiva de código está documentada como próxima evolução, mas o runner isolado ainda não foi implementado.
+> **Estado atual:** o projeto possui autenticação por sessão, proteção CSRF, rate limiting e estrutura de isolamento por conta em evolução. A API mantém o acesso à área autenticada bloqueado por padrão (`MULTITENANT_READY=false`) até que a revisão de isolamento e do schema seja concluída. A avaliação objetiva de código continua desabilitada: o runner isolado ainda não foi implementado.
 
 
 ## Ambiente de demonstração na nuvem
 
 A configuração inicial para Render + Neon está em [render.yaml](render.yaml). O passo a passo está em [docs/DEPLOYMENT_DEMO.md](docs/DEPLOYMENT_DEMO.md).
 
-**Atenção:** o ambiente público é configurado como somente leitura (`DEMO_READ_ONLY=true`). Não desative essa proteção nem conecte dados pessoais reais enquanto a aplicação não tiver autenticação e autorização por usuário. O banco Neon deve ser novo e exclusivo para a demonstração.
+**Atenção:** o manifesto do Render configura demonstração somente leitura (`DEMO_READ_ONLY=true`). Não desative essa proteção nem conecte dados pessoais reais até concluir a auditoria de isolamento, validar o schema e habilitar `MULTITENANT_READY` conscientemente. Use banco Neon exclusivo para a demonstração.
 
 ## Funcionalidades
 
@@ -35,11 +35,12 @@ A pontuação é uma heurística explicável para apoiar a triagem. Não represe
 ### Importação de currículo
 - Envio de currículo em PDF ou DOCX, com limite de 5 MB.
 - Extração de informações para sugerir preenchimento de formação, experiências, cursos, certificações e projetos.
-- Análise inteligente com Gemini quando a variável `GEMINI_API_KEY` está configurada.
-- Extrator básico como alternativa quando a chave não está configurada.
+- Análise inteligente com Gemini somente quando a pessoa autoriza explicitamente o envio do conteúdo naquela importação e `GEMINI_API_KEY` está configurada.
+- Extração local como padrão quando não há consentimento ou chave configurada.
+- Validação de estrutura PDF/DOCX e limite de 5 MB; no DOCX, limites adicionais de entradas, tamanho descompactado e taxa de compressão.
 - Revisão dos dados extraídos antes de salvar o perfil.
 
-**Privacidade e controle:** o arquivo original não é salvo pelo endpoint de importação. A extração não sobrescreve o perfil automaticamente; a pessoa usuária revisa os campos e decide quando salvar. A análise com Gemini envia o texto extraído ao serviço do Google, portanto configure a chave e avalie as políticas do provedor antes de utilizar currículos com dados pessoais.
+**Privacidade e controle:** o arquivo original não é salvo pelo endpoint de importação. A extração não sobrescreve o perfil automaticamente; a pessoa usuária revisa os campos e decide quando salvar. Sem autorização explícita por solicitação, o currículo é processado localmente. Quando autorizada, a análise Gemini envia o texto extraído ao serviço do Google; a chave permanece no servidor e o limite é de cinco importações por conta por hora.
 
 Endpoint: `POST /api/profile/import`.
 
@@ -49,6 +50,9 @@ Endpoint: `POST /api/profile/import`.
 - Pipeline para acompanhar as etapas dos processos seletivos.
 - Registro de datas, informações de recrutadores e anotações.
 - Indicadores de acompanhamento, incluindo vagas, candidaturas, entrevistas e novas oportunidades.
+- Histórico de mudanças de etapa com origem, estado anterior, novo estado, data e anotação.
+- O histórico começa na ativação do recurso; etapas anteriores não são inventadas retroativamente.
+- Endpoint: `GET /api/applications/{application_id}/history`.
 
 ### Agente de candidaturas
 Fluxo: **buscar → normalizar → eliminar duplicatas → filtrar estágio/júnior de tecnologia → avaliar compatibilidade → preparar → (aprovar) → enviar → registrar o resultado real**.
@@ -59,6 +63,9 @@ Fluxo: **buscar → normalizar → eliminar duplicatas → filtrar estágio/jún
 - **Histórico**: tentativas registradas em `application_attempts`, com estados como `prepared`, `awaiting_approval`, `manual_required`, `sent`, `failed` ou `cancelled`.
 - **Integridade**: uma candidatura só é marcada como enviada quando o servidor SMTP aceita a mensagem ou quando a própria pessoa confirma o envio manual.
 - **Envio automático**: disponível somente por e-mail quando a descrição da vaga contém um endereço de contato e o SMTP está configurado. Nas demais situações, o agente prepara o texto e orienta a finalização no site original.
+- **SMTP individual no modo multiusuário**: cada conta pode cadastrar seu próprio host, porta, usuário, remetente e senha de aplicativo pela página Agente. A senha é cifrada com Fernet no banco e nunca é devolvida pela API; exige a variável secreta `SMTP_CREDENTIALS_KEY` no ambiente do servidor.
+- **Destinos SMTP**: provedores conhecidos são permitidos por padrão; servidores corporativos adicionais precisam ser explicitamente autorizados em `SMTP_ALLOWED_HOSTS`, reduzindo a possibilidade de usar o servidor da aplicação como proxy para endereços internos.
+- **Separação**: SMTP individual é usado para candidaturas; a configuração administrativa `SMTP_TO` continua restrita aos lembretes locais e não é compartilhada com contas do SaaS.
 - **Conteúdo**: o texto utiliza somente informações cadastradas no perfil. O sistema não deve inventar experiências ou competências.
 - Execução agendada opcional: `python -m jobfinder.agent_runner`.
 
@@ -87,12 +94,23 @@ A área **Inteligência de mercado** analisa competências encontradas nas oport
 
 **Como interpretar os dados:** a análise usa a data `created_at` do banco, que representa quando a vaga foi observada pela primeira vez localmente, e não necessariamente sua data original de publicação. A extração inicial é determinística, baseada em nomes e aliases conhecidos. Ausência de uma competência na descrição não significa que ela não seja exigida. Frequência observada não é, isoladamente, uma recomendação definitiva de estudo.
 
+**Atualização recorrente:** o workflow `.github/workflows/market-snapshot.yml` verifica diariamente se já passaram 15 dias desde o último snapshot comparável. Para ativá-lo após integrar a branch padrão, configure o segredo GitHub Actions `MARKET_DATABASE_URL` com um banco autorizado. O runner é idempotente e não acessa dados pessoais de perfis.
+
 ### Skill Gap — mercado × perfil
 - Cruza competências observadas nas vagas com formação, experiências, projetos, cursos, certificações e informações declaradas no perfil.
 - Diferencia evidências profissionais, prática em projetos, cursos, certificações, formação, itens em estudo e competências não identificadas.
 - Exibe recomendações para investigar ou desenvolver competências relevantes.
 
 **Importante:** uma competência não identificada no currículo não é considerada automaticamente desconhecida. Menção em curso, projeto ou certificação também não comprova domínio técnico.
+
+### Ledger persistente e revisão de evidências
+- Ao salvar o perfil, o sistema registra competências encontradas com a origem, trecho de contexto, hash e versão histórica.
+- Alterações criam versões novas; versões anteriores não são apagadas.
+- No Career Twin, a pessoa pode confirmar se uma menção corresponde à fonte ou marcá-la como não relevante, com observação própria.
+- O histórico de revisões fica disponível para consulta e é isolado por conta.
+- Marcar uma evidência como não relevante retira aquela origem do mapa de competências do Career Twin e do diagnóstico por vaga. A informação original do perfil permanece intacta.
+- Confirmação humana da origem não equivale a avaliação técnica nem certificação de proficiência.
+
 
 ### Plano de desenvolvimento
 - Adição de competências do Skill Gap a um plano individual.
@@ -146,7 +164,7 @@ A aplicação é organizada em duas partes principais:
 - **Backend:** API FastAPI, responsável pela lógica de negócio, persistência, cálculo de compatibilidade, importação de currículo, inteligência de mercado e coleta de vagas.
 - **Banco de dados:** SQLite na configuração local, com modelos SQLAlchemy.
 
-A versão atual não oferece autenticação multiusuário. A interface utiliza a API local em `http://127.0.0.1:8000/api`; uma implantação pública exige configurar URLs por ambiente, banco de dados apropriado, autenticação, autorização e controles adicionais de segurança.
+A aplicação já possui cadastro, login, sessão opaca, recuperação de senha, proteção CSRF e escopo por usuário nas principais entidades privadas. O middleware mantém as rotas de workspace em modo fail-closed enquanto `MULTITENANT_READY=false`; não habilite essa variável antes de validar a migração e a suíte de isolamento. A interface utiliza a API configurada por `VITE_API_URL` (ou `/api` com proxy).
 
 ## Requisitos
 
@@ -219,8 +237,8 @@ Mantenha os dois terminais abertos enquanto estiver utilizando a aplicação.
 ## Configuração de ambiente
 
 1. Copie `.env.example` para `.env`.
-2. Para análise inteligente de currículo, configure `GEMINI_API_KEY`. Sem essa chave, a importação utiliza o extrator básico.
-3. Para lembretes e envio de candidaturas por e-mail, configure as variáveis SMTP.
+2. Para análise inteligente de currículo, configure `GEMINI_API_KEY`. Sem essa chave, a importação utiliza o extrator básico. Mesmo com a chave configurada, o texto do currículo só será enviado ao Gemini quando a pessoa marcar a autorização explícita na tela de importação.
+3. Para lembretes e envio de candidaturas por e-mail, configure as variáveis SMTP. Os lembretes do usuário permanecem bloqueados até existir configuração individual por conta.
 4. Nunca publique o arquivo `.env`, senhas ou chaves de API no GitHub.
 
 A variável `JOBFINDER_DB_PATH` permite indicar outro caminho para o banco SQLite. Consulte o arquivo [.env.example](.env.example) para ver as opções disponíveis.
@@ -262,6 +280,10 @@ O GitHub Actions executa duas verificações em pushes para `main` e branches `f
 ## Documentação adicional
 
 - [Inteligência de mercado, Skill Gap, plano e autoavaliação](docs/MARKET_INTELLIGENCE.md)
+- [Auditoria do repositório](docs/AUDITORIA.md)
+- [Decisões técnicas e de segurança](docs/DECISOES.md)
+- [Progresso de execução](docs/PROGRESSO.md)
+- [Arquitetura Proof-to-Opportunity](docs/PROOF_TO_OPPORTUNITY_ENGINE.md)
 - [Arquitetura proposta para avaliação segura de código](docs/SECURE_CODE_ASSESSMENT.md)
 
 ## Estrutura de diretórios
@@ -306,14 +328,14 @@ O arquivo `jobfinder/app.py` mantém a interface Streamlit anterior como referê
 
 ## Limitações conhecidas
 
-- A aplicação ainda é destinada à execução local; não há deployment público nem autenticação multiusuário nesta versão.
+- O código possui autenticação por sessão, recuperação de senha, CSRF e escopo por conta nas entidades privadas. A rota autenticada do workspace permanece bloqueada por padrão (`MULTITENANT_READY=false`) até concluir a revisão de isolamento, validar o schema no banco de destino e habilitar a variável conscientemente. O manifesto Render mantém a demonstração como somente leitura (`DEMO_READ_ONLY=true`); não é uma autorização para receber dados pessoais reais nem uma declaração de SaaS pronto para produção.
 - O envio automático de candidaturas só ocorre por e-mail quando há contato publicado na vaga e SMTP configurado.
 - A coleta depende de serviços externos e mudanças nos sites podem interromper fontes que leem páginas públicas.
 - A pontuação de compatibilidade é heurística e não prevê contratação.
 - A inteligência de mercado depende das vagas coletadas, da qualidade das descrições e da taxonomia determinística inicial.
 - A ausência de uma competência no texto da vaga ou no currículo não prova que ela não seja exigida ou conhecida.
 - Desafios atuais são autoavaliações; ainda não há execução automatizada e isolada de código.
-- Uma implantação pública exige autenticação, autorização, proteção de dados, configuração de serviços e revisão de segurança.
+- O deploy de demonstração no Render está configurado, mas `autoDeploy=false` e `DEMO_READ_ONLY=true`. Não houve publicação nem migração de dados nesta branch. A liberação pública exige revisão endpoint a endpoint, validação das migrações/schema e configuração segura de sessões, e-mail e banco.
 
 ## Próximos passos
 

@@ -77,30 +77,119 @@ def _missing_columns():
 
 
 
-def validate_multitenant_schema() -> None:
-    """Impede liberar o SaaS se candidaturas ainda tiverem unicidade global por vaga."""
-    inspector = inspect(engine)
-    if not inspector.has_table("applications"):
-        raise RuntimeError("Schema SaaS inválido: tabela applications ausente.")
-
-    unique_sets = {
-        tuple(sorted(item.get("column_names") or ()))
-        for item in inspector.get_unique_constraints("applications")
-    }
-    unique_sets.update(
-        tuple(sorted(index.get("column_names") or ()))
-        for index in inspector.get_indexes("applications")
-        if index.get("unique")
+def validate_multitenant_schema(connection=None) -> None:
+    """Valida propriedade, FKs e unicidade usando a conexão fornecida, quando houver."""
+    if connection is None:
+        with engine.connect() as owned_connection:
+            return validate_multitenant_schema(owned_connection)
+    inspector = inspect(connection)
+    user_scoped_tables = (
+        "user_sessions", "password_reset_tokens", "profile", "job_matches",
+        "applications", "application_events", "tasks", "notification_log",
+        "agent_settings", "application_attempts", "development_plan_items",
+        "skill_assessment_attempts", "career_evidence", "career_evidence_reviews", "smtp_accounts", "user_resumes",
     )
-    if ("job_id", "user_id") not in unique_sets:
-        raise RuntimeError(
-            "Schema SaaS inválido: falta unicidade composta (user_id, job_id) em applications."
+
+    for table in user_scoped_tables:
+        if not inspector.has_table(table):
+            raise RuntimeError(f"Schema SaaS inválido: tabela {table} ausente.")
+        columns = {column["name"] for column in inspector.get_columns(table)}
+        if "user_id" not in columns:
+            raise RuntimeError(f"Schema SaaS inválido: coluna {table}.user_id ausente.")
+        owner_fk_exists = any(
+            fk.get("constrained_columns") == ["user_id"]
+            and fk.get("referred_table") == "users"
+            and fk.get("referred_columns") == ["id"]
+            for fk in inspector.get_foreign_keys(table)
         )
-    if ("job_id",) in unique_sets:
-        raise RuntimeError(
-            "Schema SaaS inválido: existe unicidade global antiga em applications.job_id. "
-            "Migre a constraint antes de ativar MULTITENANT_READY."
+        if not owner_fk_exists:
+            raise RuntimeError(
+                f"Schema SaaS inválido: {table}.user_id precisa referenciar users.id."
+            )
+        unowned = connection.execute(
+            text(f'SELECT COUNT(*) FROM "{table}" WHERE user_id IS NULL')
+        ).scalar_one()
+        if unowned:
+            raise RuntimeError(
+                f"Schema SaaS inválido: {table} contém {unowned} registro(s) sem proprietário. "
+                "Resolva os dados legados por procedimento explícito antes de liberar o acesso."
+            )
+
+    def unique_sets(table: str) -> set[tuple[str, ...]]:
+        result = {
+            tuple(sorted(item.get("column_names") or ()))
+            for item in inspector.get_unique_constraints(table)
+        }
+        result.update(
+            tuple(sorted(index.get("column_names") or ()))
+            for index in inspector.get_indexes(table)
+            if index.get("unique")
         )
+        return result
+
+    # O ledger e as revisões são dados pessoais: validar também a relação
+    # entre a conta da revisão e a conta proprietária da evidência.
+    for table in ("career_evidence", "career_evidence_reviews"):
+        columns = {column["name"]: column for column in inspector.get_columns(table)}
+        if columns["user_id"]["nullable"]:
+            raise RuntimeError(
+                f"Schema SaaS inválido: {table}.user_id não pode aceitar NULL."
+            )
+    review_fks = inspector.get_foreign_keys("career_evidence_reviews")
+    if not any(
+        fk.get("constrained_columns") == ["evidence_id"]
+        and fk.get("referred_table") == "career_evidence"
+        and fk.get("referred_columns") == ["id"]
+        for fk in review_fks
+    ):
+        raise RuntimeError(
+            "Schema SaaS inválido: career_evidence_reviews.evidence_id precisa referenciar career_evidence.id."
+        )
+    mismatched_reviews = connection.execute(text(
+        "SELECT COUNT(*) FROM career_evidence_reviews r "
+        "LEFT JOIN career_evidence e ON e.id = r.evidence_id "
+        "WHERE e.id IS NULL OR r.user_id != e.user_id"
+    )).scalar_one()
+    if mismatched_reviews:
+        raise RuntimeError(
+            f"Schema SaaS inválido: {mismatched_reviews} revisão(ões) sem evidência correspondente ou vinculada(s) a outra conta."
+        )
+
+    # O histórico de candidatura também é privado: não basta o evento
+    # pertencer a um usuário válido; ele precisa pertencer ao dono da candidatura.
+    mismatched_application_events = connection.execute(text(
+        "SELECT COUNT(*) FROM application_events ev "
+        "LEFT JOIN applications a ON a.id = ev.application_id "
+        "WHERE a.id IS NULL OR ev.user_id != a.user_id"
+    )).scalar_one()
+    if mismatched_application_events:
+        raise RuntimeError(
+            f"Schema SaaS inválido: {mismatched_application_events} evento(s) de candidatura "
+            "sem candidatura correspondente ou vinculados a outra conta."
+        )
+
+    for table in ("applications", "job_matches"):
+        constraints = unique_sets(table)
+        if ("job_id", "user_id") not in constraints:
+            raise RuntimeError(
+                f"Schema SaaS inválido: falta unicidade composta (user_id, job_id) em {table}."
+            )
+        if ("job_id",) in constraints:
+            raise RuntimeError(
+                f"Schema SaaS inválido: existe unicidade global antiga em {table}.job_id."
+            )
+
+    for table in ("smtp_accounts", "user_resumes"):
+        if ("user_id",) not in unique_sets(table):
+            raise RuntimeError(
+                f"Schema SaaS inválido: falta unicidade por usuário em {table}.user_id."
+            )
+
+    for table in ("profile", "agent_settings"):
+        if ("user_id",) not in unique_sets(table):
+            raise RuntimeError(
+                f"Schema SaaS inválido: falta unicidade por usuário em {table}.user_id."
+            )
 
 
 def init_db():

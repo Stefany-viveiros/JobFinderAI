@@ -1,4 +1,7 @@
+import io
+
 import pytest
+from docx import Document
 from fastapi.testclient import TestClient
 
 from jobfinder import api as api_module
@@ -23,6 +26,11 @@ def client(monkeypatch, test_user):
 
 def test_backend_boots_and_core_routes_respond(client):
     assert client.get("/api/health").json()["status"] == "ok"
+    readiness = client.get("/api/health/ready")
+    assert readiness.status_code == 200
+    assert readiness.json()["status"] == "ready"
+    assert readiness.json()["checks"]["database"] == "ok"
+    assert "RESUME_STORAGE_KEY" not in readiness.text and "SMTP_CREDENTIALS_KEY" not in readiness.text
     for route in ("/api/dashboard", "/api/jobs", "/api/applications", "/api/tasks", "/api/profile",
                   "/api/attempts", "/api/agent/settings", "/api/sources", "/api/notifications"):
         assert client.get(route).status_code == 200, route
@@ -50,18 +58,192 @@ def test_apply_endpoint_requires_explicit_confirmation(client, db):
     assert client.post(f"/api/jobs/{job.id}/apply", json={"confirmed": True}).status_code == 409
 
 
-def test_prepare_then_approve_flow_with_failure_then_success(client, db, ready_profile, smtp_on, monkeypatch):
+def test_prepare_then_approve_is_blocked_without_user_resume_attachment(client, db, ready_profile, monkeypatch):
+    from cryptography.fernet import Fernet
+
+    monkeypatch.setenv("SMTP_CREDENTIALS_KEY", Fernet.generate_key().decode("ascii"))
+    config = {
+        "host": "smtp.gmail.com", "port": 587, "username": "ana@test.dev",
+        "password": "smtp-test-secret", "from_email": "ana@test.dev", "use_tls": True,
+    }
+    assert client.put("/api/agent/smtp", json=config).status_code == 200
     job = make_job(db)
     attempt = client.post(f"/api/jobs/{job.id}/prepare").json()["attempt"]
-    assert attempt["status"] == "prepared" and "Python" in attempt["message"]
-    monkeypatch.setattr(applying, "_deliver", lambda m: (_ for _ in ()).throw(OSError("falhou")))
-    r = client.post(f"/api/attempts/{attempt['id']}/approve").json()
-    assert r["attempt"]["status"] == "failed" and "falhou" in r["message"]
-    assert client.get("/api/dashboard").json()["metrics"]["failed_applications"] == 1
-    monkeypatch.setattr(applying, "_deliver", lambda m: smtp_on.append(m))
-    r = client.post(f"/api/attempts/{attempt['id']}/approve").json()          # nova tentativa após falha
-    assert r["attempt"]["status"] == "sent"
-    assert client.post(f"/api/attempts/{attempt['id']}/cancel").status_code == 409
+    assert attempt["status"] == "manual_required"
+    assert attempt["channel"] == "manual"
+    assert "currículo" in attempt["detail"]
+
+    delivered = []
+    monkeypatch.setattr(applying, "_deliver", lambda m, smtp_config=None: delivered.append(m))
+    response = client.post(f"/api/attempts/{attempt['id']}/approve")
+    assert response.status_code == 400
+    assert "manual_required" in response.json()["detail"]
+    assert delivered == []
+    assert client.get("/api/dashboard").json()["metrics"]["failed_applications"] == 0
+
+
+def test_smtp_account_is_encrypted_private_and_used_for_delivery(client, db, ready_profile, monkeypatch, test_user):
+    from cryptography.fernet import Fernet
+    from jobfinder.models import SmtpAccount, User
+    from sqlalchemy import select
+
+    monkeypatch.setenv("SMTP_CREDENTIALS_KEY", Fernet.generate_key().decode("ascii"))
+    blocked = client.put("/api/agent/smtp", json={
+        "host": "127.0.0.1", "port": 25, "username": "x", "password": "x",
+        "from_email": "x@example.com", "use_tls": False,
+    })
+    assert blocked.status_code == 422
+    payload = {
+        "host": "smtp.gmail.com",
+        "port": 587,
+        "username": "stefany@example.com",
+        "password": "senha-super-secreta",
+        "from_email": "stefany@example.com",
+        "use_tls": True,
+    }
+    saved = client.put("/api/agent/smtp", json=payload)
+    assert saved.status_code == 200
+    assert saved.json()["smtp"]["configured"] is True
+    assert "password" not in saved.json()["smtp"]
+    account = db.scalar(select(SmtpAccount).where(SmtpAccount.user_id == test_user.id))
+    assert account.encrypted_password != payload["password"]
+    assert "senha-super-secreta" not in account.encrypted_password
+
+    # Se a chave de ambiente for perdida, o sistema informa que não pode enviar.
+    monkeypatch.delenv("SMTP_CREDENTIALS_KEY")
+    assert client.get("/api/agent/smtp").json()["ready"] is False
+    assert client.get("/api/agent/settings").json()["email_ready"] is False
+    monkeypatch.setenv("SMTP_CREDENTIALS_KEY", Fernet.generate_key().decode("ascii"))
+    # Restaura a chave original usada para cifrar a credencial.
+    from jobfinder.smtp_credentials import encrypt_password
+    account.encrypted_password = encrypt_password(payload["password"])
+    db.commit()
+
+    # Uma segunda conta não recebe nem os metadados SMTP da primeira.
+    second = User(
+        email="second-smtp@example.com", email_normalized="second-smtp@example.com",
+        full_name="Segunda conta", password_hash="not-used", role="user", is_active=True,
+    )
+    db.add(second)
+    db.flush()
+    db.add(SmtpAccount(
+        user_id=second.id, host="smtp.other.example", port=465,
+        username="other@example.com", encrypted_password=account.encrypted_password,
+        from_email="other@example.com", use_tls=True,
+    ))
+    db.commit()
+    second.password_hash = api_module.password_hasher.hash("OutraSenhaSegura123!")
+    db.commit()
+    assert client.get("/api/agent/smtp").json()["host"] == "smtp.gmail.com"
+    with TestClient(api_module.app, base_url="https://testserver") as second_client:
+        login = second_client.post("/api/auth/login", json={
+            "email": second.email, "password": "OutraSenhaSegura123!",
+        })
+        assert login.status_code == 200
+        csrf = second_client.get("/api/auth/me").json()["csrf_token"]
+        second_client.headers.update({"X-CSRF-Token": csrf})
+        assert second_client.get("/api/agent/smtp").json()["host"] == "smtp.other.example"
+        assert second_client.delete("/api/agent/smtp").status_code == 200
+    assert client.get("/api/agent/smtp").json()["host"] == "smtp.gmail.com"
+
+    captured = []
+    monkeypatch.setattr(applying, "_deliver", lambda msg, smtp_config=None: captured.append((msg, smtp_config)))
+    job = make_job(db)
+    attempt = client.post(f"/api/jobs/{job.id}/prepare").json()["attempt"]
+    assert attempt["channel"] == "manual" and attempt["status"] == "manual_required"
+    assert "currículo" in attempt["detail"]
+    blocked_send = client.post(f"/api/attempts/{attempt['id']}/approve")
+    assert blocked_send.status_code == 400
+    assert captured == []
+
+    deleted = client.delete("/api/agent/smtp")
+    assert deleted.status_code == 200
+    assert client.get("/api/agent/smtp").json() == {"configured": False}
+
+
+
+def test_user_resume_is_stored_encrypted_and_attached_only_to_owner(client, db, ready_profile, test_user, monkeypatch):
+    from cryptography.fernet import Fernet
+    from jobfinder.models import User, UserResume
+    from jobfinder.smtp_credentials import encrypt_password
+
+    monkeypatch.setenv("SMTP_CREDENTIALS_KEY", Fernet.generate_key().decode("ascii"))
+    monkeypatch.setenv("RESUME_STORAGE_KEY", Fernet.generate_key().decode("ascii"))
+    smtp = {
+        "host": "smtp.gmail.com", "port": 587, "username": "ana@test.dev",
+        "password": "smtp-test-secret", "from_email": "ana@test.dev", "use_tls": True,
+    }
+    assert client.put("/api/agent/smtp", json=smtp).status_code == 200
+
+    document = Document()
+    document.add_paragraph("Ana Teste")
+    document.add_paragraph("FORMAÇÃO ACADÊMICA")
+    document.add_paragraph("Análise e Desenvolvimento de Sistemas | FAM")
+    document.add_paragraph("HABILIDADES TÉCNICAS")
+    document.add_paragraph("Python, FastAPI e Git")
+    buffer = io.BytesIO()
+    document.save(buffer)
+    resume_bytes = buffer.getvalue()
+    upload = client.post(
+        "/api/profile/import",
+        files={"file": ("curriculo.docx", resume_bytes,
+                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+        data={"store_for_applications": "true"},
+    )
+    assert upload.status_code == 200, upload.text
+    assert upload.json()["resume_storage_saved"] is True
+
+    stored = db.query(UserResume).filter_by(user_id=test_user.id).one()
+    assert stored.encrypted_content.encode("ascii") != resume_bytes
+    assert "Ana Teste" not in stored.encrypted_content
+    assert client.get("/api/profile/resume").json()["configured"] is True
+    assert client.get("/api/agent/settings").json()["email_ready"] is True
+
+    # Uma segunda conta não enxerga o currículo da primeira.
+    second = User(
+        email="resume-other@example.com", email_normalized="resume-other@example.com",
+        full_name="Outra pessoa", password_hash=api_module.password_hasher.hash("OutraSenhaSegura123!"),
+        role="user", is_active=True,
+    )
+    db.add(second)
+    db.commit()
+    with TestClient(api_module.app, base_url="https://testserver") as other_client:
+        login = other_client.post("/api/auth/login", json={
+            "email": second.email, "password": "OutraSenhaSegura123!",
+        })
+        assert login.status_code == 200
+        csrf = other_client.get("/api/auth/me").json()["csrf_token"]
+        other_client.headers.update({"X-CSRF-Token": csrf})
+        assert other_client.get("/api/profile/resume").json()["configured"] is False
+
+    delivered = []
+    monkeypatch.setattr(applying, "_deliver", lambda msg, smtp_config=None: delivered.append((msg, smtp_config)))
+    job = make_job(db)
+    prepared = client.post(f"/api/jobs/{job.id}/prepare").json()["attempt"]
+    assert prepared["channel"] == "email" and prepared["status"] == "prepared"
+    sent = client.post(f"/api/attempts/{prepared['id']}/approve")
+    assert sent.status_code == 200, sent.text
+    assert sent.json()["attempt"]["status"] == "sent"
+    assert delivered[0][1]["password"] == "smtp-test-secret"
+    attachments = list(delivered[0][0].iter_attachments())
+    assert len(attachments) == 1
+    assert attachments[0].get_filename() == "curriculo.docx"
+    assert attachments[0].get_payload(decode=True) == resume_bytes
+
+    assert client.delete("/api/profile/resume").status_code == 200
+    assert client.get("/api/profile/resume").json()["configured"] is False
+    assert client.get("/api/agent/settings").json()["email_ready"] is False
+
+
+def test_saas_mode_never_uses_global_smtp_credentials(client, db, ready_profile, smtp_on):
+    job = make_job(db)
+    response = client.post(f"/api/jobs/{job.id}/prepare")
+    assert response.status_code == 200
+    attempt = response.json()["attempt"]
+    assert attempt["channel"] == "manual"
+    assert attempt["status"] == "manual_required"
+    assert "SMTP individual" in attempt["detail"]
+    assert smtp_on == []
 
 
 def test_job_filters(client, db):
@@ -85,10 +267,10 @@ def test_manual_job_creation_and_duplicate_url(client):
 def test_collect_rejects_link_only_sources_and_reports_filters(client, monkeypatch):
     r = client.post("/api/jobs/collect", json={"sources": ["Indeed"]})
     assert r.status_code == 400 and "link" in r.json()["detail"].lower()
-    items = [{"source": "Remotive", "title": "Estágio Dev Web", "company": "A", "url": "https://r.test/1", "description": "x"},
-             {"source": "Remotive", "title": "Chef de Cozinha", "company": "B", "url": "https://r.test/2", "description": "y"}]
+    items = [{"source": "Arbeitnow", "title": "Estágio Dev Web", "company": "A", "url": "https://a.test/1", "description": "x"},
+             {"source": "Arbeitnow", "title": "Chef de Cozinha", "company": "B", "url": "https://a.test/2", "description": "y"}]
     monkeypatch.setattr(api_module, "collect_selected", lambda names: (items, ["Nerdin: Timeout"]))
-    r = client.post("/api/jobs/collect", json={"sources": ["Remotive"]}).json()
+    r = client.post("/api/jobs/collect", json={"sources": ["Arbeitnow"], "only_target": False}).json()
     assert (r["saved"], r["filtered_out"], r["errors"]) == (1, 1, ["Nerdin: Timeout"])
 
 
@@ -292,6 +474,30 @@ def test_two_accounts_cannot_read_or_modify_each_others_private_data(client, db,
         assert client.get("/api/profile").json()["name"] == "Conta Primária"
         assert second.get("/api/profile").json()["name"] != "Conta Primária"
 
+        # IDs de registros filhos do perfil também não autorizam edição cruzada.
+        primary_profile = client.put("/api/profile", json={
+            "educations": [{
+                "course": "Engenharia da Computação",
+                "institution": "Instituição original",
+                "status": "Em andamento",
+            }],
+        })
+        assert primary_profile.status_code == 200
+        foreign_education = primary_profile.json()["profile"]["educations"][0]
+        second_profile_update = second.put("/api/profile", json={
+            "educations": [{
+                "id": foreign_education["id"],
+                "course": "Curso alterado indevidamente",
+                "institution": "Instituição atacante",
+                "status": "Concluído",
+            }],
+        })
+        assert second_profile_update.status_code == 200
+        assert second_profile_update.json()["profile"]["educations"][0]["id"] != foreign_education["id"]
+        primary_education_after = client.get("/api/profile").json()["educations"][0]
+        assert primary_education_after["course"] == "Engenharia da Computação"
+        assert primary_education_after["institution"] == "Instituição original"
+
         # Tarefas e candidaturas não podem ser lidas nem alteradas pela outra conta.
         task_response = client.post("/api/tasks", json={
             "title": "Tarefa privada da primeira conta",
@@ -379,6 +585,35 @@ def test_two_accounts_cannot_read_or_modify_each_others_private_data(client, db,
             "rubric_answers": {},
         }).status_code == 404
 
+        import json
+        from jobfinder.models import CareerEvidence, SkillAssessmentAttempt
+        attempt = db.get(SkillAssessmentAttempt, assessment_id)
+        criteria = json.loads(attempt.rubric_json)
+        submitted = client.post(f"/api/market/assessments/{assessment_id}/submit", json={
+            "response_text": "Implementei a solução e documentei as decisões técnicas do desafio.",
+            "evidence_url": "",
+            "rubric_answers": {item["id"]: True for item in criteria},
+        })
+        assert submitted.status_code == 200
+        assert submitted.json()["evidence"]["verification_level"] == "self_assessed"
+        ledger_items = client.get("/api/career-evidence?active_only=true").json()["items"]
+        challenge_evidence = next(
+            item for item in ledger_items
+            if item["source_type"] == "self_assessment" and item["source_id"] == assessment_id
+        )
+        assert challenge_evidence["verification_level"] == "self_assessed"
+        twin_ledger = client.get("/api/career-twin").json()["evidence_ledger"]
+        assert any(
+            item["source_type"] == "self_assessment"
+            and item["source_id"] == assessment_id
+            and item["verification_level"] == "self_assessed"
+            for item in twin_ledger
+        )
+        assert db.query(CareerEvidence).filter(
+            CareerEvidence.user_id == test_user.id,
+            CareerEvidence.source_key == f"challenge_attempt:{assessment_id}",
+        ).count() == 1
+
         db.add(NotificationLog(
             user_id=test_user.id,
             task_id=None,
@@ -391,7 +626,8 @@ def test_two_accounts_cannot_read_or_modify_each_others_private_data(client, db,
         assert second.get("/api/notifications").json() == []
 
 def test_career_twin_returns_traceable_profile_evidence(client, db, ready_profile):
-    from jobfinder.models import PortfolioProject, Skill, SkillAssessmentAttempt
+    from datetime import datetime
+    from jobfinder.models import PortfolioProject, Skill, SkillAssessmentAttempt, DevelopmentPlanItem
 
     project = PortfolioProject(
         profile_id=ready_profile.id,
@@ -412,9 +648,24 @@ def test_career_twin_returns_traceable_profile_evidence(client, db, ready_profil
     )
     db.add(sql)
     db.flush()
+    plan_item = DevelopmentPlanItem(
+        user_id=ready_profile.user_id,
+        skill_id=sql.id,
+        title="Concluir prática de SQL",
+        objective="Construir uma consulta com JOIN e agregação.",
+        activity="Criar e documentar consulta.",
+        estimated_hours=4,
+        status="completed",
+        progress_percent=100,
+        created_at=datetime.utcnow(),
+        completed_at=datetime.utcnow(),
+    )
+    db.add(plan_item)
+    db.flush()
     db.add(SkillAssessmentAttempt(
         user_id=ready_profile.user_id,
         skill_id=sql.id,
+        plan_item_id=plan_item.id,
         challenge_title="Desafio SQL",
         challenge_prompt="Consulta com JOIN e agregação",
         rubric_json="[]",
@@ -424,6 +675,7 @@ def test_career_twin_returns_traceable_profile_evidence(client, db, ready_profil
         score=75,
         feedback="Autoavaliação registrada.",
         status="self_reviewed",
+        submitted_at=datetime.utcnow(),
     ))
     db.commit()
 
@@ -442,7 +694,15 @@ def test_career_twin_returns_traceable_profile_evidence(client, db, ready_profil
     sql_skill = next(item for item in payload["skills"] if item["name"] == "SQL")
     assert sql_skill["status"] == "self_assessed"
     assert sql_skill["self_assessment"]["result_kind"] == "self_assessment"
+    assert sql_skill["self_assessment"]["plan_item_id"] == plan_item.id
     assert "não é validação independente" in sql_skill["self_assessment"]["notice"]
+
+    timeline = payload["timeline"]
+    assert any(item["event_type"] == "development_goal_completed" for item in timeline)
+    challenge_event = next(item for item in timeline if item["event_type"] == "self_assessment_submitted")
+    assert challenge_event["status"] == "self_reviewed"
+    assert "Não representa validação independente" in challenge_event["detail"]
+    assert f"Meta vinculada: #{plan_item.id}" in challenge_event["detail"]
 
 
 def test_career_twin_is_isolated_between_accounts(client, db, test_user, ready_profile):
@@ -484,3 +744,752 @@ def test_career_twin_is_isolated_between_accounts(client, db, test_user, ready_p
     assert second_payload["profile"]["name"] == "Segunda Pessoa"
     assert "React" in {item["name"] for item in second_payload["skills"]}
     assert "Python" not in {item["name"] for item in second_payload["skills"]}
+
+
+
+def _build_docx_resume():
+    document = Document()
+    document.add_paragraph("Pessoa de Teste")
+    document.add_paragraph("Desenvolvimento de software com Python, FastAPI e SQL.")
+    output = io.BytesIO()
+    document.save(output)
+    return output.getvalue()
+
+
+def _post_resume_import(client, *, allow_external_ai=None, content=None):
+    data = {}
+    if allow_external_ai is not None:
+        data["allow_external_ai"] = str(allow_external_ai).lower()
+    return client.post(
+        "/api/profile/import",
+        files={
+            "file": (
+                "curriculo.docx",
+                content if content is not None else _build_docx_resume(),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+        data=data,
+    )
+
+
+def test_resume_import_requires_explicit_consent_before_calling_gemini(client, monkeypatch):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(api_module, "settings", SimpleNamespace(gemini_api_key="chave-de-teste"))
+    gemini_calls = []
+    monkeypatch.setattr(
+        api_module, "analyze_resume_with_gemini",
+        lambda text: gemini_calls.append(text) or {"name": "Pessoa analisada"},
+    )
+    monkeypatch.setattr(
+        api_module, "parse_resume",
+        lambda content, filename: {"name": "Pessoa extraída localmente"},
+    )
+
+    local = _post_resume_import(client)
+    assert local.status_code == 200
+    assert local.json()["analysis_mode"] == "basic"
+    assert local.json()["extracted"]["name"] == "Pessoa extraída localmente"
+    assert gemini_calls == []
+
+    external = _post_resume_import(client, allow_external_ai=True)
+    assert external.status_code == 200
+    assert external.json()["analysis_mode"] == "gemini"
+    assert gemini_calls == ["Pessoa de Teste\nDesenvolvimento de software com Python, FastAPI e SQL."]
+
+
+def test_resume_import_rejects_content_that_does_not_match_docx_extension(client):
+    response = _post_resume_import(client, content=b"isto nao e um arquivo DOCX")
+    assert response.status_code == 400
+    assert "DOCX válido" in response.json()["detail"]
+
+
+def test_resume_import_has_per_account_rate_limit(client, monkeypatch):
+    monkeypatch.setattr(
+        api_module, "extract_resume_text",
+        lambda content, filename: "Texto de currículo suficiente para análise.",
+    )
+    monkeypatch.setattr(
+        api_module, "parse_resume",
+        lambda content, filename: {"name": "Pessoa de Teste"},
+    )
+
+    for _ in range(5):
+        response = _post_resume_import(client)
+        assert response.status_code == 200
+
+    blocked = _post_resume_import(client)
+    assert blocked.status_code == 429
+    assert int(blocked.headers["Retry-After"]) > 0
+
+
+def test_attempt_actions_are_isolated_between_accounts(client, db, test_user):
+    from fastapi.testclient import TestClient
+    from jobfinder.api import password_hasher
+    from jobfinder.models import ApplicationAttempt, User
+
+    second_user = User(
+        email="attempt-isolation@example.com",
+        email_normalized="attempt-isolation@example.com",
+        full_name="Conta Secundária",
+        password_hash=password_hasher.hash("SenhaSeguraDaSegundaConta123!"),
+        role="user",
+        is_active=True,
+    )
+    db.add(second_user)
+    db.commit()
+
+    job = make_job(db)
+    attempts = [
+        ApplicationAttempt(
+            user_id=test_user.id, job_id=job.id, status="prepared", channel="email",
+            recipient="recrutamento@example.test", subject="Candidatura de teste",
+            message="Mensagem privada da primeira conta.",
+        ),
+        ApplicationAttempt(
+            user_id=test_user.id, job_id=job.id, status="prepared", channel="email",
+            recipient="recrutamento@example.test", subject="Outra candidatura de teste",
+            message="Outra mensagem privada da primeira conta.",
+        ),
+    ]
+    db.add_all(attempts)
+    db.commit()
+    cancel_id, approve_id = attempts[0].id, attempts[1].id
+
+    with TestClient(api_module.app, base_url="https://testserver") as second:
+        login = second.post("/api/auth/login", json={
+            "email": second_user.email,
+            "password": "SenhaSeguraDaSegundaConta123!",
+        })
+        assert login.status_code == 200
+        session = second.get("/api/auth/me")
+        assert session.status_code == 200
+        second.headers.update({"X-CSRF-Token": session.json()["csrf_token"]})
+
+        assert second.get("/api/attempts").json() == []
+        assert second.post(f"/api/attempts/{cancel_id}/cancel").status_code == 404
+        assert second.post(f"/api/attempts/{approve_id}/approve").status_code == 404
+
+    own_attempts = {item["id"]: item for item in client.get("/api/attempts").json()}
+    assert own_attempts[cancel_id]["status"] == "prepared"
+    assert own_attempts[approve_id]["status"] == "prepared"
+
+
+def test_workspace_remains_fail_closed_when_multitenant_gate_is_disabled(client, monkeypatch):
+    monkeypatch.setenv("MULTITENANT_READY", "false")
+    assert client.get("/api/dashboard").status_code == 503
+    assert client.get("/api/profile").status_code == 503
+    assert client.post("/api/tasks", json={
+        "title": "Não deve ser criada",
+        "notify": False,
+    }).status_code == 503
+
+
+def test_authenticated_writes_require_csrf_token(client):
+    client.headers.pop("X-CSRF-Token", None)
+    response = client.put("/api/agent/settings", json={
+        "auto_apply_enabled": False,
+        "require_approval": True,
+        "daily_limit": 5,
+        "min_score": 80,
+    })
+    assert response.status_code == 403
+
+
+
+def test_job_diagnosis_is_scoped_to_the_authenticated_users_job_list(client, db, test_user, ready_profile):
+    from fastapi.testclient import TestClient
+    from jobfinder.api import password_hasher
+    from jobfinder.models import User
+
+    job = make_job(
+        db,
+        description="Python é obrigatório. React é desejável.",
+        compatibility=82,
+    )
+    primary = client.get(f"/api/jobs/{job.id}/diagnosis")
+    assert primary.status_code == 200
+    payload = primary.json()
+    assert payload["compatibility"]["score"] == 82
+    assert payload["compatibility"]["label"].startswith("Triagem heurística")
+    by_name = {item["name"]: item for item in payload["requirements"]}
+    assert by_name["python"]["requirement_type"] == "mandatory"
+    assert by_name["react"]["requirement_type"] == "desirable"
+
+    second_user = User(
+        email="job-diagnosis-other@example.com",
+        email_normalized="job-diagnosis-other@example.com",
+        full_name="Outra Conta",
+        password_hash=password_hasher.hash("SenhaSeguraOutraConta123!"),
+        role="user",
+        is_active=True,
+    )
+    db.add(second_user)
+    db.commit()
+
+    with TestClient(api_module.app, base_url="https://testserver") as second:
+        login = second.post("/api/auth/login", json={
+            "email": second_user.email,
+            "password": "SenhaSeguraOutraConta123!",
+        })
+        assert login.status_code == 200
+        session = second.get("/api/auth/me")
+        second.headers.update({"X-CSRF-Token": session.json()["csrf_token"]})
+        assert second.get(f"/api/jobs/{job.id}/diagnosis").status_code == 404
+
+
+
+def test_application_status_history_records_manual_and_initial_transitions(client, db):
+    job = make_job(db)
+    sent = client.post(f"/api/jobs/{job.id}/apply", json={"confirmed": True})
+    assert sent.status_code == 200
+    application_id = sent.json()["application_id"]
+
+    initial = client.get(f"/api/applications/{application_id}/history")
+    assert initial.status_code == 200
+    assert initial.json()["has_history"] is True
+    assert len(initial.json()["events"]) == 1
+    first = initial.json()["events"][0]
+    assert first["previous_status"] == ""
+    assert first["new_status"] == "Candidatura enviada"
+    assert first["source"] == "manual_confirmed"
+
+    updated = client.put(f"/api/applications/{application_id}", json={
+        "status": "Entrevista",
+        "applied_at": "2026-11-12",
+        "deadline": None,
+        "recruiter": "Pessoa recrutadora",
+        "notes": "Entrevista técnica agendada.",
+    })
+    assert updated.status_code == 200
+    history = client.get(f"/api/applications/{application_id}/history").json()
+    assert len(history["events"]) == 2
+    last = history["events"][1]
+    assert last["previous_status"] == "Candidatura enviada"
+    assert last["new_status"] == "Entrevista"
+    assert last["source"] == "manual"
+    assert last["note"] == "Entrevista técnica agendada."
+    assert "não são inferidas retroativamente" in history["notice"]
+
+    # Salvar observações sem alterar a etapa não cria eventos duplicados.
+    unchanged = client.put(f"/api/applications/{application_id}", json={
+        "status": "Entrevista",
+        "applied_at": "2026-11-12",
+        "deadline": None,
+        "recruiter": "Pessoa recrutadora",
+        "notes": "Atualizei as observações.",
+    })
+    assert unchanged.status_code == 200
+    final = client.get(f"/api/applications/{application_id}/history").json()
+    assert len(final["events"]) == 2
+
+
+def test_application_history_is_isolated_between_accounts(client, db, test_user):
+    from fastapi.testclient import TestClient
+    from jobfinder.api import password_hasher
+    from jobfinder.models import User
+
+    job = make_job(db)
+    response = client.post(f"/api/jobs/{job.id}/apply", json={"confirmed": True})
+    application_id = response.json()["application_id"]
+
+    second_user = User(
+        email="application-history-other@example.com",
+        email_normalized="application-history-other@example.com",
+        full_name="Outra Conta",
+        password_hash=password_hasher.hash("SenhaSeguraOutraConta123!"),
+        role="user",
+        is_active=True,
+    )
+    db.add(second_user)
+    db.commit()
+
+    with TestClient(api_module.app, base_url="https://testserver") as second:
+        login = second.post("/api/auth/login", json={
+            "email": second_user.email,
+            "password": "SenhaSeguraOutraConta123!",
+        })
+        assert login.status_code == 200
+        session = second.get("/api/auth/me")
+        assert session.status_code == 200
+        second.headers.update({"X-CSRF-Token": session.json()["csrf_token"]})
+        assert second.get(f"/api/applications/{application_id}/history").status_code == 404
+
+
+
+def test_attempt_list_uses_private_job_match_not_legacy_global_job_score(client, db, test_user):
+    from fastapi.testclient import TestClient
+    from jobfinder.api import password_hasher
+    from jobfinder.models import ApplicationAttempt, JobMatch, User
+    from sqlalchemy import select
+
+    job = make_job(db, compatibility=99)
+    primary_match = db.scalar(select(JobMatch).where(
+        JobMatch.user_id == test_user.id,
+        JobMatch.job_id == job.id,
+    ))
+    primary_match.compatibility = 83
+    primary_match.missing_reasons = "Lacuna privada da primeira conta"
+
+    # Simula legado: estes campos já não são a fonte de score para contas.
+    job.compatibility = 99
+    job.missing_reasons = "LEGADO GLOBAL NAO DEVE SER EXIBIDO"
+
+    second_user = User(
+        email="attempt-list-second@example.com",
+        email_normalized="attempt-list-second@example.com",
+        full_name="Segunda Conta",
+        password_hash=password_hasher.hash("SenhaSeguraOutraConta123!"),
+        role="user",
+        is_active=True,
+    )
+    db.add(second_user)
+    db.flush()
+    db.add(JobMatch(
+        user_id=second_user.id,
+        job_id=job.id,
+        compatibility=21,
+        match_reasons="Apenas segunda conta",
+        missing_reasons="Lacuna privada da segunda conta",
+    ))
+    db.add_all([
+        ApplicationAttempt(
+            user_id=test_user.id,
+            job_id=job.id,
+            status="prepared",
+            channel="manual",
+            message="Texto da primeira conta",
+        ),
+        ApplicationAttempt(
+            user_id=second_user.id,
+            job_id=job.id,
+            status="prepared",
+            channel="manual",
+            message="Texto da segunda conta",
+        ),
+    ])
+    db.commit()
+
+    primary = client.get("/api/attempts").json()
+    assert len(primary) == 1
+    assert primary[0]["job"]["compatibility"] == 83
+    assert primary[0]["job"]["missing_reasons"] == "Lacuna privada da primeira conta"
+    assert "LEGADO GLOBAL" not in primary[0]["job"]["missing_reasons"]
+
+    with TestClient(api_module.app, base_url="https://testserver") as second:
+        login = second.post("/api/auth/login", json={
+            "email": second_user.email,
+            "password": "SenhaSeguraOutraConta123!",
+        })
+        assert login.status_code == 200
+        session = second.get("/api/auth/me")
+        assert session.status_code == 200
+        second.headers.update({"X-CSRF-Token": session.json()["csrf_token"]})
+
+        secondary = second.get("/api/attempts").json()
+        assert len(secondary) == 1
+        assert secondary[0]["job"]["compatibility"] == 21
+        assert secondary[0]["job"]["missing_reasons"] == "Lacuna privada da segunda conta"
+        assert secondary[0]["job"]["missing_reasons"] != primary[0]["job"]["missing_reasons"]
+
+
+def test_account_rate_limit_is_shared_across_client_ips(db):
+    from fastapi import HTTPException, Request
+    from jobfinder.api import _enforce_rate_limit
+
+    def request_from(ip):
+        return Request({
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": "1.1",
+            "method": "POST",
+            "scheme": "https",
+            "path": "/api/profile/import",
+            "raw_path": b"/api/profile/import",
+            "query_string": b"",
+            "headers": [],
+            "client": (ip, 54321),
+            "server": ("jobfinder.test", 443),
+        })
+
+    # O mesmo usuário não ganha uma nova cota ao trocar de IP.
+    _enforce_rate_limit(
+        db, request_from("203.0.113.10"),
+        scope="resume-import-user", subject="user-42",
+        limit=1, window_seconds=3600,
+    )
+    with pytest.raises(HTTPException) as blocked:
+        _enforce_rate_limit(
+            db, request_from("198.51.100.20"),
+            scope="resume-import-user", subject="user-42",
+            limit=1, window_seconds=3600,
+        )
+    assert blocked.value.status_code == 429
+
+    # A conta diferente mantém sua própria janela, mesmo que a origem coincida.
+    _enforce_rate_limit(
+        db, request_from("203.0.113.10"),
+        scope="resume-import-user", subject="user-43",
+        limit=1, window_seconds=3600,
+    )
+
+
+def test_job_actions_require_opportunity_linked_to_authenticated_account(client, db, test_user):
+    from jobfinder.models import Job, JobMatch, User
+    from jobfinder.api import password_hasher
+
+    other_user = User(
+        email="job-owner@example.com",
+        email_normalized="job-owner@example.com",
+        full_name="Pessoa proprietária da vaga",
+        password_hash=password_hasher.hash("SenhaDaOutraConta123!"),
+        role="user",
+        is_active=True,
+    )
+    db.add(other_user)
+    db.flush()
+    foreign_job = Job(
+        source="Teste",
+        title="Vaga privada de outra conta",
+        company="Empresa externa",
+        description="Descrição da vaga",
+        location="Remoto",
+        modality="Remoto",
+        job_type="Estágio",
+        url="https://foreign-job.test/private-opportunity",
+        compatibility=95,
+        level="estagio",
+    )
+    db.add(foreign_job)
+    db.flush()
+    db.add(JobMatch(
+        user_id=other_user.id,
+        job_id=foreign_job.id,
+        compatibility=95,
+        is_archived=False,
+    ))
+    db.commit()
+
+    # Conhecer um ID global não concede acesso à oportunidade de outra conta.
+    assert client.post("/api/tasks", json={
+        "title": "Tarefa vinculada indevidamente",
+        "job_id": foreign_job.id,
+        "notify": False,
+    }).status_code == 404
+    assert client.patch(f"/api/jobs/{foreign_job.id}/favorite").status_code == 404
+    assert client.post(f"/api/jobs/{foreign_job.id}/apply", json={
+        "confirmed": True,
+    }).status_code == 404
+    assert client.post(f"/api/jobs/{foreign_job.id}/prepare").status_code == 404
+
+    # Nenhuma operação negada deve criar dados privados para a conta atacante.
+    assert client.get("/api/tasks").json() == []
+    assert client.get("/api/applications").json() == []
+    assert client.get("/api/attempts").json() == []
+
+
+def test_multitenant_schema_validator_fails_closed_on_legacy_unowned_rows(db):
+    from jobfinder.db import validate_multitenant_schema
+    from jobfinder.models import Task
+
+    # Um schema recém-criado deve satisfazer as FKs e constraints necessárias.
+    validate_multitenant_schema()
+
+    legacy_task = Task(
+        user_id=None,
+        title="Tarefa legada sem proprietário",
+        description="Não pode ser exposta a uma conta nova.",
+        notify=False,
+    )
+    db.add(legacy_task)
+    db.commit()
+
+    with pytest.raises(RuntimeError, match="sem proprietário"):
+        validate_multitenant_schema()
+
+    db.delete(legacy_task)
+    db.commit()
+    validate_multitenant_schema()
+
+
+def test_cors_middleware_allows_only_configured_origins(client):
+    allowed = client.options("/api/auth/login", headers={
+        "Origin": "http://localhost:5173",
+        "Access-Control-Request-Method": "POST",
+    })
+    assert allowed.status_code == 200
+    assert allowed.headers.get("access-control-allow-origin") == "http://localhost:5173"
+    assert allowed.headers.get("access-control-allow-credentials") == "true"
+
+    denied = client.options("/api/auth/login", headers={
+        "Origin": "https://untrusted.example",
+        "Access-Control-Request-Method": "POST",
+    })
+    assert denied.status_code == 400
+    assert denied.headers.get("access-control-allow-origin") is None
+
+
+def test_career_evidence_ledger_versions_profile_sources_and_is_account_scoped(client, test_user, db):
+    from sqlalchemy import select
+    from jobfinder.models import CareerEvidence
+
+    first = client.put("/api/profile", json={
+        "portfolio_projects": [{
+            "name": "Projeto de API",
+            "description": "API backend construída com Python e FastAPI.",
+            "technologies": "Python, FastAPI",
+            "status": "Em desenvolvimento",
+        }]
+    })
+    assert first.status_code == 200
+    assert first.json()["evidence_sync"]["created"] >= 2
+
+    initial = client.get("/api/career-evidence?active_only=true").json()["items"]
+    assert {item["skill_name"] for item in initial} >= {"Python", "FastAPI"}
+    assert all(item["verification_level"] == "self_reported" for item in initial)
+
+    project_id = first.json()["profile"]["portfolio_projects"][0]["id"]
+    repeated = client.put("/api/profile", json={
+        "portfolio_projects": [{
+            "id": project_id,
+            "name": "Projeto de API",
+            "description": "API backend construída com Python e FastAPI.",
+            "technologies": "Python, FastAPI",
+            "status": "Em desenvolvimento",
+        }]
+    })
+    assert repeated.status_code == 200
+    assert repeated.json()["evidence_sync"]["created"] == 0
+    assert len(client.get("/api/career-evidence?active_only=true").json()["items"]) == len(initial)
+
+    changed = client.put("/api/profile", json={
+        "portfolio_projects": [{
+            "id": project_id,
+            "name": "Projeto de API",
+            "description": "API backend construída com Python e PostgreSQL.",
+            "technologies": "Python, PostgreSQL",
+            "status": "Concluído",
+        }]
+    })
+    assert changed.status_code == 200
+    history = client.get("/api/career-evidence").json()["items"]
+    python_versions = [item for item in history if item["skill_name"] == "Python"]
+    assert len(python_versions) >= 2
+    assert any(item["is_active"] for item in python_versions)
+    assert any(not item["is_active"] and item["superseded_at"] for item in python_versions)
+    assert any(item["skill_name"] == "PostgreSQL" and item["is_active"] for item in history)
+    assert all(item["verification_level"] == "self_reported" for item in history)
+
+    removed = client.put("/api/profile", json={"portfolio_projects": []})
+    assert removed.status_code == 200
+    assert removed.json()["evidence_sync"]["superseded"] >= 1
+    assert client.get("/api/career-evidence?active_only=true").json()["items"] == []
+    assert client.get("/api/career-twin").json()["evidence_ledger"] == []
+
+    # Uma segunda conta autenticada não consegue consultar o ledger da primeira.
+    second = TestClient(api_module.app, base_url="https://testserver")
+    registration = second.post("/api/auth/register", json={
+        "email": "outra-conta@example.com",
+        "full_name": "Outra Conta",
+        "password": "OutraSenhaSegura123!",
+    })
+    assert registration.status_code == 200
+    second_session = second.get("/api/auth/me")
+    assert second_session.status_code == 200
+    second.headers.update({"X-CSRF-Token": second_session.json()["csrf_token"]})
+    assert second.get("/api/career-evidence").status_code == 200
+    assert second.get("/api/career-evidence").json()["items"] == []
+
+    # Confirma que o histórico original continua associado à conta original.
+    assert db.scalar(
+        select(CareerEvidence.id).where(CareerEvidence.user_id == test_user.id)
+    ) is not None
+
+def test_career_evidence_review_is_append_only_and_account_scoped(client, db, test_user):
+    from jobfinder.models import CareerEvidence, CareerEvidenceReview
+
+    saved = client.put("/api/profile", json={
+        "portfolio_projects": [{
+            "name": "Projeto de automação",
+            "description": "API construída com Python e FastAPI.",
+            "technologies": "Python, FastAPI",
+            "status": "Em desenvolvimento",
+        }]
+    })
+    assert saved.status_code == 200
+    evidence = next(
+        item for item in client.get("/api/career-evidence?active_only=true").json()["items"]
+        if item["skill_name"] == "Python"
+    )
+    original = db.get(CareerEvidence, evidence["id"])
+    original_excerpt = original.excerpt
+    original_level = original.verification_level
+
+    confirmed = client.post(
+        f"/api/career-evidence/{evidence['id']}/review",
+        json={"decision": "confirmed", "note": "Revisei a origem no projeto."},
+    )
+    assert confirmed.status_code == 200
+    assert confirmed.json()["review"]["decision"] == "confirmed"
+    assert confirmed.json()["review"]["verification_level"] == "self_reported"
+
+    # A segunda decisão é um novo evento; não substitui nem apaga a primeira.
+    dismissed = client.post(
+        f"/api/career-evidence/{evidence['id']}/review",
+        json={"decision": "dismissed", "note": "A menção não representa uso prático."},
+    )
+    assert dismissed.status_code == 200
+    history = db.query(CareerEvidenceReview).filter(
+        CareerEvidenceReview.user_id == test_user.id,
+        CareerEvidenceReview.evidence_id == evidence["id"],
+    ).order_by(CareerEvidenceReview.id).all()
+    assert [item.decision for item in history] == ["confirmed", "dismissed"]
+
+    history_response = client.get(
+        f"/api/career-evidence/{evidence['id']}/reviews"
+    )
+    assert history_response.status_code == 200
+    assert [item["decision"] for item in history_response.json()["items"]] == [
+        "confirmed", "dismissed"
+    ]
+
+
+    db.refresh(original)
+    assert original.excerpt == original_excerpt
+    assert original.verification_level == original_level
+    listed = next(
+        item for item in client.get("/api/career-evidence?active_only=true").json()["items"]
+        if item["id"] == evidence["id"]
+    )
+    assert listed["review_decision"] == "dismissed"
+    assert listed["review_note"] == "A menção não representa uso prático."
+
+    # A decisão mais recente de irrelevância retira somente essa origem do Career Twin.
+    twin = client.get("/api/career-twin").json()
+    python_skill = next(
+        (item for item in twin["skills"] if item["name"] == "Python"), None
+    )
+    if python_skill is not None:
+        assert not any(
+            item["source_id"] == evidence["source_id"]
+            and item["source_type"] == "ongoing_project"
+            for item in python_skill["evidence"]
+        )
+
+
+    second = TestClient(api_module.app, base_url="https://testserver")
+    registration = second.post("/api/auth/register", json={
+        "email": "review-owner-check@example.com",
+        "full_name": "Conta sem acesso",
+        "password": "OutraSenhaSegura123!",
+    })
+    assert registration.status_code == 200
+    session = second.get("/api/auth/me")
+    assert session.status_code == 200
+    second.headers.update({"X-CSRF-Token": session.json()["csrf_token"]})
+    denied = second.post(
+        f"/api/career-evidence/{evidence['id']}/review",
+        json={"decision": "confirmed", "note": ""},
+    )
+    assert denied.status_code == 404
+    foreign_history = second.get(
+        f"/api/career-evidence/{evidence['id']}/reviews"
+    )
+    assert foreign_history.status_code == 404
+
+    assert db.query(CareerEvidenceReview).filter(
+        CareerEvidenceReview.evidence_id == evidence["id"]
+    ).count() == 2
+
+def test_multitenant_schema_validator_rejects_cross_account_evidence_reviews(db, test_user):
+    from jobfinder.db import validate_multitenant_schema
+    from jobfinder.models import CareerEvidence, CareerEvidenceReview, User
+    from jobfinder.api import password_hasher
+
+    other = User(
+        email="second-ledger-owner@example.com",
+        email_normalized="second-ledger-owner@example.com",
+        full_name="Outra conta",
+        password_hash=password_hasher.hash("OutraSenhaSegura123!"),
+        role="user",
+        is_active=True,
+    )
+    db.add(other)
+    db.flush()
+    evidence = CareerEvidence(
+        user_id=test_user.id,
+        skill_name="Python",
+        category="language",
+        source_type="self_declared",
+        source_key="legacy:skills",
+        source_id=None,
+        source_label="Habilidades declaradas",
+        excerpt="Python",
+        evidence_hash="d" * 64,
+        verification_level="self_reported",
+        is_active=True,
+    )
+    db.add(evidence)
+    db.flush()
+    review = CareerEvidenceReview(
+        user_id=other.id,
+        evidence_id=evidence.id,
+        decision="confirmed",
+        note="Tentativa de vínculo cruzado",
+    )
+    db.add(review)
+    db.commit()
+
+    with pytest.raises(RuntimeError, match="outra conta"):
+        validate_multitenant_schema()
+
+    db.delete(review)
+    db.delete(evidence)
+    db.delete(other)
+    db.commit()
+    validate_multitenant_schema()
+
+
+def test_multitenant_schema_validator_rejects_cross_account_application_events(db, test_user):
+    from jobfinder.db import validate_multitenant_schema
+    from jobfinder.models import Application, ApplicationEvent, User
+    from jobfinder.api import password_hasher
+
+    other = User(
+        email="second-application-owner@example.com",
+        email_normalized="second-application-owner@example.com",
+        full_name="Outra conta",
+        password_hash=password_hasher.hash("OutraSenhaSegura123!"),
+        role="user",
+        is_active=True,
+    )
+    db.add(other)
+    db.flush()
+    job = make_job(db)
+    application = Application(
+        user_id=test_user.id,
+        job_id=job.id,
+        status="Candidatura enviada",
+    )
+    db.add(application)
+    db.flush()
+    event = ApplicationEvent(
+        user_id=other.id,
+        application_id=application.id,
+        previous_status="",
+        new_status="Candidatura enviada",
+        source="manual",
+        note="Tentativa de vínculo cruzado",
+    )
+    db.add(event)
+    db.commit()
+
+    with pytest.raises(RuntimeError, match="vinculados a outra conta"):
+        validate_multitenant_schema()
+
+    db.delete(event)
+    db.delete(application)
+    db.delete(other)
+    db.commit()
+    validate_multitenant_schema()

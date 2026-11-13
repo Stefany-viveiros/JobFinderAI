@@ -252,3 +252,292 @@ def score_job(job, profile):
     missing.append("Pontuação é uma triagem inicial; revise os requisitos e a candidatura antes de enviar")
 
     return percentage, matched, missing
+
+
+COMPLETED_VALUES = {"concluído", "concluido", "completed", "finalizado"}
+IN_PROGRESS_VALUES = {"em andamento", "em desenvolvimento", "em curso", "em estudo", "in progress"}
+
+
+def _requirement_classification(sentence: str, match: re.Match) -> str:
+    mandatory = list(MANDATORY_MARKERS.finditer(sentence))
+    desirable = list(DESIRABLE_MARKERS.finditer(sentence))
+    if mandatory and desirable:
+        # Dois marcadores conflitantes na mesma frase não permitem afirmar a prioridade.
+        return "ambiguous"
+    if mandatory:
+        return "mandatory"
+    if desirable:
+        return "desirable"
+    return "unspecified"
+
+
+def classify_job_requirements(description: str) -> list[dict]:
+    """Extrai tecnologias e classifica obrigatoriedade somente quando o texto dá indício."""
+    found = {}
+    clean = re.sub(r"<[^>]*>", " ", str(description or ""))
+    for sentence in re.split(r"[.!?;\n]+", normalize(clean)):
+        for technology in TECHNOLOGY_TERMS:
+            phrase = normalize(technology)
+            pattern = r"(?<![a-z0-9])" + re.escape(phrase) + r"(?![a-z0-9])"
+            for match in re.finditer(pattern, sentence):
+                classification = _requirement_classification(sentence, match)
+                previous = found.get(phrase)
+                if previous is None:
+                    found[phrase] = classification
+                elif previous != classification and classification != "unspecified":
+                    found[phrase] = "ambiguous"
+    labels = {
+        "mandatory": "Obrigatório (marcador textual)",
+        "desirable": "Desejável (marcador textual)",
+        "unspecified": "Obrigatoriedade não especificada",
+        "ambiguous": "Classificação ambígua",
+    }
+    return [
+        {
+            "name": name,
+            "requirement_type": requirement_type,
+            "requirement_label": labels[requirement_type],
+        }
+        for name, requirement_type in sorted(found.items())
+    ]
+
+
+def _excerpt(text: str, technology: str, limit: int = 220) -> str:
+    raw = re.sub(r"<[^>]*>", " ", str(text or ""))
+    match = re.search(
+        r"(?<![a-z0-9])" + re.escape(technology) + r"(?![a-z0-9])",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return raw.strip()[:limit]
+    start = max(0, match.start() - 80)
+    end = min(len(raw), match.end() + 100)
+    result = raw[start:end].strip()
+    return ("…" if start else "") + result + ("…" if end < len(raw) else "")
+
+
+def _profile_sources(profile) -> list[dict]:
+    """Retorna textos e origens do perfil sem combinar contextos de registros diferentes."""
+    sources = []
+    for item in getattr(profile, "experiences", []) or []:
+        label = " — ".join(x for x in (
+            (getattr(item, "role", "") or "").strip(),
+            (getattr(item, "company", "") or "").strip(),
+        ) if x) or "Experiência profissional"
+        sources.append({
+            "source_type": "professional_experience",
+            "source_label": label,
+            "source_id": getattr(item, "id", None),
+            "text": " ".join((getattr(item, "role", "") or "", getattr(item, "company", "") or "", getattr(item, "description", "") or "")),
+        })
+
+    for item in getattr(profile, "portfolio_projects", []) or []:
+        state = (getattr(item, "status", "") or "").strip().casefold()
+        if state in COMPLETED_VALUES:
+            source_type = "completed_project"
+        elif state in IN_PROGRESS_VALUES:
+            source_type = "ongoing_project"
+        else:
+            source_type = "project_status_ambiguous"
+        sources.append({
+            "source_type": source_type,
+            "source_label": (getattr(item, "name", "") or "Projeto").strip(),
+            "source_id": getattr(item, "id", None),
+            "text": " ".join((getattr(item, "name", "") or "", getattr(item, "description", "") or "", getattr(item, "technologies", "") or "")),
+        })
+
+    for item in getattr(profile, "courses", []) or []:
+        state = (getattr(item, "status", "") or "").strip().casefold()
+        if state in COMPLETED_VALUES:
+            source_type = "completed_course"
+        elif state in IN_PROGRESS_VALUES:
+            source_type = "ongoing_course"
+        else:
+            source_type = "course_status_ambiguous"
+        sources.append({
+            "source_type": source_type,
+            "source_label": " — ".join(x for x in (
+                (getattr(item, "name", "") or "").strip(),
+                (getattr(item, "provider", "") or "").strip(),
+            ) if x) or "Curso",
+            "source_id": getattr(item, "id", None),
+            "text": " ".join((getattr(item, "name", "") or "", getattr(item, "provider", "") or "")),
+        })
+
+    for item in getattr(profile, "certifications_items", []) or []:
+        sources.append({
+            "source_type": "certification_record",
+            "source_label": " — ".join(x for x in (
+                (getattr(item, "name", "") or "").strip(),
+                (getattr(item, "issuer", "") or "").strip(),
+            ) if x) or "Certificação",
+            "source_id": getattr(item, "id", None),
+            "text": " ".join((getattr(item, "name", "") or "", getattr(item, "issuer", "") or "")),
+        })
+
+    for item in getattr(profile, "educations", []) or []:
+        sources.append({
+            "source_type": "education_record",
+            "source_label": " — ".join(x for x in (
+                (getattr(item, "course", "") or "").strip(),
+                (getattr(item, "institution", "") or "").strip(),
+            ) if x) or "Formação acadêmica",
+            "source_id": getattr(item, "id", None),
+            "text": " ".join((getattr(item, "course", "") or "", getattr(item, "institution", "") or "", getattr(item, "description", "") or "")),
+        })
+
+    legacy_fields = (
+        ("legacy_experience", "Experiência (campo legado)", "experience"),
+        ("legacy_project", "Projeto (campo legado)", "projects"),
+        ("legacy_certification", "Certificação (campo legado)", "certifications"),
+        ("self_declared", "Tecnologias declaradas", "technologies"),
+        ("self_declared", "Habilidades declaradas", "skills"),
+        ("self_declared", "Palavras-chave declaradas", "keywords"),
+    )
+    for source_type, label, field in legacy_fields:
+        value = getattr(profile, field, "") or ""
+        if value.strip():
+            sources.append({
+                "source_type": source_type,
+                "source_label": label,
+                "source_id": None,
+                "text": value,
+            })
+    return sources
+
+
+def _evidence_source_key(source: dict) -> str:
+    """Reconstrói a chave estável usada pelo ledger para a mesma origem."""
+    source_type = source.get("source_type")
+    source_id = source.get("source_id")
+    if source_id is not None:
+        prefixes = {
+            "professional_experience": "experience",
+            "completed_project": "portfolio_project",
+            "ongoing_project": "portfolio_project",
+            "project_status_ambiguous": "portfolio_project",
+            "completed_course": "course",
+            "ongoing_course": "course",
+            "course_status_ambiguous": "course",
+            "certification_record": "certification",
+            "education_record": "education",
+        }
+        prefix = prefixes.get(source_type)
+        return f"{prefix}:{source_id}" if prefix else ""
+    legacy = {
+        "Experiência (campo legado)": "legacy:experience",
+        "Projeto (campo legado)": "legacy:project",
+        "Certificação (campo legado)": "legacy:certification",
+        "Tecnologias declaradas": "legacy:technologies",
+        "Habilidades declaradas": "legacy:skills",
+        "Palavras-chave declaradas": "legacy:keywords",
+    }
+    return legacy.get(source.get("source_label"), "")
+
+
+def diagnose_job_requirements(
+    description: str,
+    profile,
+    *,
+    self_assessed_skill_names: set[str] | None = None,
+    dismissed_evidence_keys: set[tuple[str, str]] | None = None,
+) -> dict:
+    """Relaciona requisitos textuais da vaga às origens registradas no perfil."""
+    requirements = classify_job_requirements(description)
+    sources = _profile_sources(profile)
+    self_assessed = {normalize(item) for item in (self_assessed_skill_names or set())}
+    dismissed = dismissed_evidence_keys or set()
+    evidenced_sources = {
+        "professional_experience", "completed_project", "completed_course",
+        "certification_record", "education_record", "legacy_experience",
+        "legacy_project", "legacy_certification",
+    }
+    source_labels = {
+        "professional_experience": "Experiência profissional",
+        "completed_project": "Projeto concluído",
+        "ongoing_project": "Projeto em andamento",
+        "completed_course": "Curso concluído",
+        "ongoing_course": "Curso em andamento",
+        "certification_record": "Certificação cadastrada",
+        "education_record": "Formação acadêmica",
+        "legacy_experience": "Experiência (campo legado)",
+        "legacy_project": "Projeto (campo legado)",
+        "legacy_certification": "Certificação (campo legado)",
+        "self_declared": "Declarada no perfil",
+        "project_status_ambiguous": "Projeto com situação não reconhecida",
+        "course_status_ambiguous": "Curso com situação não reconhecida",
+    }
+    result = []
+    counts = {}
+    for requirement in requirements:
+        name = requirement["name"]
+        matched = [
+            source for source in sources
+            if _contains_phrase(source["text"], name)
+            and (_evidence_source_key(source), normalize(name)) not in dismissed
+        ]
+        evidence = [
+            {
+                "source_type": source["source_type"],
+                "source_label": source["source_label"],
+                "source_id": source["source_id"],
+                "excerpt": _excerpt(source["text"], name),
+            }
+            for source in matched
+        ]
+        source_types = {item["source_type"] for item in evidence}
+        if source_types & evidenced_sources:
+            status = "evidenced"
+            status_label = "Evidência textual em registro do perfil"
+        elif source_types & {"ongoing_project", "ongoing_course"}:
+            status = "in_development"
+            status_label = "Em desenvolvimento ou aprendizagem"
+        elif "self_declared" in source_types:
+            status = "declared"
+            status_label = "Declarada no perfil"
+        elif source_types & {"project_status_ambiguous", "course_status_ambiguous"}:
+            status = "ambiguous"
+            status_label = "Origem ou situação ambígua"
+        elif name in self_assessed:
+            status = "self_assessed"
+            status_label = "Autoavaliada em desafio"
+        else:
+            status = "not_identified"
+            status_label = "Não identificada nos registros disponíveis"
+
+        if status == "evidenced":
+            recommendation = "Revise o registro e, se possível, apresente o artefato ou resultado correspondente."
+        elif status == "self_assessed":
+            recommendation = "Há autoavaliação registrada; fortaleça-a com artefato e revisão independente."
+        elif status == "declared":
+            recommendation = "A competência está declarada; adicione um projeto ou exemplo concreto para contextualizá-la."
+        elif status == "in_development":
+            recommendation = "Conclua a atividade em andamento e registre o resultado como evidência."
+        elif requirement["requirement_type"] == "desirable":
+            recommendation = "Requisito desejável: avalie desenvolver esta competência; sua ausência não elimina a vaga."
+        elif requirement["requirement_type"] == "mandatory":
+            recommendation = "Não há evidência identificada no perfil. Confirme sua experiência real antes de decidir; ausência de registro não significa ausência de conhecimento."
+        elif status == "ambiguous":
+            recommendation = "Revise a situação do registro para esclarecer o contexto desta competência."
+        else:
+            recommendation = "Verifique a descrição completa e atualize o perfil se houver experiência relevante."
+
+        result.append({
+            **requirement,
+            "status": status,
+            "status_label": status_label,
+            "evidence": evidence,
+            "recommendation": recommendation,
+        })
+        counts[status] = counts.get(status, 0) + 1
+
+    return {
+        "requirements": result,
+        "counts": counts,
+        "notice": (
+            "O diagnóstico identifica menções e registros textuais; não mede proficiência nem probabilidade de contratação. "
+            "A ausência de menção não significa ausência de conhecimento. A classificação obrigatório/desejável é baseada "
+            "em marcadores explícitos da descrição e deve ser revisada quando o texto for ambíguo."
+        ),
+    }

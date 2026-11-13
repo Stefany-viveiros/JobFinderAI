@@ -10,12 +10,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from .market import extract_skills
+from .evidence_ledger import list_profile_evidence, list_dismissed_evidence_keys
 from .models import (
     MarketAnalysisRun,
     MarketSkillMetric,
     Profile,
     Skill,
     SkillAssessmentAttempt,
+    DevelopmentPlanItem,
 )
 
 
@@ -98,22 +100,25 @@ def build_career_twin(db: Session, *, user_id: int) -> dict:
         }
 
     evidence_by_skill = defaultdict(list)
+    dismissed_evidence = list_dismissed_evidence_keys(db, user_id=user_id)
 
-    def add(source_type: str, label: str, source_id: int | None, value: str):
+    def add(source_type: str, label: str, source_id: int | None, value: str, source_key: str):
         if not (value or "").strip():
             return
         for evidence in _record_evidence(source_type, label, source_id, value):
+            if (source_key, evidence["canonical_name"]) in dismissed_evidence:
+                continue
             evidence_by_skill[evidence["canonical_name"]].append(evidence)
 
     for item in profile.experiences:
         add("professional_experience", f'{item.role or "Experiência"} · {item.company or "Empresa não informada"}', item.id,
-            f"{item.role} {item.company} {item.description}")
+            f"{item.role} {item.company} {item.description}", f"experience:{item.id}")
 
     for item in profile.portfolio_projects:
         state = _status(item.status)
         source_type = "completed_project" if state in COMPLETED_VALUES else "ongoing_project"
         add(source_type, item.name or "Projeto", item.id,
-            f"{item.name} {item.description} {item.technologies}")
+            f"{item.name} {item.description} {item.technologies}", f"portfolio_project:{item.id}")
 
     for item in profile.courses:
         state = _status(item.status)
@@ -121,23 +126,23 @@ def build_career_twin(db: Session, *, user_id: int) -> dict:
             "ongoing_course" if state in IN_PROGRESS_VALUES else "course_status_unspecified"
         )
         add(source_type, f'{item.name or "Curso"} · {item.provider or "Instituição não informada"}', item.id,
-            f"{item.name} {item.provider}")
+            f"{item.name} {item.provider}", f"course:{item.id}")
 
     for item in profile.certifications_items:
         add("certification_record", f'{item.name or "Certificação"} · {item.issuer or "Emissor não informado"}', item.id,
-            f"{item.name} {item.issuer}")
+            f"{item.name} {item.issuer}", f"certification:{item.id}")
 
     for item in profile.educations:
         add("education_record", f'{item.course or "Formação"} · {item.institution or "Instituição não informada"}', item.id,
-            f"{item.course} {item.institution} {item.description}")
+            f"{item.course} {item.institution} {item.description}", f"education:{item.id}")
 
     # Campos legados continuam disponíveis e suas origens são identificadas.
-    add("legacy_experience", "Experiência (campo legado)", None, profile.experience or "")
-    add("legacy_project", "Projetos (campo legado)", None, profile.projects or "")
-    add("legacy_certification", "Certificações (campo legado)", None, profile.certifications or "")
-    add("self_declared", "Tecnologias declaradas", None, profile.technologies or "")
-    add("self_declared", "Habilidades declaradas", None, profile.skills or "")
-    add("self_declared", "Palavras-chave declaradas", None, profile.keywords or "")
+    add("legacy_experience", "Experiência (campo legado)", None, profile.experience or "", "legacy:experience")
+    add("legacy_project", "Projetos (campo legado)", None, profile.projects or "", "legacy:project")
+    add("legacy_certification", "Certificações (campo legado)", None, profile.certifications or "", "legacy:certification")
+    add("self_declared", "Tecnologias declaradas", None, profile.technologies or "", "legacy:technologies")
+    add("self_declared", "Habilidades declaradas", None, profile.skills or "", "legacy:skills")
+    add("self_declared", "Palavras-chave declaradas", None, profile.keywords or "", "legacy:keywords")
 
     assessment_rows = db.execute(
         select(SkillAssessmentAttempt, Skill)
@@ -150,9 +155,12 @@ def build_career_twin(db: Session, *, user_id: int) -> dict:
     ).all()
     assessments_by_skill = {}
     for attempt, skill in assessment_rows:
+        if (f"challenge_attempt:{attempt.id}", skill.canonical_name) in dismissed_evidence:
+            continue
         if skill.canonical_name not in assessments_by_skill:
             assessments_by_skill[skill.canonical_name] = {
                 "attempt_id": attempt.id,
+                "plan_item_id": attempt.plan_item_id,
                 "title": attempt.challenge_title,
                 "score": attempt.score,
                 "feedback": attempt.feedback or "",
@@ -240,6 +248,121 @@ def build_career_twin(db: Session, *, user_id: int) -> dict:
             ),
         })
 
+    # Linha do tempo derivada de registros datados e eventos de desenvolvimento.
+    # Uma atividade concluída ou autoavaliação não é promovida automaticamente a proficiência.
+    timeline = []
+
+    def add_event(event_type, title, detail="", date_value=None, status="", source_type="", source_id=None, evidence_url=""):
+        if hasattr(date_value, "isoformat"):
+            date_text = date_value.isoformat()
+        else:
+            date_text = str(date_value or "").strip() or None
+        timeline.append({
+            "event_type": event_type,
+            "title": str(title or "").strip(),
+            "detail": str(detail or "").strip(),
+            "date": date_text,
+            "status": str(status or "").strip(),
+            "source_type": source_type,
+            "source_id": source_id,
+            "evidence_url": str(evidence_url or "").strip(),
+        })
+
+    for item in profile.educations:
+        date_value = item.end_date or item.start_date or None
+        add_event(
+            "education_record", item.course or "Formação acadêmica",
+            " · ".join(x for x in (item.institution, item.degree, item.status) if x),
+            date_value, item.status, "education_record", item.id,
+        )
+
+    for item in profile.experiences:
+        period = " – ".join(x for x in (item.start_date, item.end_date or ("Atual" if item.is_current else "")) if x)
+        add_event(
+            "professional_experience", item.role or "Experiência profissional",
+            " · ".join(x for x in (item.company, period, item.employment_type) if x),
+            item.end_date or item.start_date or None,
+            "Atual" if item.is_current else "Experiência registrada",
+            "professional_experience", item.id,
+        )
+
+    for item in profile.portfolio_projects:
+        state = _status(item.status)
+        add_event(
+            "completed_project" if state in COMPLETED_VALUES else "ongoing_project",
+            item.name or "Projeto de portfólio",
+            item.description or item.technologies or "Projeto registrado no portfólio.",
+            None, item.status, "portfolio_project", item.id,
+            item.repository_url or item.demo_url or "",
+        )
+
+    for item in profile.courses:
+        add_event(
+            "completed_course" if _status(item.status) in COMPLETED_VALUES else "ongoing_course",
+            item.name or "Curso",
+            " · ".join(x for x in (item.provider, item.workload, item.status) if x),
+            item.completed_at or None,
+            item.status, "course_record", item.id, item.credential_url or "",
+        )
+
+    for item in profile.certifications_items:
+        add_event(
+            "certification_record", item.name or "Certificação",
+            " · ".join(x for x in (item.issuer, item.credential_id) if x),
+            item.issued_at or None, "Certificação cadastrada",
+            "certification_record", item.id, item.credential_url or "",
+        )
+
+    plan_rows = db.execute(
+        select(DevelopmentPlanItem, Skill)
+        .join(Skill, Skill.id == DevelopmentPlanItem.skill_id)
+        .where(DevelopmentPlanItem.user_id == user_id)
+        .order_by(DevelopmentPlanItem.created_at.desc(), DevelopmentPlanItem.id.desc())
+    ).all()
+    for item, skill in plan_rows:
+        add_event(
+            "development_goal_created", item.title or f"Desenvolver {skill.canonical_name}",
+            f"Meta de desenvolvimento para {skill.canonical_name}. {item.objective or ''}".strip(),
+            item.created_at, item.status, "development_plan_item", item.id,
+            item.resource_url or "",
+        )
+        if item.completed_at:
+            add_event(
+                "development_goal_completed", f"Meta concluída: {skill.canonical_name}",
+                "Atividade marcada como concluída. Isso registra a execução da meta, não comprova proficiência por si só.",
+                item.completed_at, "completed", "development_plan_item", item.id,
+                item.resource_url or "",
+            )
+
+    all_attempts = db.scalars(
+        select(SkillAssessmentAttempt)
+        .where(SkillAssessmentAttempt.user_id == user_id)
+        .order_by(SkillAssessmentAttempt.created_at.desc(), SkillAssessmentAttempt.id.desc())
+    ).all()
+    for attempt in all_attempts:
+        skill = db.get(Skill, attempt.skill_id)
+        skill_name = skill.canonical_name if skill else "Competência"
+        add_event(
+            "challenge_started", attempt.challenge_title or f"Desafio de {skill_name}",
+            f"Desafio prático iniciado para {skill_name}.",
+            attempt.created_at, attempt.status, "skill_assessment_attempt", attempt.id,
+        )
+        if attempt.submitted_at:
+            add_event(
+                "self_assessment_submitted", f"Autoavaliação registrada: {skill_name}",
+                (
+                    f"Resultado autoavaliado: {attempt.score if attempt.score is not None else 'sem pontuação'}%. "
+                    "Não representa validação independente."
+                    + (f" Meta vinculada: #{attempt.plan_item_id}." if attempt.plan_item_id else "")
+                ),
+                attempt.submitted_at, "self_reviewed", "skill_assessment_attempt", attempt.id,
+                attempt.evidence_url or "",
+            )
+
+    # Eventos com data conhecida aparecem primeiro, do mais recente para o mais antigo.
+    timeline.sort(key=lambda item: item["date"] or "", reverse=True)
+    timeline.sort(key=lambda item: item["date"] is None)
+
     public_profile = _public_profile(profile)
     sections = {
         "identity": bool(public_profile["name"] or public_profile["interests"]),
@@ -263,6 +386,10 @@ def build_career_twin(db: Session, *, user_id: int) -> dict:
         },
         "sections": sections,
         "skills": skills,
+        "timeline": timeline,
+        "evidence_ledger": list_profile_evidence(
+            db, user_id=user_id, active_only=True, limit=500
+        ),
         "market": market_payload,
         "data_quality": {
             "method": "extração determinística por taxonomia e aliases do JobFinder AI",

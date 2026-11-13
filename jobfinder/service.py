@@ -140,33 +140,53 @@ def collect_for_user(db, items, user_id, limit=80, only_target=True):
     if user_id is None:
         raise ValueError("Coleta SaaS exige usuário autenticado.")
     profile = get_profile(db, user_id=user_id)
+    # Índices leves em memória evitam uma consulta por vaga e reconhecem URLs
+    # equivalentes que diferem apenas por tracking, caixa, barra final ou fragmento.
+    from .filters import normalize_url
+    existing_rows = db.execute(select(Job.id, Job.url, Job.dedupe_key)).all()
+    url_to_id = {normalize_url(row.url): row.id for row in existing_rows if row.url}
+    key_to_id = {row.dedupe_key: row.id for row in existing_rows if row.dedupe_key}
     received_ids, duplicates, filtered_out = [], 0, 0
     for item in items:
         url = str(item.get("url") or "").strip()
         if not url:
             continue
+        normalized_url = normalize_url(url)
         title_key = dedupe_key(item.get("title"), item.get("company"))
         if only_target and not is_target_job(item):
             filtered_out += 1
             continue
-        job = db.scalar(select(Job).where(Job.url == url))
-        if job is None and title_key:
-            job = db.scalar(select(Job).where(Job.dedupe_key == title_key))
+        existing_id = url_to_id.get(normalized_url)
+        if existing_id is None and title_key:
+            existing_id = key_to_id.get(title_key)
+        job = db.get(Job, existing_id) if existing_id is not None else None
         if job is None:
             job = Job(**{k: item.get(k) for k in _JOB_FIELDS},
                       level=classify_level(item.get("title"), item.get("description"), item.get("job_type")) or "outro",
                       dedupe_key=title_key)
-            db.add(job)
             try:
-                db.flush()
+                # Savepoint impede que uma colisão concorrente desfaça as vagas
+                # já inseridas nesta mesma coleta do usuário.
+                with db.begin_nested():
+                    db.add(job)
+                    db.flush()
             except IntegrityError:
-                db.rollback()
-                job = db.scalar(select(Job).where(Job.url == url))
+                # Uma gravação concorrente pode ter inserido a URL canônica.
+                existing_rows = db.execute(select(Job.id, Job.url, Job.dedupe_key)).all()
+                url_to_id = {normalize_url(row.url): row.id for row in existing_rows if row.url}
+                key_to_id = {row.dedupe_key: row.id for row in existing_rows if row.dedupe_key}
+                existing_id = url_to_id.get(normalized_url)
+                if existing_id is None and title_key:
+                    existing_id = key_to_id.get(title_key)
+                job = db.get(Job, existing_id) if existing_id is not None else None
                 if job is None:
                     duplicates += 1
                     continue
         else:
             duplicates += 1
+        url_to_id[normalized_url] = job.id
+        if title_key:
+            key_to_id.setdefault(title_key, job.id)
         received_ids.append(job.id)
     ranked = []
     for job_id in dict.fromkeys(received_ids):

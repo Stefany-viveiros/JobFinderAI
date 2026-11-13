@@ -5,7 +5,6 @@ As rotas de escrita devem validar também o token CSRF via X-CSRF-Token.
 """
 from datetime import datetime, timedelta
 import hashlib
-import os
 import secrets
 
 from fastapi import Depends, HTTPException, Request, Response
@@ -14,10 +13,11 @@ from sqlalchemy.orm import Session
 
 from .db import SessionLocal
 from .models import User, UserSession
+from .config import settings
 
 SESSION_COOKIE = "jobfinder_session"
-SESSION_HOURS = int(os.getenv("SESSION_HOURS", "24"))
-COOKIE_SECURE = os.getenv("COOKIE_SECURE", "true").lower() == "true"
+SESSION_HOURS = settings.session_hours
+COOKIE_SECURE = settings.cookie_secure
 
 
 def _hash(value: str) -> str:

@@ -2,6 +2,7 @@ from datetime import date, datetime
 from email.message import EmailMessage
 import hashlib
 import secrets
+import re
 import smtplib
 from datetime import timedelta
 from pwdlib import PasswordHash
@@ -10,7 +11,7 @@ from .auth import SESSION_COOKIE, COOKIE_SECURE, create_session, clear_session_c
 import os
 from typing import Optional
 
-from fastapi import FastAPI, Depends, HTTPException, Query, UploadFile, File, Request, Response
+from fastapi import FastAPI, Depends, HTTPException, Query, UploadFile, File, Form, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
@@ -19,34 +20,37 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.orm import Session, joinedload, selectinload, aliased
 
-from .db import init_db, SessionLocal, validate_multitenant_schema
+from .db import init_db, SessionLocal, engine, validate_multitenant_schema
 from .models import (
     Job, JobMatch, Application, Task, Profile, NotificationLog, ApplicationAttempt,
     Education, Experience, Course, Certification, PortfolioProject,
-    MarketAnalysisRun, MarketSkillMetric, MarketSkillPair, Skill, DevelopmentPlanItem,
+    MarketAnalysisRun, MarketSkillMetric, MarketSkillPair, Skill, DevelopmentPlanItem, SkillAssessmentAttempt, ApplicationEvent,
+    SmtpAccount, UserResume,
 )
 from .service import get_profile, save_jobs, refresh_scores, create_task, complete_task, STATUSES, collect_and_save_ranked, collect_for_user, refresh_user_scores
 from .sources import SOURCES, SOURCE_INFO, LINK_ONLY_SOURCES, collect_selected, external_search_links
 from . import applying
 from .agent import get_agent_settings, run_agent, TARGET_LEVELS
 from .mailer import send_daily_reminder
-from .config import settings
+from .config import settings, parse_cors_origins
+from .smtp_credentials import encrypt_password, decrypt_password, CredentialEncryptionError
 from .resume_parser import parse_resume, extract_resume_text
 from .resume_ai import analyze_resume_with_gemini, ResumeAIError
+from .resume_storage import encrypt_resume, decrypt_resume, digest_resume, safe_filename, resume_content_type, ResumeStorageError
 from .market_service import (create_market_snapshot, index_unprocessed_jobs, build_profile_gap,
     list_development_plan, create_development_item, update_development_item, DEVELOPMENT_STATUSES,
-    create_skill_assessment, submit_skill_assessment, list_skill_assessments)
+    create_skill_assessment, submit_skill_assessment, list_skill_assessments, compare_market_trends)
 from .career_twin import build_career_twin
+from .evidence_ledger import sync_profile_evidence, list_profile_evidence, record_self_assessment_evidence, review_profile_evidence, list_evidence_reviews, list_dismissed_evidence_keys
+from .matching import diagnose_job_requirements
 
 app = FastAPI(title="JobFinder AI API", version="1.1.0", description="API do JobFinder AI")
-cors_origins = [
-    origin.strip()
-    for origin in os.getenv(
-        "CORS_ORIGINS",
-        "http://localhost:5173,http://127.0.0.1:5173",
-    ).split(",")
-    if origin.strip()
-]
+try:
+    cors_origins = parse_cors_origins(
+        os.getenv("CORS_ORIGINS") or "http://localhost:5173,http://127.0.0.1:5173"
+    )
+except ValueError as exc:
+    raise RuntimeError(f"Configuração CORS insegura: {exc}") from exc
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
@@ -82,7 +86,7 @@ async def require_authenticated_session(request, call_next):
     """Protege a API inteira; somente health e endpoints de autenticação são públicos."""
     path = request.url.path
     public_paths = {
-        "/api/health", "/api/auth/register", "/api/auth/login",
+        "/api/health", "/api/health/ready", "/api/auth/register", "/api/auth/login",
         "/api/auth/forgot-password", "/api/auth/reset-password",
     }
     if not path.startswith("/api/") or path in public_paths or path == "/api/auth/me":
@@ -157,7 +161,15 @@ def _enforce_rate_limit(
 ) -> None:
     """Aplica limite persistente e atômico por janela, compatível com SQLite/PostgreSQL."""
     client_host = request.client.host if request.client else "unknown"
-    key = _token_hash(f"{scope}|{client_host}|{subject}")
+    # Contas/e-mails/tokens precisam de uma janela global por identidade,
+    # independente do IP usado. Limites explicitamente por IP continuam separados.
+    subject_scopes = (
+        scope.endswith("-user")
+        or scope.endswith("-email")
+        or scope == "auth-reset-token"
+    )
+    identity = str(subject) if subject_scopes else f"{client_host}|{subject}"
+    key = _token_hash(f"{scope}|{identity}")
     now = datetime.utcnow()
     cutoff = now - timedelta(seconds=window_seconds)
     # Todos os limites deste módulo expiram em até 1 hora. Remove buckets
@@ -554,6 +566,47 @@ def health():
     return {"status": "ok", "service": "JobFinder AI"}
 
 
+@app.get("/api/health/ready")
+def readiness():
+    """Readiness operacional sem revelar valores de segredos ou dados de usuários."""
+    checks = {
+        "database": "ok",
+        "multitenant_schema": "not_required",
+        "resume_storage_key": "not_configured",
+        "smtp_credentials_key": "not_configured",
+    }
+    ready = True
+    try:
+        with engine.connect() as connection:
+            connection.execute(select(1))
+    except Exception:
+        checks["database"] = "unavailable"
+        ready = False
+
+    if os.getenv("MULTITENANT_READY", "false").strip().lower() == "true":
+        try:
+            validate_multitenant_schema()
+            checks["multitenant_schema"] = "ok"
+        except Exception:
+            checks["multitenant_schema"] = "invalid"
+            ready = False
+
+    try:
+        encrypt_resume(b"readiness-probe")
+        checks["resume_storage_key"] = "configured"
+    except ResumeStorageError:
+        checks["resume_storage_key"] = "missing_or_invalid"
+
+    try:
+        encrypt_password("readiness-probe")
+        checks["smtp_credentials_key"] = "configured"
+    except CredentialEncryptionError:
+        checks["smtp_credentials_key"] = "missing_or_invalid"
+
+    payload = {"status": "ready" if ready else "not_ready", "checks": checks}
+    return JSONResponse(status_code=200 if ready else 503, content=payload)
+
+
 def count_attempts_channel(db, channel, user_id=None):
     stmt = select(func.count(func.distinct(ApplicationAttempt.job_id))).where(
         ApplicationAttempt.status == "sent", ApplicationAttempt.channel == channel)
@@ -603,6 +656,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         "upcoming_tasks": [task_dict(t) for t in upcoming],
         "recent_jobs": [job_dict(j, db=db, user_id=user_id) for j in recent_jobs],
         "profile_name": p.name,
+        # Lembretes usam o destinatário administrativo local; candidaturas usam SMTP individual.
         "smtp_ready": bool(settings.smtp_ready and settings.smtp_username and settings.smtp_password),
     }
 
@@ -660,6 +714,57 @@ def create_job(payload: JobCreate, request: Request, db: Session = Depends(get_d
     return {"message": message, "job": job_dict(existing, db=db, user_id=request.state.user_id)}
 
 
+
+
+@app.get("/api/jobs/{job_id}/diagnosis")
+def diagnose_job(job_id: int, request: Request, db: Session = Depends(get_db)):
+    """Diagnóstico de requisitos restrito às vagas que pertencem ao painel da conta."""
+    user_id = request.state.user_id
+    row = db.execute(
+        select(Job, JobMatch)
+        .join(JobMatch, JobMatch.job_id == Job.id)
+        .where(Job.id == job_id, JobMatch.user_id == user_id, JobMatch.is_archived.is_(False))
+    ).first()
+    if row is None:
+        raise HTTPException(404, "Oportunidade não encontrada no seu painel.")
+    job, match = row
+    profile = get_profile(db, user_id)
+    dismissed_evidence = list_dismissed_evidence_keys(db, user_id=user_id)
+    assessment_rows = db.execute(
+        select(SkillAssessmentAttempt.id, Skill.canonical_name)
+        .join(Skill, SkillAssessmentAttempt.skill_id == Skill.id)
+        .where(
+            SkillAssessmentAttempt.user_id == user_id,
+            SkillAssessmentAttempt.status == "self_reviewed",
+        )
+    ).all()
+    assessed_names = {
+        name for attempt_id, name in assessment_rows
+        if (f"challenge_attempt:{attempt_id}", name) not in dismissed_evidence
+    }
+    diagnosis = diagnose_job_requirements(
+        job.description or "",
+        profile,
+        self_assessed_skill_names=assessed_names,
+        dismissed_evidence_keys=dismissed_evidence,
+    )
+    return {
+        "job": {
+            "id": job.id,
+            "title": job.title,
+            "company": job.company,
+            "level": job.level,
+            "source": job.source,
+        },
+        "compatibility": {
+            "score": round(match.compatibility or 0),
+            "label": "Triagem heurística explicável; não representa probabilidade de contratação.",
+            "matched": [x for x in (match.match_reasons or "").split("\\n") if x],
+            "to_review": [x for x in (match.missing_reasons or "").split("\\n") if x],
+        },
+        **diagnosis,
+    }
+
 @app.post("/api/jobs/collect")
 def collect_jobs(payload: dict, request: Request, db: Session = Depends(get_db)):
     names = payload.get("sources") or list(SOURCES.keys())
@@ -679,7 +784,9 @@ def collect_jobs(payload: dict, request: Request, db: Session = Depends(get_db))
         raise HTTPException(400, "O limite deve ser um número entre 1 e 80.")
 
     items, errors = collect_selected(names)
-    result = collect_for_user(db, items, user_id=request.state.user_id, limit=limit, only_target=bool(payload.get("only_target", True)))
+    # O produto é focado em estágio/júnior de tecnologia; clientes não podem
+    # desativar esse filtro por payload e poluir o painel com vagas fora do escopo.
+    result = collect_for_user(db, items, user_id=request.state.user_id, limit=limit, only_target=True)
 
     return {
         "received": len(items),
@@ -693,16 +800,24 @@ def collect_jobs(payload: dict, request: Request, db: Session = Depends(get_db))
     }
 
 
+def _require_user_job_match(db: Session, job_id: int, user_id: int) -> JobMatch:
+    """Exige que a oportunidade esteja vinculada e ativa no painel da conta."""
+    match = db.scalar(select(JobMatch).where(
+        JobMatch.job_id == job_id,
+        JobMatch.user_id == user_id,
+        JobMatch.is_archived.is_(False),
+    ))
+    if match is None:
+        raise HTTPException(404, "Oportunidade não encontrada no seu painel.")
+    return match
+
+
 @app.patch("/api/jobs/{job_id}/favorite")
 def toggle_favorite(job_id: int, request: Request, db: Session = Depends(get_db)):
     job = db.get(Job, job_id)
     if not job:
         raise HTTPException(404, "Vaga não encontrada.")
-    user_id = request.state.user_id
-    match = db.scalar(select(JobMatch).where(JobMatch.job_id == job.id, JobMatch.user_id == user_id))
-    if match is None:
-        match = JobMatch(job_id=job.id, user_id=user_id)
-        db.add(match)
+    match = _require_user_job_match(db, job_id, request.state.user_id)
     match.is_favorite = not match.is_favorite
     db.commit()
     return {"id": job.id, "is_favorite": match.is_favorite}
@@ -720,6 +835,7 @@ def apply_to_job(job_id: int, payload: ConfirmSent, request: Request, db: Sessio
     job = db.get(Job, job_id)
     if not job:
         raise HTTPException(404, "Vaga não encontrada.")
+    _require_user_job_match(db, job_id, request.state.user_id)
     if not payload.confirmed:
         raise HTTPException(400, "Confirme que você já enviou a candidatura no site da vaga.")
     try:
@@ -737,6 +853,7 @@ def prepare_job_application(job_id: int, request: Request, db: Session = Depends
     job = db.get(Job, job_id)
     if not job:
         raise HTTPException(404, "Vaga não encontrada.")
+    _require_user_job_match(db, job_id, request.state.user_id)
     try:
         attempt = applying.prepare_attempt(db, job, get_profile(db, request.state.user_id), user_id=request.state.user_id)
     except applying.ApplyError as exc:
@@ -748,14 +865,35 @@ def prepare_job_application(job_id: int, request: Request, db: Session = Depends
 
 @app.get("/api/attempts")
 def list_attempts(request: Request, status: str = "todas", limit: int = Query(200, ge=1, le=500), db: Session = Depends(get_db)):
-    stmt = select(ApplicationAttempt).options(joinedload(ApplicationAttempt.job)).where(ApplicationAttempt.user_id == request.state.user_id).order_by(ApplicationAttempt.id.desc()).limit(limit)
+    user_id = request.state.user_id
+    # Compatibilidade e lacunas são privadas: nunca ler os campos legados globais de Job.
+    stmt = (
+        select(ApplicationAttempt, JobMatch)
+        .outerjoin(
+            JobMatch,
+            (JobMatch.job_id == ApplicationAttempt.job_id)
+            & (JobMatch.user_id == ApplicationAttempt.user_id),
+        )
+        .options(joinedload(ApplicationAttempt.job))
+        .where(ApplicationAttempt.user_id == user_id)
+        .order_by(ApplicationAttempt.id.desc())
+        .limit(limit)
+    )
     if status != "todas":
         stmt = stmt.where(ApplicationAttempt.status == status)
-    return [{**attempt_dict(a, with_message=True), "job": {
-        "id": a.job.id, "title": a.job.title, "company": a.job.company, "url": a.job.url,
-        "compatibility": round(a.job.compatibility or 0), "source": a.job.source,
-        "missing_reasons": a.job.missing_reasons or ""}}
-        for a in db.scalars(stmt).unique().all()]
+    rows = db.execute(stmt).all()
+    return [{
+        **attempt_dict(attempt, with_message=True),
+        "job": {
+            "id": attempt.job.id,
+            "title": attempt.job.title,
+            "company": attempt.job.company,
+            "url": attempt.job.url,
+            "compatibility": round(match.compatibility or 0) if match else 0,
+            "source": attempt.job.source,
+            "missing_reasons": (match.missing_reasons or "") if match else "",
+        },
+    } for attempt, match in rows]
 
 
 def _attempt_or_404(db, attempt_id, user_id):
@@ -807,6 +945,93 @@ def cancel_attempt(attempt_id: int, request: Request, db: Session = Depends(get_
     return {"message": "Candidatura cancelada.", "attempt": attempt_dict(attempt)}
 
 
+class SmtpAccountUpdate(BaseModel):
+    host: str = Field(..., min_length=3, max_length=255)
+    port: int = Field(587, ge=1, le=65535)
+    username: str = Field(..., min_length=1, max_length=320)
+    password: str = Field(..., min_length=1, max_length=4096)
+    from_email: str = Field(..., min_length=3, max_length=320)
+    use_tls: bool = True
+
+
+def smtp_account_dict(account):
+    if account is None:
+        return {"configured": False}
+    try:
+        decrypt_password(account.encrypted_password)
+        ready = True
+    except CredentialEncryptionError:
+        ready = False
+    return {
+        "configured": True,
+        "ready": ready,
+        "host": account.host,
+        "port": account.port,
+        "username": account.username,
+        "from_email": account.from_email,
+        "use_tls": account.use_tls,
+    }
+
+
+@app.get("/api/agent/smtp")
+def read_smtp_account(request: Request, db: Session = Depends(get_db)):
+    account = db.scalar(select(SmtpAccount).where(SmtpAccount.user_id == request.state.user_id))
+    return smtp_account_dict(account)
+
+
+@app.put("/api/agent/smtp")
+def save_smtp_account(payload: SmtpAccountUpdate, request: Request, db: Session = Depends(get_db)):
+    if not payload.use_tls:
+        raise HTTPException(422, "TLS é obrigatório para proteger a senha da sua conta SMTP.")
+    host = payload.host.strip()
+    sender = payload.from_email.strip()
+    if not host or any(char.isspace() for char in host) or "://" in host or "/" in host:
+        raise HTTPException(422, "Informe somente o hostname do servidor SMTP, sem protocolo ou caminho.")
+    allowed_smtp_hosts = {
+        "smtp.gmail.com", "smtp.office365.com", "smtp-mail.outlook.com",
+        "smtp.mail.yahoo.com", "smtp.zoho.com", "smtp.zoho.eu",
+    }
+    allowed_smtp_hosts.update(
+        item.strip().lower()
+        for item in os.getenv("SMTP_ALLOWED_HOSTS", "").split(",")
+        if item.strip()
+    )
+    if host.lower() not in allowed_smtp_hosts:
+        raise HTTPException(
+            422,
+            "Servidor SMTP não permitido. Use um provedor suportado ou solicite a inclusão "
+            "do hostname em SMTP_ALLOWED_HOSTS pelo administrador.",
+        )
+    if not re.fullmatch(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", sender):
+        raise HTTPException(422, "Endereço de remetente inválido.")
+    try:
+        encrypted = encrypt_password(payload.password)
+    except CredentialEncryptionError as exc:
+        raise HTTPException(503, str(exc))
+    account = db.scalar(select(SmtpAccount).where(SmtpAccount.user_id == request.state.user_id))
+    if account is None:
+        account = SmtpAccount(user_id=request.state.user_id)
+        db.add(account)
+    account.host = host
+    account.port = payload.port
+    account.username = payload.username.strip()
+    account.encrypted_password = encrypted
+    account.from_email = sender
+    account.use_tls = payload.use_tls
+    db.commit()
+    db.refresh(account)
+    return {"message": "Conexão SMTP individual salva com senha cifrada.", "smtp": smtp_account_dict(account)}
+
+
+@app.delete("/api/agent/smtp")
+def delete_smtp_account(request: Request, db: Session = Depends(get_db)):
+    account = db.scalar(select(SmtpAccount).where(SmtpAccount.user_id == request.state.user_id))
+    if account is not None:
+        db.delete(account)
+        db.commit()
+    return {"message": "Conexão SMTP individual removida.", "smtp": {"configured": False}}
+
+
 class AgentSettingsUpdate(BaseModel):
     auto_apply_enabled: bool = False
     require_approval: bool = True
@@ -817,10 +1042,29 @@ class AgentSettingsUpdate(BaseModel):
 def agent_settings_dict(db, user_id=None):
     s = get_agent_settings(db, user_id=user_id)
     p = get_profile(db, user_id=user_id)
+    smtp_account = db.scalar(select(SmtpAccount).where(SmtpAccount.user_id == user_id))
+    smtp_ready = bool(smtp_account_dict(smtp_account).get("ready", False))
+    multitenant = os.getenv("MULTITENANT_READY", "false").strip().lower() == "true"
+    resume_ready = False
+    if user_id is not None:
+        resume = db.scalar(select(UserResume).where(UserResume.user_id == user_id))
+        if resume is not None:
+            try:
+                content = decrypt_resume(resume.encrypted_content)
+                resume_ready = bool(content) and digest_resume(content) == resume.sha256
+            except ResumeStorageError:
+                resume_ready = False
+    email_ready = smtp_ready and (resume_ready if multitenant else True)
+    if multitenant and not smtp_ready:
+        email_block_reason = "Conecte uma conta SMTP individual para habilitar envios."
+    elif multitenant and not resume_ready:
+        email_block_reason = "Guarde seu currículo com armazenamento cifrado no Perfil profissional para habilitar envios."
+    else:
+        email_block_reason = ""
     return {"auto_apply_enabled": s.auto_apply_enabled, "require_approval": s.require_approval,
             "daily_limit": s.daily_limit, "min_score": s.min_score,
             "sent_today": applying.sent_today_count(db, user_id=user_id),
-            "email_ready": settings.smtp_can_send_applications,
+            "email_ready": email_ready, "email_block_reason": email_block_reason,
             "profile_gaps": applying.profile_gaps(p), "profile_ready": not applying.profile_gaps(p)}
 
 
@@ -881,11 +1125,58 @@ def update_application(application_id: int, payload: ApplicationUpdate, request:
         raise HTTPException(404, "Candidatura não encontrada.")
     if payload.status not in STATUSES:
         raise HTTPException(400, "Etapa de candidatura inválida.")
+    previous_status = application.status
     for key, value in payload.model_dump().items():
         setattr(application, key, value)
+    if payload.status != previous_status:
+        db.add(ApplicationEvent(
+            user_id=request.state.user_id,
+            application_id=application.id,
+            previous_status=previous_status or "",
+            new_status=payload.status,
+            source="manual",
+            note=(payload.notes or "").strip(),
+        ))
     db.commit(); db.refresh(application)
     return {"message": "Candidatura atualizada."}
 
+
+
+
+@app.get("/api/applications/{application_id}/history")
+def application_history(application_id: int, request: Request, db: Session = Depends(get_db)):
+    """Retorna somente os eventos vinculados à candidatura e conta autenticadas."""
+    user_id = request.state.user_id
+    application = db.scalar(select(Application).where(
+        Application.id == application_id,
+        Application.user_id == user_id,
+    ))
+    if application is None:
+        raise HTTPException(404, "Candidatura não encontrada.")
+    events = db.scalars(
+        select(ApplicationEvent)
+        .where(
+            ApplicationEvent.application_id == application_id,
+            ApplicationEvent.user_id == user_id,
+        )
+        .order_by(ApplicationEvent.occurred_at.asc(), ApplicationEvent.id.asc())
+    ).all()
+    return {
+        "application_id": application.id,
+        "has_history": bool(events),
+        "events": [{
+            "id": event.id,
+            "previous_status": event.previous_status or "",
+            "new_status": event.new_status,
+            "source": event.source,
+            "note": event.note or "",
+            "occurred_at": event.occurred_at.isoformat() if event.occurred_at else None,
+        } for event in events],
+        "notice": (
+            "O histórico é registrado a partir da ativação desta funcionalidade. "
+            "Etapas anteriores não são inferidas retroativamente."
+        ),
+    }
 
 @app.get("/api/tasks")
 def list_tasks(request: Request, view: str = "Pendentes", db: Session = Depends(get_db)):
@@ -898,8 +1189,8 @@ def list_tasks(request: Request, view: str = "Pendentes", db: Session = Depends(
 
 @app.post("/api/tasks")
 def new_task(payload: TaskCreate, request: Request, db: Session = Depends(get_db)):
-    if payload.job_id is not None and not db.get(Job, payload.job_id):
-        raise HTTPException(404, "Vaga associada não encontrada.")
+    if payload.job_id is not None:
+        _require_user_job_match(db, payload.job_id, request.state.user_id)
     task = create_task(db, payload.title, payload.description, payload.due_date, payload.priority, payload.job_id, payload.notify, user_id=request.state.user_id)
     return {"message": "Tarefa criada.", "task": task_dict(task)}
 
@@ -943,6 +1234,69 @@ def read_career_twin(request: Request, db: Session = Depends(get_db)):
     return build_career_twin(db, user_id=request.state.user_id)
 
 
+class CareerEvidenceReviewInput(BaseModel):
+    decision: str = Field(pattern="^(confirmed|dismissed)$")
+    note: str = Field("", max_length=1000)
+
+
+@app.get("/api/career-evidence")
+def read_career_evidence(
+    request: Request,
+    active_only: bool = Query(False),
+    limit: int = Query(200, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    """Retorna o histórico de evidências exclusivamente da conta autenticada."""
+    return {
+        "items": list_profile_evidence(
+            db, user_id=request.state.user_id, active_only=active_only, limit=limit
+        )
+    }
+
+
+@app.post("/api/career-evidence/{evidence_id}/review")
+def submit_career_evidence_review(
+    evidence_id: int,
+    payload: CareerEvidenceReviewInput,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Anexa decisão humana sem editar a evidência nem promover proficiência."""
+    try:
+        result = review_profile_evidence(
+            db,
+            evidence_id=evidence_id,
+            user_id=request.state.user_id,
+            decision=payload.decision,
+            note=payload.note,
+        )
+        db.commit()
+        return {"review": result}
+    except LookupError as exc:
+        db.rollback()
+        raise HTTPException(404, str(exc))
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(400, str(exc))
+
+
+@app.get("/api/career-evidence/{evidence_id}/reviews")
+def read_career_evidence_reviews(
+    evidence_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Retorna decisões históricas sem permitir consultar evidência de outra conta."""
+    try:
+        return {
+            "items": list_evidence_reviews(
+                db, evidence_id=evidence_id, user_id=request.state.user_id
+            )
+        }
+    except LookupError as exc:
+        raise HTTPException(404, str(exc))
+
+
 @app.put("/api/profile")
 def update_profile(payload: ProfileUpdate, request: Request, db: Session = Depends(get_db)):
     p = get_profile(db, request.state.user_id)
@@ -962,45 +1316,135 @@ def update_profile(payload: ProfileUpdate, request: Request, db: Session = Depen
         if key.startswith("weight_"):
             value = max(0, min(100, value))
         setattr(p, key, value)
+    # Garante IDs estáveis para novos registros estruturados antes de criar source_key.
+    db.flush()
+    ledger_sync = sync_profile_evidence(db, p, user_id=request.state.user_id)
     db.commit()
     refresh_user_scores(db, request.state.user_id)
     db.refresh(p)
-    return {"message": "Perfil salvo e compatibilidades recalculadas.", "profile": profile_dict(p)}
+    return {
+        "message": "Perfil salvo, evidências atualizadas e compatibilidades recalculadas.",
+        "profile": profile_dict(p),
+        "evidence_sync": ledger_sync,
+    }
+
+
+MAX_RESUME_BYTES = 5 * 1024 * 1024
+RESUME_IMPORTS_PER_HOUR = 5
 
 
 @app.post("/api/profile/import")
-async def import_resume(file: UploadFile = File(...)):
-    """Extrai sugestões do currículo sem salvar nem sobrescrever o perfil."""
+async def import_resume(
+    request: Request,
+    file: UploadFile = File(...),
+    allow_external_ai: bool = Form(False),
+    store_for_applications: bool = Form(False),
+    db: Session = Depends(get_db),
+):
+    """Extrai sugestões e, somente com opt-in, guarda o arquivo cifrado por usuário."""
+    _enforce_rate_limit(
+        db, request, scope="resume-import-user",
+        subject=str(request.state.user_id), limit=RESUME_IMPORTS_PER_HOUR,
+        window_seconds=3600,
+    )
     filename = file.filename or ""
-    suffix = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
-    if suffix not in {"pdf", "docx"}:
+    suffix = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if suffix not in {".pdf", ".docx"}:
         raise HTTPException(400, "Formato não suportado. Envie um arquivo PDF ou DOCX.")
-    content = await file.read(5 * 1024 * 1024 + 1)
-    if len(content) > 5 * 1024 * 1024:
+
+    content_type = (file.content_type or "").split(";", 1)[0].strip().lower()
+    allowed_types = {
+        ".pdf": {"application/pdf", "application/octet-stream"},
+        ".docx": {
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/octet-stream",
+        },
+    }
+    if content_type and content_type not in allowed_types[suffix]:
+        raise HTTPException(415, "O tipo informado não corresponde a PDF ou DOCX.")
+
+    content = await file.read(MAX_RESUME_BYTES + 1)
+    await file.close()
+    if len(content) > MAX_RESUME_BYTES:
         raise HTTPException(413, "O currículo deve ter no máximo 5 MB.")
     if not content:
         raise HTTPException(400, "O arquivo enviado está vazio.")
+    if suffix == ".pdf" and b"%PDF-" not in content[:1024]:
+        raise HTTPException(400, "O conteúdo não parece ser um PDF válido.")
+    if suffix == ".docx" and not content.startswith(b"PK\x03\x04"):
+        raise HTTPException(400, "O conteúdo não parece ser um DOCX válido.")
+
     try:
-        # A IA recebe o texto extraído integralmente; o arquivo original não é salvo.
         resume_text = extract_resume_text(content, filename)
-        if settings.gemini_api_key:
+        if settings.gemini_api_key and allow_external_ai:
             extracted = analyze_resume_with_gemini(resume_text)
             analysis_mode = "gemini"
-            message = "Currículo analisado com Gemini. Revise os campos preenchidos e clique em Salvar perfil."
+            message = "Currículo analisado com Gemini mediante sua autorização. Revise os campos e clique em Salvar perfil."
         else:
-            # Mantém compatibilidade para instalações ainda sem a variável de ambiente.
             extracted = parse_resume(content, filename)
             analysis_mode = "basic"
-            message = "Currículo lido pelo extrator básico. Configure GEMINI_API_KEY no servidor para ativar a análise inteligente. Revise antes de salvar."
+            if settings.gemini_api_key:
+                message = "Currículo lido localmente. O Gemini está configurado, mas não foi acionado porque você não autorizou o envio do texto. Revise antes de salvar."
+            else:
+                message = "Currículo lido localmente pelo extrator básico. Revise as informações antes de salvar."
     except ValueError as exc:
         raise HTTPException(422, str(exc))
     except ResumeAIError as exc:
         raise HTTPException(502, str(exc))
-    except Exception as exc:
+    except Exception:
+        # Não registrar exceções que possam conter trechos do currículo ou dados pessoais.
         raise HTTPException(422, "Não foi possível ler este arquivo. Verifique se o PDF/DOCX está íntegro e tente novamente.")
     if not extracted:
         raise HTTPException(422, "Não encontramos informações reconhecíveis. Confira se o PDF permite selecionar/copiar o texto.")
-    return {"message": message, "analysis_mode": analysis_mode, "extracted": extracted}
+
+    resume_storage_saved = False
+    if store_for_applications:
+        try:
+            encrypted_content = encrypt_resume(content)
+            stored_filename = safe_filename(filename)
+            stored_type = resume_content_type(stored_filename)
+        except ResumeStorageError as exc:
+            raise HTTPException(503, str(exc)) from exc
+        stored = db.scalar(select(UserResume).where(UserResume.user_id == request.state.user_id))
+        if stored is None:
+            stored = UserResume(
+                user_id=request.state.user_id, filename=stored_filename,
+                content_type=stored_type, encrypted_content=encrypted_content,
+                sha256=hashlib.sha256(content).hexdigest(),
+            )
+            db.add(stored)
+        else:
+            stored.filename = stored_filename
+            stored.content_type = stored_type
+            stored.encrypted_content = encrypted_content
+            stored.sha256 = hashlib.sha256(content).hexdigest()
+        db.commit()
+        resume_storage_saved = True
+        message += " O arquivo original também foi armazenado cifrado para anexos de candidatura."
+
+    return {
+        "message": message, "analysis_mode": analysis_mode, "extracted": extracted,
+        "resume_storage_saved": resume_storage_saved,
+    }
+
+
+@app.get("/api/profile/resume")
+def read_stored_resume(request: Request, db: Session = Depends(get_db)):
+    stored = db.scalar(select(UserResume).where(UserResume.user_id == request.state.user_id))
+    return {
+        "configured": stored is not None,
+        "filename": stored.filename if stored else "",
+        "updated_at": stored.updated_at.isoformat() if stored and stored.updated_at else None,
+    }
+
+
+@app.delete("/api/profile/resume")
+def delete_stored_resume(request: Request, db: Session = Depends(get_db)):
+    stored = db.scalar(select(UserResume).where(UserResume.user_id == request.state.user_id))
+    if stored is not None:
+        db.delete(stored)
+        db.commit()
+    return {"message": "Arquivo de currículo individual removido.", "configured": False}
 
 
 @app.get("/api/notifications")
@@ -1171,10 +1615,26 @@ def start_market_assessment(payload: SkillAssessmentCreate, request: Request, db
 def submit_market_assessment(attempt_id: int, payload: SkillAssessmentSubmit, request: Request, db: Session = Depends(get_db)):
     try:
         attempt = submit_skill_assessment(db, attempt_id, **payload.model_dump(), user_id=request.state.user_id)
-        return {"message": "Autoavaliação registrada.", "attempt": attempt}
+        evidence = record_self_assessment_evidence(
+            db, attempt_id=attempt_id, user_id=request.state.user_id
+        )
+        db.commit()
+        return {"message": "Autoavaliação registrada.", "attempt": attempt, "evidence": evidence}
     except ValueError as exc:
         raise HTTPException(404 if "não encontrado" in str(exc) else 400, str(exc))
 
+
+
+
+
+@app.get("/api/market/trends")
+def market_skill_trends(
+    request: Request,
+    limit: int = Query(10, ge=1, le=50),
+    db: Session = Depends(get_db),
+):
+    """Compara snapshots equivalentes sem misturar janelas ou versões."""
+    return compare_market_trends(db, limit=limit)
 
 
 @app.get("/api/market/analysis/history")
