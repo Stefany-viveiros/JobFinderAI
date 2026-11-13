@@ -1,0 +1,92 @@
+name: jobfinder-ai
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: jobfinder-ai-api:local
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      APP_ENV: production
+      COOKIE_SECURE: "true"
+      SESSION_HOURS: ${SESSION_HOURS:-24}
+      DATABASE_URL: ${DATABASE_URL:?Configure DATABASE_URL no arquivo .env}
+      CORS_ORIGINS: https://${DOMAIN:?Configure DOMAIN no arquivo .env}
+      APP_BASE_URL: https://${DOMAIN:?Configure DOMAIN no arquivo .env}
+      MULTITENANT_READY: ${MULTITENANT_READY:-false}
+      DEMO_READ_ONLY: ${DEMO_READ_ONLY:-true}
+      TIMEZONE: ${TIMEZONE:-America/Sao_Paulo}
+    volumes:
+      - jobfinder_data:/app/data
+    expose:
+      - "8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - app
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: /api
+    image: jobfinder-ai-web:local
+    restart: unless-stopped
+    expose:
+      - "80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - app
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    environment:
+      DOMAIN: ${DOMAIN:?Configure DOMAIN no arquivo .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - app
+
+volumes:
+  jobfinder_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  app:
+    driver: bridge
