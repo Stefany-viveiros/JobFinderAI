@@ -270,7 +270,7 @@ function WorkspaceApp({ user, onLogout }) {
         {loading && !dashboard ? <div className="loading-panel"><LoaderCircle className="spin" size={25}/><span>Carregando seu workspace...</span></div> : <>
           {page === 'Dashboard' && <DashboardPage dashboard={dashboard} jobs={jobs} onNavigate={changePage} onCreateTask={() => { setEditingTask(null); setTaskForm(emptyTask); setModal('task') }} onFavorite={toggleFavorite} />}
           {(page === 'Oportunidades' || page === 'Buscar vagas') && <JobsPage jobs={jobs} query={query} setQuery={setQuery} minScore={minScore} setMinScore={setMinScore} favoriteOnly={favoriteOnly} setFavoriteOnly={setFavoriteOnly} modality={modality} setModality={setModality} sort={sort} setSort={setSort} onCollect={collectJobs} sourceSelection={sourceSelection} setSourceSelection={setSourceSelection} sourceOptions={sourcesInfo?.sources?.filter(s => s.search_api).map(s => s.name) || ['Arbeitnow', 'OkEmprego', 'Nerdin', 'Empregare', 'Empregando Brasil', 'Jobicy', 'Remote OK']} busy={busy} onAdd={() => setModal('job')} onFavorite={toggleFavorite} onApply={applyJob} onPrepare={prepareJob} levelFilter={levelFilter} setLevelFilter={setLevelFilter} sourceFilter={sourceFilter} setSourceFilter={setSourceFilter} attemptFilter={attemptFilter} setAttemptFilter={setAttemptFilter} />}
-          {page === 'Agente' && <AgentPage settings={agentSettings} setSettings={setAgentSettings} onSave={saveAgentSettings} onRun={runAgent} runResult={agentRun} attempts={attempts} sources={sourcesInfo} onApprove={approveAttempt} onCancel={cancelAttempt} onConfirmManual={applyJob} smtp={smtpAccount} onSaveSmtp={saveSmtpAccount} onDeleteSmtp={deleteSmtpAccount} busy={busy} />}
+          {page === 'Agente' && <AgentPage settings={agentSettings} setSettings={setAgentSettings} onSave={saveAgentSettings} onRun={runAgent} runResult={agentRun} attempts={attempts} sources={sourcesInfo} onApprove={approveAttempt} onCancel={cancelAttempt} onConfirmManual={applyJob} busy={busy} />}
           {page === 'Candidaturas' && <ApplicationsPage applications={applications} onEdit={(a) => { setEditingApp(a); setAppForm({ status: a.status, applied_at: a.applied_at || '', deadline: a.deadline || '', recruiter: a.recruiter || '', notes: a.notes || '' }); setModal('application') }} />}
           {page === 'Tarefas' && <TasksPage tasks={tasks} view={taskView} setView={setTaskView} onCreate={() => { setEditingTask(null); setTaskForm(emptyTask); setModal('task') }} onEdit={(t) => { setEditingTask(t); setTaskForm({ title: t.title, description: t.description || '', due_date: t.due_date || '', priority: t.priority, notify: t.notify }); setModal('task') }} onComplete={completeTask} onDelete={deleteTask} onSendReminders={sendReminders} smtpReady={Boolean(dashboard?.smtp_ready)} notificationHistory={notificationHistory} busy={busy} />}
           {(page === 'Mercado' || page === 'Diagnóstico' || page === 'Desafios' || page === 'Plano' || page === 'Inteligência de mercado') && <MarketIntelligencePage focusSection={page === 'Diagnóstico' ? 'diagnosis' : page === 'Desafios' ? 'challenges' : page === 'Plano' ? 'plan' : 'market'} />}
@@ -470,7 +470,20 @@ function ProfilePage({ profile, setProfile, onSave, onResumeChanged, busy }) {
         const extracted = body.extracted || {}
         const next = { ...current, ...extracted }
         for (const key of ['educations', 'experiences', 'courses', 'certifications_items', 'portfolio_projects']) {
-          if (Array.isArray(extracted[key])) next[key] = [...(current[key] || []), ...extracted[key]]
+          if (Array.isArray(extracted[key])) {
+            const existing = current[key] || []
+            const identity = item => Object.entries(item || {})
+              .filter(([field, value]) => !['id', '_key'].includes(field) && String(value ?? '').trim())
+              .map(([field, value]) => `${field}:${String(value).trim().toLocaleLowerCase('pt-BR')}`)
+              .sort().join('|')
+            const known = new Set(existing.map(identity))
+            next[key] = [...existing, ...extracted[key].filter(item => {
+              const keyValue = identity(item)
+              if (!keyValue || known.has(keyValue)) return false
+              known.add(keyValue)
+              return true
+            })]
+          }
         }
         return next
       })
