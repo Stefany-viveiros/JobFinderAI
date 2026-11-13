@@ -230,7 +230,7 @@ function WorkspaceApp({ user, onLogout }) {
     Desafios: 'Desafios práticos',
     Mercado: 'Inteligência de mercado',
     Plano: 'Plano de desenvolvimento',
-    'Perfil e configurações': 'Configurações',
+    'Perfil e configurações': 'Meu Perfil',
     'Buscar vagas': 'Oportunidades',
     'Inteligência de mercado': 'Inteligência de mercado',
     'Career Twin': 'Meu Career Twin',
@@ -256,7 +256,7 @@ function WorkspaceApp({ user, onLogout }) {
       </nav>
       <div className="workspace-label nav-spacer">PREFERÊNCIAS</div>
       <nav className="nav-list">
-        <NavItem icon={Settings} text="Configurações" active={page === 'Perfil e configurações'} onClick={() => changePage('Perfil e configurações')} />
+        <NavItem icon={Settings} text="Meu Perfil" active={page === 'Perfil e configurações'} onClick={() => changePage('Perfil e configurações')} />
       </nav>
       <div className="sidebar-bottom">
         <div className="upgrade-card"><div className="upgrade-icon"><Zap size={17}/></div><strong>Seu próximo passo</strong><p>Mantenha seu perfil atualizado para melhorar a compatibilidade das vagas.</p><button onClick={() => changePage('Perfil e configurações')}>Completar perfil <ArrowUpRight size={14}/></button></div>
@@ -439,8 +439,6 @@ function ProfilePage({ profile, setProfile, onSave, onResumeChanged, busy }) {
   const [importing, setImporting] = useState(false)
   const [importMessage, setImportMessage] = useState('')
   const [importError, setImportError] = useState('')
-  const [allowExternalAI, setAllowExternalAI] = useState(false)
-  const [storeResumeForApplications, setStoreResumeForApplications] = useState(false)
   const [storedResume, setStoredResume] = useState(null)
   useEffect(() => { api('/profile/resume').then(setStoredResume).catch(() => setStoredResume({ configured: false })) }, [])
   const set = (field, value) => setProfile(p => ({ ...p, [field]: value }))
@@ -461,8 +459,8 @@ function ProfilePage({ profile, setProfile, onSave, onResumeChanged, busy }) {
     if (file.size > 5 * 1024 * 1024) { setImportError('O arquivo deve ter no máximo 5 MB.'); return }
     const form = new FormData()
     form.append('file', file)
-    form.append('allow_external_ai', String(allowExternalAI))
-    form.append('store_for_applications', String(storeResumeForApplications))
+    form.append('allow_external_ai', 'false')
+    form.append('store_for_applications', 'false')
     setImporting(true); setImportError(''); setImportMessage('')
     try {
       const response = await fetch(`${API}/profile/import`, { method: 'POST', body: form, credentials: 'include', headers: csrfToken ? { 'X-CSRF-Token': csrfToken } : {} })
@@ -485,22 +483,14 @@ function ProfilePage({ profile, setProfile, onSave, onResumeChanged, busy }) {
     finally { setImporting(false) }
   }
   return <>
-    <SectionHeading eyebrow="PERSONALIZE SUA BUSCA" title="Perfil profissional" subtitle="Mantenha seu histórico acadêmico e profissional organizado. O agente usa essas informações para avaliar oportunidades."/>
+    <SectionHeading eyebrow="PERSONALIZE SUA BUSCA" title="Meu Perfil" subtitle="Envie seu currículo para preencher seus dados e depois revise, edite ou complemente cada informação. O agente usa seu perfil para avaliar oportunidades."/>
     <section className="panel resume-import-panel">
-      <div className="resume-import-copy"><div className="resume-import-icon"><Sparkles size={19}/></div><div><strong>Preencher com meu currículo</strong><p>Envie PDF ou DOCX. A extração sugere registros separados para você revisar antes de salvar.</p></div></div>
+      <div className="resume-import-copy"><div className="resume-import-icon"><Sparkles size={19}/></div><div><strong>Importar currículo</strong><p>Envie seu currículo em PDF ou DOCX. Vamos ler as informações e preencher os campos para você revisar, editar e complementar.</p></div></div>
       <label className="btn btn-secondary resume-upload-button">{importing ? <LoaderCircle size={16} className="spin"/> : <UserRound size={16}/>} {importing ? 'Analisando currículo...' : 'Selecionar currículo'}<input type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={importResume} disabled={importing} hidden/></label>
-      <label className="resume-ai-consent">
-        <input type="checkbox" checked={allowExternalAI} onChange={e => setAllowExternalAI(e.target.checked)} disabled={importing}/>
-        <span><strong>Autorizar análise externa com Google Gemini</strong><small>Quando marcada e houver chave configurada no servidor, somente o texto extraído do currículo será enviado ao Google para análise.</small></span>
-      </label>
-      <label className="resume-ai-consent">
-        <input type="checkbox" checked={storeResumeForApplications} onChange={e => setStoreResumeForApplications(e.target.checked)} disabled={importing}/>
-        <span><strong>Guardar o arquivo cifrado para candidaturas por e-mail</strong><small>Opcional. O PDF/DOCX será cifrado com uma chave exclusiva do armazenamento e vinculado somente à sua conta. Você pode removê-lo quando quiser.</small></span>
-      </label>
       {storedResume?.configured && <div className="resume-import-success"><CheckCircle2 size={15}/>Currículo protegido: {storedResume.filename}<button type="button" className="text-action" onClick={async () => { try { await api('/profile/resume', { method: 'DELETE' }); setStoredResume({ configured: false }); await onResumeChanged?.(); setImportMessage('Arquivo de currículo removido com sucesso.'); } catch (error) { setImportError(error.message || 'Não foi possível remover o arquivo.'); } }}>Remover arquivo</button></div>}
       {importMessage && <p className="resume-import-success"><CheckCircle2 size={15}/>{importMessage}</p>}
       {importError && <p className="resume-import-error">{importError}</p>}
-      <small>Limite de 5 MB. Sem autorização, a extração é feita localmente. O arquivo original só é armazenado se você marcar a opção de armazenamento cifrado. Nada é salvo no perfil até você revisar e clicar em “Salvar perfil”.</small>
+      <small>PDF ou DOCX de até 5 MB. Depois da leitura, confira os dados e clique em “Salvar perfil” para atualizar seu cadastro. Você também pode adicionar, editar ou remover informações manualmente.</small>
     </section>
     <form className="profile-form" onSubmit={onSave}>
       <div className="profile-header-card"><div className="profile-large-avatar">{initials(profile.name)}</div><div><strong>{profile.name || 'Seu nome'}</strong><span>{profile.course || 'Área profissional'}{profile.institution ? ` · ${profile.institution}` : ''}</span><p>Informações revisáveis utilizadas pelo mecanismo de compatibilidade.</p></div><div className="profile-status"><span className="status-dot"/>Perfil editável</div></div>
