@@ -192,6 +192,50 @@ def validate_multitenant_schema(connection=None) -> None:
             )
 
 
+
+def _ensure_postgres_multitenant_constraints() -> None:
+    """Reconcilia constraints legadas com o modelo multiusuário sem tocar nos registros."""
+    if engine.dialect.name != "postgresql":
+        return
+
+    replacements = (
+        # Removem unicidade global antiga e passam a limitar por conta.
+        ("applications", "applications_job_id_key", "uq_user_application_job", ("user_id", "job_id")),
+        ("notification_log", "uq_task_recipient_day", "uq_user_task_recipient_day", ("user_id", "task_id", "recipient", "send_date")),
+    )
+    required = (
+        ("profile", "uq_profile_user", ("user_id",)),
+        ("agent_settings", "uq_agent_settings_user", ("user_id",)),
+        ("smtp_accounts", "uq_smtp_accounts_user", ("user_id",)),
+        ("user_resumes", "uq_user_resumes_user", ("user_id",)),
+    )
+
+    with engine.begin() as connection:
+        # Evita que dois workers tentem criar as mesmas constraints ao iniciar.
+        connection.execute(text("SELECT pg_advisory_xact_lock(731904221)"))
+        inspector = inspect(connection)
+
+        for table, legacy_name, new_name, columns in replacements:
+            existing = {item["name"] for item in inspector.get_unique_constraints(table)}
+            if legacy_name in existing:
+                connection.execute(text(f'ALTER TABLE "{table}" DROP CONSTRAINT "{legacy_name}"'))
+            if new_name not in existing:
+                column_sql = ", ".join(f'"{column}"' for column in columns)
+                connection.execute(text(
+                    f'ALTER TABLE "{table}" ADD CONSTRAINT "{new_name}" UNIQUE ({column_sql})'
+                ))
+            inspector = inspect(connection)
+
+        for table, constraint_name, columns in required:
+            existing = {item["name"] for item in inspector.get_unique_constraints(table)}
+            if constraint_name not in existing:
+                column_sql = ", ".join(f'"{column}"' for column in columns)
+                connection.execute(text(
+                    f'ALTER TABLE "{table}" ADD CONSTRAINT "{constraint_name}" UNIQUE ({column_sql})'
+                ))
+            inspector = inspect(connection)
+
+
 def init_db():
     from . import models  # noqa: F401
     from .filters import dedupe_key, classify_level
@@ -211,6 +255,7 @@ def init_db():
     # Cria primeiro tabelas novas (especialmente users) para que FKs das
     # colunas adicionadas abaixo funcionem também no PostgreSQL.
     Base.metadata.create_all(bind=engine)
+    _ensure_postgres_multitenant_constraints()
     if missing:
         with engine.begin() as conn:
             for table, column, ddl in missing:
