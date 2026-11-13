@@ -9,7 +9,10 @@ from .filters import normalize_url, dedupe_key, classify_level
 STATUSES=["Nova oportunidade","Salva","Candidatura enviada","Teste técnico","Entrevista","Aprovada","Reprovada","Encerrada"]
 
 def get_profile(db, user_id=None):
-    """Retorna perfil do usuário; sem user_id, mantém compatibilidade apenas para rotinas legadas internas."""
+    """Retorna perfil privado; no modo SaaS exige identidade autenticada."""
+    import os
+    if os.getenv("MULTITENANT_READY", "false").strip().lower() == "true" and user_id is None:
+        raise ValueError("Acesso ao perfil exige usuário autenticado no modo SaaS.")
     if user_id is None:
         p = db.get(Profile, 1)
         if not p:
@@ -49,6 +52,9 @@ def refresh_scores(db):
     db.commit()
 
 def create_task(db, title, description="", due_date=None, priority="Média", job_id=None, notify=True, user_id=None):
+    import os
+    if os.getenv("MULTITENANT_READY", "false").strip().lower() == "true" and user_id is None:
+        raise ValueError("Criar tarefas exige usuário autenticado no modo SaaS.")
     t=Task(user_id=user_id,title=title.strip(),description=description,due_date=due_date,priority=priority,job_id=job_id,notify=notify)
     db.add(t); db.commit(); db.refresh(t); return t
 

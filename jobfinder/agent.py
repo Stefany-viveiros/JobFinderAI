@@ -11,7 +11,10 @@ TARGET_LEVELS = ("estagio", "junior")
 
 
 def get_agent_settings(db, user_id=None) -> AgentSettings:
-    """Carrega configuração individual; modo legado existe apenas para testes/rotinas antigas."""
+    """Carrega configuração individual; no SaaS exige identidade autenticada."""
+    import os
+    if os.getenv("MULTITENANT_READY", "false").strip().lower() == "true" and user_id is None:
+        raise ValueError("Configuração do agente exige usuário autenticado no modo SaaS.")
     if user_id is None:
         s = db.get(AgentSettings, 1)
         if not s:

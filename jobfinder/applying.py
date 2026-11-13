@@ -226,7 +226,10 @@ def local_today() -> date:
 
 
 def sent_today_count(db, today: date | None = None, user_id: int | None = None) -> int:
-    """Envios automáticos (e-mail) do dia local. Confirmações manuais não consomem o limite."""
+    """Envios automáticos do dia; no SaaS a contagem é sempre por conta."""
+    import os
+    if os.getenv("MULTITENANT_READY", "false").strip().lower() == "true" and user_id is None:
+        raise ApplyError("Consultar limite diário exige identidade autenticada.")
     tz = ZoneInfo(settings.timezone)
     day = today or local_today()
     start = datetime(day.year, day.month, day.day, tzinfo=tz).astimezone(timezone.utc).replace(tzinfo=None)
@@ -239,6 +242,9 @@ def sent_today_count(db, today: date | None = None, user_id: int | None = None) 
 
 # ------------------------------------------------------------------ fluxo
 def active_attempt(db, job_id, user_id: int | None = None):
+    import os
+    if os.getenv("MULTITENANT_READY", "false").strip().lower() == "true" and user_id is None:
+        raise ApplyError("Consultar candidaturas exige identidade autenticada.")
     stmt = select(ApplicationAttempt).where(
         ApplicationAttempt.job_id == job_id,
         ApplicationAttempt.status.in_(OPEN_STATUSES + ("sent",)))
@@ -248,7 +254,10 @@ def active_attempt(db, job_id, user_id: int | None = None):
 
 
 def prepare_attempt(db, job: Job, profile, user_id: int | None = None) -> ApplicationAttempt:
-    """Monta a candidatura (texto + canal). Não envia nada e não registra como enviada."""
+    """Monta a candidatura; no SaaS exige proprietário autenticado."""
+    import os
+    if os.getenv("MULTITENANT_READY", "false").strip().lower() == "true" and user_id is None:
+        raise ApplyError("Preparar candidatura exige identidade autenticada.")
     gaps = profile_gaps(profile)
     if gaps:
         raise ApplyError("Complete seu perfil antes de preparar candidaturas: faltam " + ", ".join(gaps) + ".")
@@ -271,6 +280,9 @@ def prepare_attempt(db, job: Job, profile, user_id: int | None = None) -> Applic
 
 
 def _ensure_application(db, job_id, user_id=None, source="manual_confirmed"):
+    import os
+    if os.getenv("MULTITENANT_READY", "false").strip().lower() == "true" and user_id is None:
+        raise ApplyError("Registrar candidatura exige identidade autenticada.")
     stmt = select(Application).where(Application.job_id == job_id)
     if user_id is not None:
         stmt = stmt.where(Application.user_id == user_id)
@@ -378,7 +390,10 @@ def cancel_attempt(db, attempt):
 
 
 def confirm_manual_send(db, job: Job, note: str = "", user_id: int | None = None) -> ApplicationAttempt:
-    """O usuário declara que enviou pelo site da vaga. É o único caminho manual para 'sent'."""
+    """Confirma envio manual apenas para a conta autenticada."""
+    import os
+    if os.getenv("MULTITENANT_READY", "false").strip().lower() == "true" and user_id is None:
+        raise ApplyError("Confirmar candidatura exige identidade autenticada.")
     existing = active_attempt(db, job.id, user_id)
     if existing and existing.status == "sent":
         raise ApplyError("Esta vaga já consta como enviada.")

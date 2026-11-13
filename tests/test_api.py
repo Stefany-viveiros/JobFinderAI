@@ -36,6 +36,18 @@ def test_backend_boots_and_core_routes_respond(client):
         assert client.get(route).status_code == 200, route
 
 
+def test_cors_preflight_does_not_require_session(monkeypatch):
+    monkeypatch.setenv("MULTITENANT_READY", "true")
+    with TestClient(api_module.app, base_url="https://testserver") as anonymous:
+        response = anonymous.options("/api/dashboard", headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "content-type",
+        })
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+
+
 def test_dashboard_metrics_come_from_database(client, db, ready_profile):
     low = make_job(db, compatibility=30)
     high = make_job(db, compatibility=90)

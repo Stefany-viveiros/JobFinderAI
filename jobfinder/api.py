@@ -89,6 +89,9 @@ async def require_authenticated_session(request, call_next):
         "/api/health", "/api/health/ready", "/api/auth/register", "/api/auth/login",
         "/api/auth/forgot-password", "/api/auth/reset-password",
     }
+    # Preflight CORS não carrega cookie de sessão; precisa chegar ao CORSMiddleware.
+    if request.method == "OPTIONS":
+        return await call_next(request)
     if not path.startswith("/api/") or path in public_paths or path == "/api/auth/me":
         return await call_next(request)
     # Fail closed: endpoints legados ainda estão sendo convertidos para consultas
