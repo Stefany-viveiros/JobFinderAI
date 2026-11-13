@@ -59,6 +59,25 @@ docker compose run --rm --no-deps api python -c "from cryptography.fernet import
 
 Guardar a chave de currículo e a chave SMTP em local seguro e inserir em `.env`. A perda da chave de currículo impede recuperar os arquivos cifrados.
 
+### Gmail / SMTP
+
+O modelo já deixa o remetente da plataforma definido como `candidatura.jobfinder@gmail.com`:
+
+- Host: `smtp.gmail.com`
+- Porta: `587`
+- TLS: STARTTLS (`SMTP_USE_TLS=true`)
+- Usuário e remetente: `candidatura.jobfinder@gmail.com`
+- `SMTP_PASSWORD`: senha de app Google, inserida somente no arquivo `.env` do servidor.
+- `SMTP_CREDENTIALS_KEY`: chave Fernet separada, usada para cifrar a senha SMTP individual salva pela API.
+
+Nunca usar a senha normal do Google, nem gravar a senha de app em GitHub, logs ou mensagens. A senha de app não deve ser copiada para este repositório.
+
+Há dois usos distintos no backend:
+1. SMTP global do sistema, usado no envio de recuperação de senha; requer `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM` e `APP_BASE_URL`.
+2. SMTP individual de candidatura, salvo por conta autenticada em `GET/PUT /api/agent/smtp`; a senha é cifrada com `SMTP_CREDENTIALS_KEY`. O endpoint exige HTTPS, sessão válida e TLS habilitado.
+
+A tela/endpoint de SMTP individual só poderá ser testada depois que a API estiver publicada, o banco estiver migrado e o acesso multiusuário estiver liberado com segurança. Não executar teste de candidatura real: primeiro validar apenas um e-mail de teste controlado e confirmar recebimento.
+
 ## Verificação antes de iniciar
 
 - Confirmar que `DATABASE_URL` aponta para a instância Neon correta e que o TLS está habilitado.
