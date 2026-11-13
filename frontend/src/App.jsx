@@ -10,7 +10,7 @@ import {
   Layers3, Code2, BookOpen,
 } from 'lucide-react'
 
-const API = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '')
+const API = (import.meta.env.VITE_API_URL || 'https://jobfinder-ai-api-imux.onrender.com/api').replace(/\/$/, '')
 let csrfToken = ''
 const STATUS = ['Nova oportunidade', 'Salva', 'Candidatura enviada', 'Teste técnico', 'Entrevista', 'Aprovada', 'Reprovada', 'Encerrada']
 const emptyJob = { title: '', company: '', url: '', location: '', description: '' }
